@@ -5,12 +5,51 @@ import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import './ChatInterface.css';
 
+function shortName(model) {
+  return model.split('/')[1] || model;
+}
+
+function FailureNotice({ failures }) {
+  const failed = [
+    ...(failures?.stage1 || []).map((f) => ({ ...f, stage: 'Stage 1' })),
+    ...(failures?.stage2 || []).map((f) => ({ ...f, stage: 'Stage 2' })),
+  ];
+  if (failed.length === 0) return null;
+
+  return (
+    <div className="failure-notice">
+      {failed.map((f, i) => (
+        <div key={i}>
+          ⚠ {shortName(f.model)} failed in {f.stage}: {f.error}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UsageLine({ metadata }) {
+  const usage = metadata?.usage;
+  if (!usage || (!usage.total_cost && !usage.total_tokens)) return null;
+  const parts = [];
+  if (usage.total_cost) parts.push(`$${usage.total_cost.toFixed(4)}`);
+  if (usage.total_tokens) parts.push(`${usage.total_tokens.toLocaleString()} tokens`);
+  const modeLabel = metadata.mode === 'quick' ? ' · quick mode' : '';
+  const webLabel = metadata.web_search ? ' · web search' : '';
+  return (
+    <div className="usage-line">
+      Cost: {parts.join(' · ')}{modeLabel}{webLabel}
+    </div>
+  );
+}
+
 export default function ChatInterface({
   conversation,
   onSendMessage,
   isLoading,
 }) {
   const [input, setInput] = useState('');
+  const [mode, setMode] = useState('full');
+  const [webSearch, setWebSearch] = useState(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -24,7 +63,7 @@ export default function ChatInterface({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {
-      onSendMessage(input);
+      onSendMessage(input, { mode, webSearch });
       setInput('');
     }
   };
@@ -85,10 +124,10 @@ export default function ChatInterface({
                   {msg.loading?.stage2 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 2: Peer rankings...</span>
+                      <span>Running Stage 2: Peer review...</span>
                     </div>
                   )}
-                  {msg.stage2 && (
+                  {msg.stage2 && msg.stage2.length > 0 && (
                     <Stage2
                       rankings={msg.stage2}
                       labelToModel={msg.metadata?.label_to_model}
@@ -104,6 +143,15 @@ export default function ChatInterface({
                     </div>
                   )}
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+
+                  <FailureNotice failures={msg.metadata?.failures} />
+                  <UsageLine metadata={msg.metadata} />
+
+                  {msg.error && (
+                    <div className="message-error">
+                      Something went wrong: {msg.error}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -120,8 +168,25 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      {conversation.messages.length === 0 && (
-        <form className="input-form" onSubmit={handleSubmit}>
+      <form className="input-form" onSubmit={handleSubmit}>
+        <div className="input-options">
+          <label className="option-toggle" title="Full: 3-stage deliberation with anonymized peer review. Quick: individual answers + synthesis only (faster, cheaper).">
+            <select value={mode} onChange={(e) => setMode(e.target.value)} disabled={isLoading}>
+              <option value="full">Full council</option>
+              <option value="quick">Quick</option>
+            </select>
+          </label>
+          <label className="option-toggle" title="Let council members search the web for current information">
+            <input
+              type="checkbox"
+              checked={webSearch}
+              onChange={(e) => setWebSearch(e.target.checked)}
+              disabled={isLoading}
+            />
+            Web search
+          </label>
+        </div>
+        <div className="input-row">
           <textarea
             className="message-input"
             placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
@@ -138,8 +203,8 @@ export default function ChatInterface({
           >
             Send
           </button>
-        </form>
-      )}
+        </div>
+      </form>
     </div>
   );
 }
