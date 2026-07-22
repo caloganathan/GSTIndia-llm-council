@@ -27,7 +27,8 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
 
       <h4>Raw Evaluations</h4>
       <p className="stage-description">
-        Each model evaluated all responses (anonymized as Response A, B, C, etc.) and provided rankings.
+        Each model evaluated its peers' responses (anonymized as Response A, B, C, etc.) — a model
+        never sees or ranks its own response, which prevents self-preference bias.
         Below, model names are shown in <strong>bold</strong> for readability, but the original evaluation used anonymous labels.
       </p>
 
@@ -74,7 +75,8 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
         <div className="aggregate-rankings">
           <h4>Aggregate Rankings (Street Cred)</h4>
           <p className="stage-description">
-            Combined results across all peer evaluations (lower score is better):
+            Combined results across all peer evaluations. Positions are normalized within each
+            review (0 = ranked best, 1 = ranked worst) and averaged — lower score is better:
           </p>
           <div className="aggregate-list">
             {aggregateRankings.map((agg, index) => (
@@ -84,10 +86,10 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
                   {agg.model.split('/')[1] || agg.model}
                 </span>
                 <span className="rank-score">
-                  Avg: {agg.average_rank.toFixed(2)}
+                  Score: {agg.score != null ? agg.score.toFixed(2) : agg.average_rank?.toFixed(2)}
                 </span>
                 <span className="rank-count">
-                  ({agg.rankings_count} votes)
+                  ({agg.rankings_count} reviews)
                 </span>
               </div>
             ))}

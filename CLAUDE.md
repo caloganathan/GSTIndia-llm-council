@@ -4,163 +4,145 @@ This file contains technical details, architectural decisions, and important imp
 
 ## Project Overview
 
-LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2, preventing models from playing favorites.
+LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2 — models never see model names, and never see or rank their own response (self-vote exclusion). The app supports multi-turn conversations, quick vs full deliberation modes, web-search grounding, cost accounting, and private cloud deployment behind a bearer token.
 
 ## Architecture
 
 ### Backend Structure (`backend/`)
 
 **`config.py`**
-- Contains `COUNCIL_MODELS` (list of OpenRouter model identifiers)
-- Contains `CHAIRMAN_MODEL` (model that synthesizes final answer)
-- Uses environment variable `OPENROUTER_API_KEY` from `.env`
+- Every setting is env-overridable (loaded via `.env`); see `.env.example` for the full list
+- `COUNCIL_MODELS` (comma-separated env or default list), `CHAIRMAN_MODEL`, `TITLE_MODEL`
+- `REASONING_EFFORT` (low/medium/high/none), `REQUEST_TIMEOUT`, `MAX_RETRIES`, `HISTORY_MAX_TURNS`
+- `APP_ACCESS_TOKEN`: shared secret; empty = auth disabled (local dev only)
 - Backend runs on **port 8001** (NOT 8000 - user had another app on 8000)
 
 **`openrouter.py`**
-- `query_model()`: Single async model query
-- `query_models_parallel()`: Parallel queries using `asyncio.gather()`
-- Returns dict with 'content' and optional 'reasoning_details'
-- Graceful degradation: returns None on failure, continues with successful responses
+- `query_model()`: single async model query. Returns `{'ok': True, 'content', 'reasoning_details', 'usage'}` or `{'ok': False, 'error'}` — never None
+- Retries transient failures (network errors, 408/409/429/5xx) with exponential backoff (2s, 4s); non-retryable statuses fail fast
+- If a model rejects the `reasoning` parameter with HTTP 400, the parameter is stripped and the call retried without consuming retry budget
+- Requests `usage: {include: true}` so OpenRouter returns token counts and dollar cost
+- `web_search=True` adds the OpenRouter web plugin (`plugins: [{"id": "web"}]`)
+- Treats 200-with-error-body and empty-content responses as failures
 
 **`council.py`** - The Core Logic
-- `stage1_collect_responses()`: Parallel queries to all council models
+- `build_history_messages()`: converts stored conversation messages into chat history (user turns + prior Stage 3 answers), capped at `HISTORY_MAX_TURNS` exchanges. Passed to Stage 1 and Stage 3 as real message turns; Stage 2 gets a truncated text snippet via `format_history_snippet()`
+- `stage1_collect_responses()`: parallel queries; returns `(results, failures)` — failures carry per-model error strings surfaced in the UI
 - `stage2_collect_rankings()`:
-  - Anonymizes responses as "Response A, B, C, etc."
-  - Creates `label_to_model` mapping for de-anonymization
-  - Prompts models to evaluate and rank (with strict format requirements)
-  - Returns tuple: (rankings_list, label_to_model_dict)
-  - Each ranking includes both raw text and `parsed_ranking` list
-- `stage3_synthesize_final()`: Chairman synthesizes from all responses + rankings
-- `parse_ranking_from_text()`: Extracts "FINAL RANKING:" section, handles both numbered lists and plain format
-- `calculate_aggregate_rankings()`: Computes average rank position across all peer evaluations
+  - Global labels "Response A/B/C..." assigned by Stage 1 order; `label_to_model` mapping for de-anonymization
+  - **Each ranker gets a custom prompt excluding its own response** — different rankers see different subsets, so per-ranker `valid_labels` are tracked
+  - Rankers with fewer than 2 responses to rank are skipped
+  - Returns `(rankings, label_to_model, failures)`; each ranking includes `parsed_ranking`, `own_label`, `parse_complete`
+- `stage3_synthesize_final()`: chairman receives responses, reviews, **the label→model mapping, and the aggregate ranking** so it can connect peer verdicts to specific answers; prompt instructs it to resolve disagreements explicitly rather than averaging
+- `parse_ranking_from_text(text, valid_labels)`: extracts the LAST "FINAL RANKING:" section, prefers the numbered-list format, deduplicates labels (first occurrence wins), and drops labels not in `valid_labels`
+- `calculate_aggregate_rankings()`: positions are **normalized to [0,1] within each review** (rankers rank different subset sizes due to self-exclusion), then averaged; output sorted by `score` ascending (lower = better) and includes raw `average_rank` + `rankings_count`
+- `run_council_stream()`: async generator yielding stage events; single source of truth for orchestration. `run_full_council()` consumes it for the non-streaming endpoint. Modes: `"full"` (3 stages) and `"quick"` (skips Stage 2)
+- `_sum_usage()`: aggregates tokens/cost across all stages into `metadata.usage`
+
+**`auth.py`**
+- `require_auth` dependency: constant-time comparison of `Authorization: Bearer <token>` against `APP_ACCESS_TOKEN`; no-op when unset
 
 **`storage.py`**
-- JSON-based conversation storage in `data/conversations/`
-- Each conversation: `{id, created_at, messages[]}`
-- Assistant messages contain: `{role, stage1, stage2, stage3}`
-- Note: metadata (label_to_model, aggregate_rankings) is NOT persisted to storage, only returned via API
+- JSON-based conversation storage in `data/conversations/` (env-overridable `DATA_DIR` — read dynamically via `config.DATA_DIR` so tests can monkeypatch it)
+- **Atomic writes** (tempfile + `os.replace`) — a crash can't corrupt conversation files
+- Corrupt files are skipped in listings and return None on read, never crash the app
+- Assistant messages persist `{role, stage1, stage2, stage3, metadata}` — metadata (mapping, aggregates, failures, usage) IS persisted now, so reloaded conversations render fully
+- `delete_conversation()` supported
 
 **`main.py`**
-- FastAPI app with CORS enabled for localhost:5173 and localhost:3000
-- POST `/api/conversations/{id}/message` returns metadata in addition to stages
-- Metadata includes: label_to_model mapping and aggregate_rankings
+- All `/api` routes on an APIRouter behind `require_auth`; `/healthz` is unauthenticated (hosting platform health checks)
+- `POST /api/conversations/{id}/message/stream` (SSE) is the primary path; events: `stage1_start/complete`, `stage2_start/complete`, `stage3_start/complete`, `summary` (authoritative metadata incl. usage), `title_complete`, `complete`, `error`. `stage1_complete`/`stage2_complete` also carry `failures`
+- `SendMessageRequest`: `content`, `mode` ("full"/"quick"), `web_search` (bool)
+- Startup hook validates configured model IDs against OpenRouter's catalog (best-effort, non-fatal); results in `GET /api/health`
+- Serves `frontend/dist` as static files when present (single-container deployment); mounted after API routes so `/api` wins
 
 ### Frontend Structure (`frontend/src/`)
 
+**`api.js`**
+- Relative URLs only (`/api/...`): Vite dev server proxies to :8001 (see `vite.config.js`); production is same-origin
+- Bearer token stored in localStorage (`llm_council_token`); `ApiError` carries `.status` so the app can detect 401 and show the login screen
+- SSE parsing buffers across chunks (events can span reads)
+
 **`App.jsx`**
-- Main orchestration: manages conversations list and current conversation
-- Handles message sending and metadata storage
-- Important: metadata is stored in the UI state for display but not persisted to backend JSON
+- Auth gate: `checkAuth` on mount → login screen on 401; any later 401 clears the token and re-gates
+- `updateLastMessage` helper immutably updates the in-flight assistant message per SSE event
+- Stream errors mark the message with an inline error instead of deleting the exchange
+- Conversation delete with confirm dialog
 
 **`components/ChatInterface.jsx`**
-- Multiline textarea (3 rows, resizable)
+- **Input is always visible** — multi-turn conversations are supported (the original app hid the input after one exchange)
+- Per-message options: Full council / Quick select, Web search checkbox
+- `FailureNotice` shows per-model failures; `UsageLine` shows cost/tokens/mode
 - Enter to send, Shift+Enter for new line
-- User messages wrapped in markdown-content class for padding
-
-**`components/Stage1.jsx`**
-- Tab view of individual model responses
-- ReactMarkdown rendering with markdown-content wrapper
 
 **`components/Stage2.jsx`**
-- **Critical Feature**: Tab view showing RAW evaluation text from each model
-- De-anonymization happens CLIENT-SIDE for display (models receive anonymous labels)
-- Shows "Extracted Ranking" below each evaluation so users can validate parsing
-- Aggregate rankings shown with average position and vote count
-- Explanatory text clarifies that boldface model names are for readability only
+- Tab view of RAW evaluation text; de-anonymization happens CLIENT-SIDE for display
+- "Extracted Ranking" shown below each evaluation so users can validate parsing
+- Aggregate rankings display normalized `score` (0=best, 1=worst) with review counts
 
-**`components/Stage3.jsx`**
-- Final synthesized answer from chairman
-- Green-tinted background (#f0fff0) to highlight conclusion
+**`components/Stage3.jsx`** — final synthesized answer, green-tinted (#f0fff0)
 
-**Styling (`*.css`)**
-- Light mode theme (not dark mode)
-- Primary color: #4a90e2 (blue)
-- Global markdown styling in `index.css` with `.markdown-content` class
-- 12px padding on all markdown content to prevent cluttered appearance
+**Styling** — light mode, primary #4a90e2; all ReactMarkdown wrapped in `.markdown-content` (defined in `index.css`)
 
 ## Key Design Decisions
 
+### Self-Vote Exclusion (Stage 2)
+Models reliably recognize their own writing style, so letting them rank their own response biased the aggregate. Each ranker now sees only its peers' responses. Consequence: rankers rank different subset sizes (a stage-1 failure means that model still ranks ALL responses since none is its own), so aggregate scores use within-review normalization, not raw average positions.
+
 ### Stage 2 Prompt Format
-The Stage 2 prompt is very specific to ensure parseable output:
-```
-1. Evaluate each response individually first
-2. Provide "FINAL RANKING:" header
-3. Numbered list format: "1. Response C", "2. Response A", etc.
-4. No additional text after ranking section
-```
+Strict "FINAL RANKING:" numbered-list format for parseability. The parser prefers the numbered format, falls back to bare "Response X" mentions, dedupes, and validates against the labels that ranker actually saw.
 
-This strict format allows reliable parsing while still getting thoughtful evaluations.
-
-### De-anonymization Strategy
-- Models receive: "Response A", "Response B", etc.
-- Backend creates mapping: `{"Response A": "openai/gpt-5.1", ...}`
-- Frontend displays model names in **bold** for readability
-- Users see explanation that original evaluation used anonymous labels
-- This prevents bias while maintaining transparency
+### Chairman Context
+The chairman previously couldn't connect "Response A is best" to any model. It now receives the mapping and the computed consensus, with explicit instructions to exercise judgment (not blindly follow rank 1) and to resolve disagreements explicitly.
 
 ### Error Handling Philosophy
-- Continue with successful responses if some models fail (graceful degradation)
-- Never fail the entire request due to single model failure
-- Log errors but don't expose to user unless all models fail
+- Continue with successful responses if some models fail (graceful degradation), but **surface every failure to the user** (per-model error notices in the UI)
+- Retry transient failures before giving up; never fail the whole request for one model
+- Chairman failure returns an explicit error message but Stage 1/2 results remain viewable
 
-### UI/UX Transparency
-- All raw outputs are inspectable via tabs
-- Parsed rankings shown below raw text for validation
-- Users can verify system's interpretation of model outputs
-- This builds trust and allows debugging of edge cases
-
-## Important Implementation Details
-
-### Relative Imports
-All backend modules use relative imports (e.g., `from .config import ...`) not absolute imports. This is critical for Python's module system to work correctly when running as `python -m backend.main`.
-
-### Port Configuration
-- Backend: 8001 (changed from 8000 to avoid conflict)
-- Frontend: 5173 (Vite default)
-- Update both `backend/main.py` and `frontend/src/api.js` if changing
-
-### Markdown Rendering
-All ReactMarkdown components must be wrapped in `<div className="markdown-content">` for proper spacing. This class is defined globally in `index.css`.
-
-### Model Configuration
-Models are hardcoded in `backend/config.py`. Chairman can be same or different from council members. The current default is Gemini as chairman per user preference.
+### Cost Transparency
+Every model call requests usage accounting; totals are aggregated per exchange and persisted, so the user always knows what a deliberation cost.
 
 ## Common Gotchas
 
-1. **Module Import Errors**: Always run backend as `python -m backend.main` from project root, not from backend directory
-2. **CORS Issues**: Frontend must match allowed origins in `main.py` CORS middleware
-3. **Ranking Parse Failures**: If models don't follow format, fallback regex extracts any "Response X" patterns in order
-4. **Missing Metadata**: Metadata is ephemeral (not persisted), only available in API responses
+1. **Module Import Errors**: Always run backend as `python -m backend.main` from project root; backend modules use relative imports
+2. **Ranking Parse Failures**: `parse_complete: false` on a stage2 result means the ranker didn't rank everything it saw — the parser keeps whatever was valid
+3. **Different label sets per ranker**: don't assume every ranker ranked every label; that's why aggregate uses normalized scores
+4. **Auth in dev**: unset `APP_ACCESS_TOKEN` disables auth entirely — never deploy that way
+5. **`config.DATA_DIR` is read at call time** in storage.py (via `config.DATA_DIR`), not import time — keep it that way for testability
+6. **SSE events can span TCP chunks** — the frontend buffers; don't regress to per-chunk parsing
 
-## Future Enhancement Ideas
+## Testing
 
-- Configurable council/chairman via UI instead of config file
-- Streaming responses instead of batch loading
-- Export conversations to markdown/PDF
-- Model performance analytics over time
-- Custom ranking criteria (not just accuracy/insight)
-- Support for reasoning models (o1, etc.) with special handling
+```bash
+uv run pytest
+```
 
-## Testing Notes
+`tests/test_council.py`: parser edge cases (duplicates, invalid labels, repeated headers, fallbacks), aggregate normalization, history building/truncation.
+`tests/test_storage.py`: atomic writes, corrupt-file resilience, metadata persistence, deletion.
 
-Use `test_openrouter.py` to verify API connectivity and test different model identifiers before adding to council. The script tests both streaming and non-streaming modes.
+Startup logs and `GET /api/health` report model IDs missing from OpenRouter's catalog — check there first when a model silently fails.
+
+## Deployment
+
+- **Docker**: multi-stage build (Node → Python via uv); container serves API + built frontend on :8001; conversation data at `/app/data` (mount a volume)
+- **Render**: `render.yaml` blueprint — Docker runtime, persistent disk at `/app/data`, `OPENROUTER_API_KEY` set manually, `APP_ACCESS_TOKEN` auto-generated
+- `/healthz` is the unauthenticated health check endpoint
 
 ## Data Flow Summary
 
 ```
-User Query
+User Query (+ conversation history, mode, web_search)
     ↓
-Stage 1: Parallel queries → [individual responses]
+Stage 1: Parallel queries (history-aware, optional web search) → [responses + failures]
+    ↓ (mode=full and ≥2 responses)
+Stage 2: Anonymize, exclude self → parallel ranking queries → [evaluations + parsed rankings]
     ↓
-Stage 2: Anonymize → Parallel ranking queries → [evaluations + parsed rankings]
+Aggregate (normalized positions) → [sorted by score]
     ↓
-Aggregate Rankings Calculation → [sorted by avg position]
+Stage 3: Chairman synthesis (history + responses + reviews + mapping + consensus)
     ↓
-Stage 3: Chairman synthesis with full context
+summary event: {stage1, stage2, stage3, metadata: {mapping, aggregates, failures, usage, mode}}
     ↓
-Return: {stage1, stage2, stage3, metadata}
-    ↓
-Frontend: Display with tabs + validation UI
+Persisted to storage (metadata included) + streamed to frontend via SSE
 ```
-
-The entire flow is async/parallel where possible to minimize latency.

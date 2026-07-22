@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: llm-council
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: llm-council-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false          # set in the Render dashboard
+      - key: APP_ACCESS_TOKEN
+        generateValue: true  # Render generates a strong secret; read it in the dashboard
+      - key: DATA_DIR
+        value: /app/data/conversations
+      - key: REASONING_EFFORT
+        value: medium

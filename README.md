@@ -2,86 +2,108 @@
 
 ![llmcouncil](header.jpg)
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+Instead of asking a question to a single LLM provider, group the frontier models into your "LLM Council". This web app looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, asks them to review and rank each other's work (anonymized, and never their own), and finally a Chairman LLM produces the final response.
 
-In a bit more detail, here is what happens when you submit a query:
+What happens when you submit a query:
 
-1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
-2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
-3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
+1. **Stage 1: First opinions**. The query — along with the conversation history — is given to all council LLMs individually, and the responses are collected and shown in a tab view. Optionally, models can ground their answers with live **web search**.
+2. **Stage 2: Peer review**. Each LLM is given the *other* models' responses, anonymized as "Response A/B/C" so it can't play favorites — and it never sees its own response, so it can't vote for itself. Each reviewer evaluates accuracy, depth, and usefulness, and produces a ranking. Rankings are aggregated with position normalization.
+3. **Stage 3: Final response**. The Chairman receives all responses, all reviews, the label→model mapping, and the peer-review consensus, and synthesizes the final answer.
 
-## Vibe Code Alert
+A per-message **Quick mode** skips Stage 2 for faster, cheaper answers (individual responses + synthesis only). Every exchange reports its **token usage and dollar cost**.
 
-This project was 99% vibe coded as a fun Saturday hack because I wanted to explore and evaluate a number of LLMs side by side in the process of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438). It's nice and useful to see multiple responses side by side, and also the cross-opinions of all LLMs on each other's outputs. I'm not going to support it in any way, it's provided here as is for other people's inspiration and I don't intend to improve it. Code is ephemeral now and libraries are over, ask your LLM to change it in whatever way you like.
+## Features
 
-## Setup
+- Multi-turn conversations — the whole council sees the conversation history
+- Self-vote-free anonymized peer review with normalized aggregate rankings
+- Reasoning effort control (`REASONING_EFFORT=low|medium|high|none`)
+- Optional web search grounding per message (OpenRouter web plugin)
+- Full vs Quick deliberation modes per message
+- Per-message cost and token accounting
+- Retries with exponential backoff; per-model failures are surfaced in the UI instead of silently dropped
+- Bearer-token auth for private cloud deployment; single-container packaging
+- Atomic conversation storage; conversations are deletable from the sidebar
 
-### 1. Install Dependencies
+## Setup (local development)
 
-The project uses [uv](https://docs.astral.sh/uv/) for project management.
+The project uses [uv](https://docs.astral.sh/uv/) for Python and npm for the frontend.
 
-**Backend:**
 ```bash
 uv sync
+cd frontend && npm install && cd ..
 ```
 
-**Frontend:**
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-### 2. Configure API Key
-
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (see `.env.example`):
 
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+Get your API key at [openrouter.ai](https://openrouter.ai/) and make sure it has credits.
 
-### 3. Configure Models (Optional)
+Run it:
 
-Edit `backend/config.py` to customize the council:
-
-```python
-COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
-]
-
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
-```
-
-## Running the Application
-
-**Option 1: Use the start script**
 ```bash
 ./start.sh
+# or manually:
+# Terminal 1: uv run python -m backend.main       (API on :8001)
+# Terminal 2: cd frontend && npm run dev           (UI on :5173)
 ```
 
-**Option 2: Run manually**
+Open http://localhost:5173. With no `APP_ACCESS_TOKEN` set, auth is disabled locally.
 
-Terminal 1 (Backend):
+## Configuration
+
+Everything is configurable via environment variables (or `.env`) — no code edits needed:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENROUTER_API_KEY` | — | Required |
+| `COUNCIL_MODELS` | `openai/gpt-5.5,google/gemini-3.1-pro-preview,anthropic/claude-opus-4.8,x-ai/grok-4.3` | Comma-separated council roster |
+| `CHAIRMAN_MODEL` | `google/gemini-3.1-pro-preview` | Synthesizes the final answer |
+| `REASONING_EFFORT` | `medium` | `low`/`medium`/`high`/`none` |
+| `REQUEST_TIMEOUT` | `180` | Seconds per model call |
+| `MAX_RETRIES` | `2` | Retries on transient failures |
+| `HISTORY_MAX_TURNS` | `6` | Prior exchanges sent as context |
+| `APP_ACCESS_TOKEN` | *(unset = auth off)* | Shared secret for the login screen |
+| `DATA_DIR` | `data/conversations` | Conversation storage path |
+
+Configured model IDs are validated against OpenRouter's catalog at startup; check the logs or `GET /api/health` for warnings about stale IDs.
+
+## Running with Docker
+
 ```bash
-uv run python -m backend.main
+cp .env.example .env   # fill in OPENROUTER_API_KEY (and APP_ACCESS_TOKEN if exposed)
+docker compose up --build
 ```
 
-Terminal 2 (Frontend):
+Open http://localhost:8001 — the container serves both API and UI, and conversation data persists in a named volume.
+
+## Deploying to Render (private cloud)
+
+The repo includes `render.yaml`:
+
+1. Push this repository to your GitHub account.
+2. In the [Render dashboard](https://dashboard.render.com/): **New → Blueprint**, select the repo. Render reads `render.yaml` and provisions a Docker web service with a 1 GB persistent disk mounted at `/app/data`.
+3. Set `OPENROUTER_API_KEY` when prompted (it's marked `sync: false` so it never lives in the repo).
+4. `APP_ACCESS_TOKEN` is auto-generated by Render — copy it from the service's Environment tab. This is the token you'll enter on the login screen.
+5. Deploy. Your council is at `https://<service-name>.onrender.com`, protected by the access token, with HTTPS handled by Render.
+
+Any other Docker host (Fly.io, Railway, a VPS) works the same way: build the image, mount a volume at `/app/data`, and set the two secrets.
+
+**Do not deploy publicly without `APP_ACCESS_TOKEN` set** — otherwise anyone who finds the URL can spend your OpenRouter credits and read your conversations.
+
+## Tests
+
 ```bash
-cd frontend
-npm run dev
+uv run pytest
 ```
 
-Then open http://localhost:5173 in your browser.
+Covers the ranking parser, aggregate scoring, history building, and storage.
 
 ## Tech Stack
 
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
 - **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+- **Storage:** JSON files in `data/conversations/` (atomic writes)
+- **Packaging:** uv for Python, npm for JavaScript, multi-stage Dockerfile

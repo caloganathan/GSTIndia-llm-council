@@ -1,0 +1,15 @@
+services:
+  llm-council:
+    build: .
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/app/data/conversations
+    volumes:
+      - council-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  council-data:
