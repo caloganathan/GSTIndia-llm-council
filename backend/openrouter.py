@@ -22,6 +22,7 @@ def _build_payload(
     messages: List[Dict[str, str]],
     effort: Optional[str],
     web_search: bool,
+    zdr: bool = False,
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "model": model,
@@ -33,6 +34,9 @@ def _build_payload(
         payload["reasoning"] = {"effort": effort}
     if web_search:
         payload["plugins"] = [{"id": "web"}]
+    if zdr:
+        # Route only to providers that do not retain or train on prompt data.
+        payload["provider"] = {"data_collection": "deny"}
     return payload
 
 
@@ -52,6 +56,7 @@ async def query_model(
     timeout: Optional[float] = None,
     effort: Optional[str] = None,
     web_search: bool = False,
+    zdr: bool = False,
 ) -> Dict[str, Any]:
     """
     Query a single model via OpenRouter API.
@@ -63,6 +68,7 @@ async def query_model(
         effort: Reasoning effort ("low"/"medium"/"high"/"none"; defaults to
             REASONING_EFFORT). Stripped automatically if the model rejects it.
         web_search: Enable OpenRouter's web search plugin for this call
+        zdr: Restrict routing to providers that do not retain prompt data
 
     Returns:
         On success: {'ok': True, 'model', 'content', 'reasoning_details', 'usage'}
@@ -75,7 +81,7 @@ async def query_model(
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = _build_payload(model, messages, effort, web_search)
+    payload = _build_payload(model, messages, effort, web_search, zdr)
     last_error = "unknown error"
 
     async with httpx.AsyncClient(timeout=timeout) as client:

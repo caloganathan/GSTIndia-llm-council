@@ -147,3 +147,138 @@ def update_conversation_title(conversation_id: str, title: str):
 
     conversation["title"] = title
     save_conversation(conversation)
+
+
+# ---------------------------------------------------------------------------
+# Compliance Panel matters
+#
+# A matter is the unit of work for the panel: the notice facts, the full
+# deliberation, the determination, and the verification result. Persisting the
+# whole deliberation is not an implementation detail — that record IS the
+# working paper the firm relies on at peer review.
+# ---------------------------------------------------------------------------
+
+
+def _matters_dir() -> str:
+    return os.path.join(os.path.dirname(config.DATA_DIR.rstrip("/")), "matters")
+
+
+def _matter_path(matter_id: str) -> str:
+    return os.path.join(_matters_dir(), f"{matter_id}.json")
+
+
+def save_matter(matter: Dict[str, Any]):
+    """Persist a matter atomically."""
+    directory = _matters_dir()
+    Path(directory).mkdir(parents=True, exist_ok=True)
+
+    path = _matter_path(matter["id"])
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(matter, f, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def create_matter(matter_id: str, intake: Dict[str, Any], domain: str,
+                  tier: str, created_by: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Create a matter record from the intake form."""
+    matter = {
+        "id": matter_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "domain": domain,
+        "tier": tier,
+        "status": "draft",
+        "intake": intake,
+        "result": None,
+        "metadata": {},
+        "created_by": {
+            "id": (created_by or {}).get("id"),
+            "name": (created_by or {}).get("name"),
+            "email": (created_by or {}).get("email"),
+        } if created_by else None,
+    }
+    save_matter(matter)
+    return matter
+
+
+def get_matter(matter_id: str) -> Optional[Dict[str, Any]]:
+    path = _matter_path(matter_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Error reading matter {matter_id}: {e}")
+        return None
+
+
+def complete_matter(matter_id: str, result: Dict[str, Any],
+                    metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Attach the panel output to a matter and mark it complete."""
+    matter = get_matter(matter_id)
+    if matter is None:
+        return None
+    matter["result"] = result
+    matter["metadata"] = metadata
+    matter["status"] = "complete"
+    matter["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_matter(matter)
+    return matter
+
+
+def delete_matter(matter_id: str) -> bool:
+    path = _matter_path(matter_id)
+    if not os.path.exists(path):
+        return False
+    os.unlink(path)
+    return True
+
+
+def list_matters() -> List[Dict[str, Any]]:
+    """Matter summaries for the dashboard, newest first."""
+    directory = _matters_dir()
+    Path(directory).mkdir(parents=True, exist_ok=True)
+
+    matters = []
+    for filename in os.listdir(directory):
+        if not filename.endswith('.json') or filename.startswith('.'):
+            continue
+        try:
+            with open(os.path.join(directory, filename), 'r') as f:
+                data = json.load(f)
+            intake = data.get("intake", {})
+            determination = (data.get("result") or {}).get("determination") or {}
+            verification = (data.get("result") or {}).get("verification") or {}
+            matters.append({
+                "id": data["id"],
+                "created_at": data["created_at"],
+                "updated_at": data.get("updated_at", data["created_at"]),
+                "domain": data.get("domain", "gst"),
+                "tier": data.get("tier"),
+                "status": data.get("status", "draft"),
+                "client_name": intake.get("client_name", ""),
+                "notice_type": intake.get("notice_type", ""),
+                "state": intake.get("state", ""),
+                "tax_period": intake.get("tax_period", ""),
+                "amount_disputed": intake.get("amount_disputed"),
+                "due_date": intake.get("due_date"),
+                "confidence": determination.get("confidence"),
+                "risk_flag_count": len(determination.get("risk_flags") or []),
+                "verification_summary": verification.get("summary"),
+                "usage": (data.get("metadata") or {}).get("usage"),
+                "created_by": data.get("created_by"),
+            })
+        except (json.JSONDecodeError, KeyError, OSError) as e:
+            print(f"Skipping unreadable matter file {filename}: {e}")
+
+    matters.sort(key=lambda m: m["created_at"], reverse=True)
+    return matters
