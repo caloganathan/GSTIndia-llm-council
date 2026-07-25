@@ -447,7 +447,9 @@ async def admin_settings(
         "history_max_turns": config.HISTORY_MAX_TURNS,
         "data_dir": config.DATA_DIR,
         "model_validation": MODEL_VALIDATION,
-        "disclaimer": config.EXPORT_DISCLAIMER,
+        "review_note": config.EXPORT_REVIEW_NOTE,
+        "firm_name": config.FIRM_NAME,
+        "export_provenance": config.EXPORT_PROVENANCE,
     }
 
 

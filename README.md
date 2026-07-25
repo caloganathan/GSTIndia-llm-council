@@ -74,12 +74,30 @@ locally, so the partner still reads real names while the model never saw them.
 On first run the server creates a partner account and prints the credentials
 to its console.
 
-### Nothing is "submittable"
+### The reply pack
 
-Every export carries: *AI-assisted draft, to be reviewed and signed by a member
-of the ICAI; authorities marked UNVERIFIED or NOT FOUND must be independently
-confirmed.* The panel replaces the consultants who prepare a position. It does
-not replace the professional who signs it.
+The export is a professional work product, formatted the way a tax practice in
+India formats a file that goes to a partner and then to the department: Arial
+11pt, black on white, bold headings and no other ornament. Sections run
+Position Recommended, Issues and Position Taken, Draft Reply, Schedule of
+Authorities, Points for Reviewer Attention, Documents to be Placed on Record,
+Note for the File, Summary for the Board.
+
+The draft reply is written to be lifted onto letterhead: numbered paragraphs,
+preliminary and jurisdictional objections taken first, merits advanced without
+prejudice, closing prayer. Formal Indian professional register throughout.
+
+Nothing in the deliverable discloses the machinery behind it. The pack is the
+firm's work product, settled and signed by a member — how it was prepared is
+internal, exactly as a junior's draft carries the partner's name and not the
+junior's. Set `EXPORT_PROVENANCE=true` to append an internal annexure for the
+firm's own file; the complete record is retained in the matter regardless.
+
+What the export does carry is a standing note in the register a manager uses
+when passing a file up: the draft is for the engagement partner to settle and
+sign, and authorities shown as *To be confirmed* or *Not traced* in the
+Schedule of Authorities are to be verified against the reported text before
+filing. That is a working-paper control, and it stays.
 
 Instead of asking a question to a single LLM provider, group the frontier models into your "LLM Council". This web app looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, asks them to review and rank each other's work (anonymized, and never their own), and finally a Chairman LLM produces the final response.
 

@@ -124,13 +124,33 @@ DEFAULT_TIER = os.getenv("DEFAULT_PANEL_TIER", "pro")
 # Ask OpenRouter to route only to providers that do not retain prompt data.
 ENFORCE_ZDR = os.getenv("ENFORCE_ZDR", "true").lower() in ("1", "true", "yes")
 
-# Mandatory statement on every exported document.
-EXPORT_DISCLAIMER = os.getenv(
-    "EXPORT_DISCLAIMER",
-    "AI-assisted draft prepared by an automated advisory panel. To be reviewed "
-    "and signed by a member of the Institute of Chartered Accountants of India. "
-    "Authorities marked UNVERIFIED or NOT FOUND must be independently confirmed "
-    "before this document is filed or relied upon.",
+# Standing note on every exported document.
+#
+# This is a working-paper control, in the register a manager uses when passing
+# a file up for partner review — not a technology disclaimer. The document is
+# the firm's work product; how it was prepared is internal, exactly as a
+# junior's draft carries the partner's name and not the junior's. What the
+# reviewer does need is a standing reminder of what to satisfy themselves on
+# before the file is signed, and that is what this says.
+EXPORT_REVIEW_NOTE = os.getenv(
+    "EXPORT_REVIEW_NOTE",
+    "Prepared for review. This draft is to be settled and signed by the "
+    "engagement partner. Authorities shown as 'To be confirmed' or 'Not traced' "
+    "in the Schedule of Authorities are to be independently verified against "
+    "the reported text before this submission is filed or relied upon.",
+)
+
+# Firm identity printed on the export. Set these and the pack carries the
+# firm's own name rather than a generic heading.
+FIRM_NAME = os.getenv("FIRM_NAME", "")
+FIRM_SUBTITLE = os.getenv("FIRM_SUBTITLE", "Chartered Accountants")
+
+# Record the panel composition in an internal annexure. Off by default: the
+# reply pack is a client deliverable, and the machinery behind it is not part
+# of what the client or the department receives. The full record is always
+# retained in the matter file regardless of this setting.
+EXPORT_PROVENANCE = os.getenv("EXPORT_PROVENANCE", "false").lower() in (
+    "1", "true", "yes"
 )
 
 
