@@ -2,6 +2,40 @@
 
 This file contains technical details, architectural decisions, and important implementation notes for future development sessions.
 
+## Compliance Panel (GST) — the primary product
+
+A second mode alongside the generic council, for Indian GST notice work.
+
+### Architecture
+
+- **`roles.py`** — the four adversarial counsel + chairman. Organised by ROLE IN THE ARGUMENT (Revenue's Advocate / Assessee's Advocate / Procedural / Risk & Ethics), NOT by statute. This is deliberate: a notice concerns one law, so law-specialist panels emit three empty opinions. **These prompts are the product**; everything else is plumbing.
+- **`domains/gst.py`** — domain pack. Hardcodes only STABLE anchors (sections, notice-form codes, procedural doctrines, State→High Court map). **Never hardcode case citations** — they are volatile and mis-citing them is the core professional risk. Case law is generated then verified.
+- **`panel.py`** — 4 stages: parallel openings → cross-examination → chairman JSON → citation verification. Mirrors `run_council_stream`'s event shape.
+- **`verification.py`** — extracts authorities from the chairman's table AND the draft body (a citation reaching the reply but not the table is the dangerous one). **Never silently upgrades**: checker failure, unparseable output, or panel-flagged `certainty: to_verify` all resolve to UNVERIFIED.
+- **`sanitizer.py`** — free-tier anonymisation. `IDENTIFIER_RULES` order matters: GSTIN before PAN, or the embedded PAN leaks as a fragment. `audit_leaks()` runs as a pre-flight assertion and the panel ABORTS if anything survives.
+- **`users.py` / `auth.py`** — partner/manager/staff with PBKDF2 + session tokens. Legacy `APP_ACCESS_TOKEN` still works and maps to partner. `redact_for_role` strips `analyses`/`cross_exams` for staff.
+- **`export.py`** — DOCX reply pack. The ICAI review disclaimer is mandatory and not configurable away by the UI.
+
+### Stage 2 is cross-examination, NOT ranking
+The generic council ranks because every model answers the same question. Panel counsel answer *different* questions, so ranking is meaningless. Do not reintroduce it here.
+
+### Two tiers = risk tiers
+`free` forces anonymisation and blocks export; `pro` sends full facts with ZDR routing (`provider: {"data_collection": "deny"}`). Identifiers are restored locally after the run so the partner reads real names the model never saw.
+
+### Adding the Income Tax pack
+New file in `domains/` with the same interface, registered in `domains/__init__.py`. No change to `panel.py`, `roles.py`, `verification.py` or the UI.
+
+### Gotchas
+1. `_extract_json` handles fenced/prose-wrapped chairman output; failure produces `_fallback_determination` with a "must not be filed" risk flag — never a silent empty result.
+2. Matters live in `data/matters/`, conversations in `data/conversations/`. Both atomic-write.
+3. Free model IDs churn on OpenRouter. Startup validation reports stale IDs — check `/api/health` and the Admin > Panel configuration tab first when a tier silently fails.
+4. The sanitizer leak test is sacred. A failure there is a confidentiality breach, not a bug.
+
+### Frontend
+Design tokens in `theme.css` (light/dark via `data-theme` on `<html>`); components never hardcode colours. `format.js` holds helpers/constants separately from `shared.jsx` so React Fast Refresh works. Views: Dashboard, PanelWorkspace (intake + live deliberation), MatterList, MatterDetail, AdminPanel, GeneralCouncil.
+
+---
+
 ## Project Overview
 
 LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2 — models never see model names, and never see or rank their own response (self-vote exclusion). The app supports multi-turn conversations, quick vs full deliberation modes, web-search grounding, cost accounting, and private cloud deployment behind a bearer token.

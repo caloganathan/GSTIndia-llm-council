@@ -61,3 +61,79 @@ DATA_DIR = os.getenv("DATA_DIR", "data/conversations")
 # Server bind address. Backend runs on port 8001 by default (NOT 8000).
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8001"))
+
+
+# ---------------------------------------------------------------------------
+# Compliance Panel (GST / IT adversarial panel)
+# ---------------------------------------------------------------------------
+# Two tiers. The tier is a RISK tier as much as a price tier:
+#   free -> free/low-cost endpoints, client identifiers stripped by force
+#   pro  -> frontier models, full facts, zero-data-retention routing
+#
+# Role keys: revenue, assessee, procedural, risk, chairman
+
+PRO_ROLE_MODELS = {
+    "revenue": os.getenv("PRO_MODEL_REVENUE", "x-ai/grok-4.3"),
+    "assessee": os.getenv("PRO_MODEL_ASSESSEE", "anthropic/claude-opus-4.8"),
+    "procedural": os.getenv("PRO_MODEL_PROCEDURAL", "openai/gpt-5.5"),
+    "risk": os.getenv("PRO_MODEL_RISK", "google/gemini-3.1-pro-preview"),
+    "chairman": os.getenv("PRO_MODEL_CHAIRMAN", "anthropic/claude-opus-4.8"),
+}
+
+FREE_ROLE_MODELS = {
+    "revenue": os.getenv("FREE_MODEL_REVENUE", "deepseek/deepseek-r1:free"),
+    "assessee": os.getenv("FREE_MODEL_ASSESSEE", "z-ai/glm-4.5-air:free"),
+    "procedural": os.getenv("FREE_MODEL_PROCEDURAL", "qwen/qwen3-235b-a22b:free"),
+    "risk": os.getenv("FREE_MODEL_RISK", "moonshotai/kimi-k2:free"),
+    "chairman": os.getenv("FREE_MODEL_CHAIRMAN", "deepseek/deepseek-r1:free"),
+}
+
+# Model used to check citations against live sources (needs web search)
+VERIFIER_MODEL = os.getenv("VERIFIER_MODEL", "google/gemini-3.1-pro-preview")
+FREE_VERIFIER_MODEL = os.getenv("FREE_VERIFIER_MODEL", "deepseek/deepseek-r1:free")
+
+TIERS = {
+    "free": {
+        "key": "free",
+        "label": "Free Council",
+        "models": FREE_ROLE_MODELS,
+        "verifier": FREE_VERIFIER_MODEL,
+        # Enforced, not advisory: identifiers are stripped before any call.
+        "anonymise": True,
+        "allow_export": False,
+        "watermark": "RESEARCH GRADE — NOT FOR FILING",
+        "description": "Free endpoints. Client identifiers are stripped before "
+                       "any request leaves this machine. Research and second "
+                       "opinions only.",
+    },
+    "pro": {
+        "key": "pro",
+        "label": "Pro Council",
+        "models": PRO_ROLE_MODELS,
+        "verifier": VERIFIER_MODEL,
+        "anonymise": False,
+        "allow_export": True,
+        "watermark": None,
+        "description": "Frontier models with zero-data-retention routing. Full "
+                       "facts, verified authorities, signing-ready pack.",
+    },
+}
+
+DEFAULT_TIER = os.getenv("DEFAULT_PANEL_TIER", "pro")
+
+# Ask OpenRouter to route only to providers that do not retain prompt data.
+ENFORCE_ZDR = os.getenv("ENFORCE_ZDR", "true").lower() in ("1", "true", "yes")
+
+# Mandatory statement on every exported document.
+EXPORT_DISCLAIMER = os.getenv(
+    "EXPORT_DISCLAIMER",
+    "AI-assisted draft prepared by an automated advisory panel. To be reviewed "
+    "and signed by a member of the Institute of Chartered Accountants of India. "
+    "Authorities marked UNVERIFIED or NOT FOUND must be independently confirmed "
+    "before this document is filed or relied upon.",
+)
+
+
+def get_tier(name: str) -> dict:
+    """Resolve a tier profile, falling back to the default."""
+    return TIERS.get(name or DEFAULT_TIER, TIERS[DEFAULT_TIER])
