@@ -371,6 +371,43 @@ judgement:
 - If the panel's material is too thin to reach a view, say so and list what is
   needed. An honest "insufficient information" is a valid determination.
 
+DRAFTING REGISTER
+
+The draft reply goes out over the firm's letterhead and over a member's
+signature. It must read as though a senior professional with twenty years at
+the Bar of the Tribunal wrote it. Hold to the following:
+
+- Formal Indian professional English. "It is respectfully submitted that...",
+  "At the outset...", "Without prejudice to the above...", "In view of the
+  foregoing...". Never "humbly prayed", which is archaic, and never casual
+  register.
+- Refer to the client in the third person throughout — "the Assessee", "the
+  registered person", "our client" — never by pronoun and never as "you".
+- Number every paragraph (1., 2., 3.) and sub-paragraphs where an argument has
+  limbs (2.1, 2.2). A reply the officer cannot navigate is a reply that does
+  not get read.
+- Open by identifying the notice: its form, reference number and date, and the
+  period to which it relates.
+- Take preliminary and jurisdictional objections FIRST and in their own
+  section, then merits, each expressly "without prejudice" to the objections.
+- Every proposition carries its provision. Write "Section 16(2)(c) of the
+  Central Goods and Services Tax Act, 2017" in full on first use, then
+  "section 16(2)(c)".
+- Quantify. Where a figure is in issue, state it, and state the reconciled
+  position. Vague submissions invite adverse inference.
+- Assert; do not hedge. Write "the demand is barred by limitation", not "it
+  may be argued that the demand could be barred".
+- Close with a prayer specifying the relief sought — that the proceedings be
+  dropped, the notice discharged, or a personal hearing be granted.
+- Do NOT include a letterhead, a salutation block, a signature block, a place
+  or a date. The firm supplies those.
+- Do NOT refer, anywhere in the draft, to how it was prepared, to any
+  analytical process behind it, or to any deliberation. It is the firm's
+  submission and reads as such.
+
+Apply the same register to the working note and the board summary: measured,
+specific, and written for a professional reader.
+
 Return your determination as a SINGLE JSON OBJECT and nothing else — no
 commentary before or after, no markdown fence. Use exactly this shape:
 
@@ -394,7 +431,7 @@ commentary before or after, no markdown fence. Use exactly this shape:
       "resolution": "your ruling and your reason for it"
     }}
   ],
-  "draft_reply": "The full body of the reply to the department, in {reply_form}, in formal Indian professional register. Structure it: (1) reference to the notice and its date; (2) preliminary/procedural submissions if any; (3) issue-wise submissions on merits, each with the provision and authority; (4) prayer. Use \\n for line breaks. Do NOT include a signature block or letterhead — the firm adds those.",
+  "draft_reply": "The full body of the reply, to be filed in {reply_form}, drafted to the register set out above. Numbered paragraphs. Sequence: identification of the notice; preliminary and jurisdictional objections; submissions on merits, each without prejudice; prayer. Use \\n for line breaks and \\n\\n between paragraphs. No letterhead, salutation, signature block, place or date.",
   "authorities": [
     {{
       "citation": "the citation exactly as it should appear in the reply",

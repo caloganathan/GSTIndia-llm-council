@@ -248,8 +248,19 @@ function Settings({ onAuthError }) {
       </div>
 
       <div className="card card-pad">
-        <div className="section-title">Export disclaimer</div>
-        <p className="muted" style={{ margin: 0 }}>{settings.disclaimer}</p>
+        <div className="section-title">Reply pack</div>
+        <div className="detail-grid" style={{ marginBottom: 'var(--sp-3)' }}>
+          <div>
+            <span className="muted">Firm name on exports</span>
+            <div>{settings.firm_name || 'Not set — set FIRM_NAME in .env'}</div>
+          </div>
+          <div>
+            <span className="muted">Internal annexure</span>
+            <div>{settings.export_provenance ? 'Included' : 'Omitted'}</div>
+          </div>
+        </div>
+        <div className="section-title">Standing review note</div>
+        <p className="muted" style={{ margin: 0 }}>{settings.review_note}</p>
       </div>
     </>
   );
