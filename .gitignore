@@ -19,3 +19,6 @@ data/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+# Golden set contains client matter details; results are run artefacts
+evals/golden/*.json
+evals/results/
