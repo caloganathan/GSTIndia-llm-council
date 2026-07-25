@@ -1,0 +1,27 @@
+{
+  "id": "gst-001",
+  "description": "ITC mismatch where the notice was issued beyond limitation",
+  "intake": {
+    "client_name": "Acme Industries Private Limited",
+    "gstin": "29AAAPL1234C1ZV",
+    "notice_type": "ASMT-10",
+    "state": "Karnataka",
+    "tax_period": "FY 2019-20",
+    "section_invoked": "61",
+    "amount_disputed": 4520000,
+    "notice_date": "2024-03-11",
+    "due_date": "2024-04-10",
+    "issues": "1. ITC availed in excess of GSTR-2A\n2. Interest under section 50 on gross liability",
+    "facts": "Manufacturer of industrial fasteners. Supplier-wise reconciliation available for all but three suppliers, who were non-filers for two quarters. All invoices on record and payments made through banking channels.",
+    "documents_available": "GSTR-2A vs 3B reconciliation, purchase register, sample tax invoices, bank statements"
+  },
+  "expected": {
+    "position_taken": "contest",
+    "position_keywords": ["limitation", "time-barred", "section 73"],
+    "issues_expected": ["ITC mismatch", "interest under section 50"],
+    "procedural_points": ["limitation", "73(10)"],
+    "must_not_say": ["concede the entire demand"],
+    "outcome": "Demand dropped at the ASMT-12 stage.",
+    "notes": "The limitation point was decisive. Any panel that misses it has failed this matter."
+  }
+}
