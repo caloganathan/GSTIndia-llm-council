@@ -1,8 +1,8 @@
 /**
- * API client for the LLM Council backend.
+ * API client.
  *
- * Uses relative URLs: in production the backend serves the built frontend
- * same-origin; in development Vite proxies /api to localhost:8001.
+ * Relative URLs throughout: Vite proxies /api to :8001 in development and the
+ * backend serves the built frontend same-origin in production.
  */
 
 const TOKEN_KEY = 'llm_council_token';
@@ -12,11 +12,8 @@ export function getAuthToken() {
 }
 
 export function setAuthToken(token) {
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token);
-  } else {
-    localStorage.removeItem(TOKEN_KEY);
-  }
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 function authHeaders() {
@@ -24,7 +21,7 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(message, status) {
     super(message);
     this.status = status;
@@ -41,73 +38,109 @@ async function request(path, options = {}) {
     },
   });
   if (!response.ok) {
-    throw new ApiError(`Request failed: ${path} (${response.status})`, response.status);
+    let detail = `Request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(detail, response.status);
   }
   return response;
 }
 
+async function json(path, options) {
+  return (await request(path, options)).json();
+}
+
 export const api = {
-  /**
-   * Verify the stored access token (or that auth is disabled).
-   */
-  async checkAuth() {
-    const response = await request('/api/auth/check');
-    return response.json();
-  },
+  // ---- auth ----
+  checkAuth: () => json('/api/auth/check'),
 
-  /**
-   * List all conversations.
-   */
-  async listConversations() {
-    const response = await request('/api/conversations');
-    return response.json();
-  },
-
-  /**
-   * Create a new conversation.
-   */
-  async createConversation() {
-    const response = await request('/api/conversations', {
+  async login(email, password) {
+    const response = await fetch('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({}),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
+    if (!response.ok) {
+      let detail = 'Invalid email or password';
+      try {
+        const body = await response.json();
+        if (body.detail) detail = body.detail;
+      } catch { /* ignore */ }
+      throw new ApiError(detail, response.status);
+    }
     return response.json();
   },
 
-  /**
-   * Get a specific conversation.
-   */
-  async getConversation(conversationId) {
-    const response = await request(`/api/conversations/${conversationId}`);
-    return response.json();
+  logout: () => json('/api/auth/logout', { method: 'POST' }),
+
+  changePassword: (current_password, new_password) =>
+    json('/api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+
+  // ---- panel ----
+  panelConfig: () => json('/api/panel/config'),
+  dashboard: () => json('/api/dashboard'),
+  listMatters: () => json('/api/matters'),
+  getMatter: (id) => json(`/api/matters/${id}`),
+  deleteMatter: (id) => json(`/api/matters/${id}`, { method: 'DELETE' }),
+
+  exportUrl: (id) => `/api/matters/${id}/export`,
+
+  async downloadMatter(id, filename) {
+    const response = await request(`/api/matters/${id}/export`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'Reply_Pack.docx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   },
 
-  /**
-   * Delete a conversation.
-   */
-  async deleteConversation(conversationId) {
-    const response = await request(`/api/conversations/${conversationId}`, {
-      method: 'DELETE',
+  /** Run the panel, streaming stage events. */
+  async runPanel(payload, onEvent) {
+    const response = await fetch('/api/panel/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(payload),
     });
-    return response.json();
+    if (!response.ok) {
+      throw new ApiError(`Panel run failed (${response.status})`, response.status);
+    }
+    await consumeSSE(response, onEvent);
   },
 
-  /**
-   * Send a message and receive streaming updates.
-   * @param {string} conversationId - The conversation ID
-   * @param {string} content - The message content
-   * @param {object} options - { mode: 'full'|'quick', webSearch: boolean }
-   * @param {function} onEvent - Callback for each event: (eventType, event) => void
-   */
+  // ---- admin ----
+  adminUsers: () => json('/api/admin/users'),
+  createUser: (payload) =>
+    json('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }),
+  updateUser: (id, payload) =>
+    json(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteUser: (id) => json(`/api/admin/users/${id}`, { method: 'DELETE' }),
+  adminSettings: () => json('/api/admin/settings'),
+  health: () => json('/api/health'),
+
+  // ---- generic council (retained) ----
+  listConversations: () => json('/api/conversations'),
+  createConversation: () =>
+    json('/api/conversations', { method: 'POST', body: JSON.stringify({}) }),
+  getConversation: (id) => json(`/api/conversations/${id}`),
+  deleteConversation: (id) => json(`/api/conversations/${id}`, { method: 'DELETE' }),
+
   async sendMessageStream(conversationId, content, options, onEvent) {
     const response = await fetch(
       `/api/conversations/${conversationId}/message/stream`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders(),
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           content,
           mode: options?.mode || 'full',
@@ -115,38 +148,37 @@ export const api = {
         }),
       }
     );
-
     if (!response.ok) {
       throw new ApiError(`Failed to send message (${response.status})`, response.status);
     }
+    await consumeSSE(response, onEvent);
+  },
+};
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    // Buffer across chunks: a single SSE event can span multiple reads
-    let buffer = '';
+/** Read an SSE stream, buffering across chunk boundaries. */
+async function consumeSSE(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
 
-      buffer += decoder.decode(value, { stream: true });
-
-      let boundary;
-      while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-        const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-
-        for (const line of rawEvent.split('\n')) {
-          if (line.startsWith('data: ')) {
-            try {
-              const event = JSON.parse(line.slice(6));
-              onEvent(event.type, event);
-            } catch (e) {
-              console.error('Failed to parse SSE event:', e);
-            }
-          }
+    let boundary;
+    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      for (const line of raw.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          onEvent(event.type, event);
+        } catch (e) {
+          console.error('Failed to parse SSE event:', e);
         }
       }
     }
-  },
-};
+  }
+}

@@ -1,0 +1,304 @@
+/* Component styles. Tokens only — no literal colours. */
+
+/* ---------- Forms ---------- */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 var(--sp-4);
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+/* ---------- Tier picker ---------- */
+
+.tier-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--sp-3);
+}
+
+.tier-option {
+  padding: var(--sp-4);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.tier-option:hover {
+  border-color: var(--navy-500);
+}
+
+.tier-option.selected {
+  border-color: var(--navy-600);
+  background: var(--info-bg);
+}
+
+/* ---------- Stage track ---------- */
+
+.stage-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+}
+
+.stage-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.stage-step.running {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.stage-step.done {
+  color: var(--success);
+}
+
+.stage-dot {
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.stage-step.done .stage-dot {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .stage-step.done .stage-dot {
+  color: var(--text-inverse);
+}
+
+/* ---------- Counsel tabs ---------- */
+
+.counsel-tabs {
+  display: flex;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.counsel-tab {
+  padding: 9px var(--sp-4);
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.counsel-tab:hover {
+  color: var(--text);
+}
+
+.counsel-tab.active {
+  color: var(--role-colour, var(--navy-600));
+  border-bottom-color: var(--role-colour, var(--navy-600));
+  font-weight: 600;
+}
+
+/* ---------- Determination ---------- */
+
+.determination {
+  border-left: 3px solid var(--navy-600);
+}
+
+.draft-body {
+  white-space: pre-wrap;
+  line-height: 1.75;
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.disagreement {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.disagreement:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sp-4);
+}
+
+.detail-grid .muted {
+  display: block;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+/* ---------- Tabs ---------- */
+
+.tabs {
+  display: flex;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 9px var(--sp-4);
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--navy-600);
+  border-bottom-color: var(--navy-600);
+  font-weight: 600;
+}
+
+/* ---------- General council ---------- */
+
+.council-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.council-threads {
+  overflow: hidden;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.thread-item {
+  display: block;
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-item:hover {
+  background: var(--surface-3);
+}
+
+.thread-item.active {
+  background: var(--info-bg);
+  border-left: 2px solid var(--navy-600);
+}
+
+.thread-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.council-thread {
+  display: flex;
+  flex-direction: column;
+  min-height: 65vh;
+  max-height: 76vh;
+}
+
+.council-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+}
+
+.council-message + .council-message {
+  margin-top: var(--sp-5);
+}
+
+.user-bubble {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  white-space: pre-wrap;
+}
+
+.council-composer {
+  padding: var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+@media (max-width: 900px) {
+  .council-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .council-threads {
+    max-height: 220px;
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+  }
+
+  .nav {
+    display: flex;
+    padding: var(--sp-2);
+  }
+
+  .sidebar-footer,
+  .brand-sub {
+    display: none;
+  }
+
+  .page {
+    padding: var(--sp-4);
+  }
+}

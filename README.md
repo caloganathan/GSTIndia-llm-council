@@ -1,6 +1,85 @@
-# LLM Council
+# Compliance Panel — GST advisory, plus the general LLM Council
 
 ![llmcouncil](header.jpg)
+
+Two modes in one application:
+
+**Compliance Panel** — an adversarial panel for Indian GST notice work. Four
+counsel argue the matter, cross-examine each other, and a chairman determines
+the firm's position. Every authority cited is then checked against live
+sources and labelled VERIFIED / UNVERIFIED / NOT FOUND before a partner ever
+sees it. Output is a reply pack: draft reply, issue-wise analysis, authorities
+table, risk flags, board summary, and a working note for the file.
+
+**General Council** — the original multi-model council, for open research
+questions rather than a specific notice.
+
+## The Compliance Panel
+
+### Why the counsel are organised this way
+
+A notice usually concerns one law, so a panel of "GST specialist / income tax
+specialist / FEMA specialist" produces one real opinion and three empty ones.
+This panel is organised by **role in the argument**, which is how a technical
+clearance actually runs in a professional firm:
+
+| Counsel | Brief |
+|---|---|
+| **Revenue's Advocate** | Argues the department's case at its highest, so weaknesses surface internally rather than across the table |
+| **Assessee's Advocate** | The positive case on merits, grading each argument STRONG / DEFENSIBLE / WEAK |
+| **Procedural Counsel** | Limitation, jurisdiction, natural justice, defects in the notice — where matters are more often won |
+| **Risk & Ethics Counsel** | Penalty exposure, aggressiveness of the position, cross-State consistency, amnesty arithmetic, file documentation |
+| **Chairman** | Decides. Resolves the disagreements explicitly rather than averaging them |
+
+Stage 2 is **cross-examination**, not ranking: each counsel attacks the others'
+reasoning, flags citations it doubts, and concedes where it has been beaten.
+
+### Jurisdiction awareness
+
+A Karnataka High Court ruling binds a Karnataka officer; a contrary Madras
+ruling does not. The intake captures the State, and the prompts weight binding
+against persuasive precedent accordingly — which is exactly what a group
+operating across several registrations needs, and what generic tools ignore.
+
+### Citation verification
+
+The most dangerous failure mode is a fabricated authority reaching a signing
+partner. Every citation — from the authorities table *and* from the body of
+the draft reply — is extracted and checked. Nothing is ever silently upgraded:
+if the checker fails, returns nonsense, or the panel itself flagged a citation
+as uncertain, the result is UNVERIFIED.
+
+### Two tiers — a risk tier, not just a price tier
+
+| | Free Council | Pro Council |
+|---|---|---|
+| Models | DeepSeek R1, GLM, Qwen, Kimi (free endpoints) | GPT-5.5, Claude Opus 4.8, Gemini 3.1 Pro, Grok 4.3 |
+| Client identifiers | **Stripped before any request leaves the machine** | Full facts, zero-data-retention routing |
+| Output | Research grade, watermarked, export blocked | Signing-ready pack with DOCX export |
+
+Free endpoints are frequently free because the provider may retain or train on
+prompts. Sending a client's PAN, GSTIN and dispute particulars there is a
+confidentiality breach, so on the free tier anonymisation is enforced in code
+and the run aborts if any identifier survives. Identifiers are restored
+locally, so the partner still reads real names while the model never saw them.
+
+### Users and roles
+
+| Role | Sees |
+|---|---|
+| **Partner** | Everything, plus administration and user management |
+| **Manager** | Full deliberation and export |
+| **Staff** | Determination and verification trail only — not the counsel arguments |
+
+On first run the server creates a partner account and prints the credentials
+to its console.
+
+### Nothing is "submittable"
+
+Every export carries: *AI-assisted draft, to be reviewed and signed by a member
+of the ICAI; authorities marked UNVERIFIED or NOT FOUND must be independently
+confirmed.* The panel replaces the consultants who prepare a position. It does
+not replace the professional who signs it.
 
 Instead of asking a question to a single LLM provider, group the frontier models into your "LLM Council". This web app looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, asks them to review and rank each other's work (anonymized, and never their own), and finally a Chairman LLM produces the final response.
 
@@ -99,7 +178,19 @@ Any other Docker host (Fly.io, Railway, a VPS) works the same way: build the ima
 uv run pytest
 ```
 
-Covers the ranking parser, aggregate scoring, history building, and storage.
+94 tests covering the sanitizer (identifier leaks — the most important suite in
+the repository), citation verification and its never-upgrade rule, panel
+orchestration, role prompts, jurisdiction mapping, role permissions, the
+ranking parser, and storage.
+
+## Adding the Income Tax pack
+
+The panel engine is domain-agnostic: the four counsel are identical across
+laws, and only the injected knowledge differs. A second law is a new file in
+`backend/domains/` exposing the same interface as `gst.py` (notice types,
+statutory anchors, procedural grounds, State→High Court map, citation
+patterns, intake schema), registered in `backend/domains/__init__.py`. No
+change to `panel.py`, `roles.py`, `verification.py` or the UI is required.
 
 ## Tech Stack
 
