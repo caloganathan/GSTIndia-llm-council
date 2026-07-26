@@ -415,15 +415,6 @@ that no invoice-level data ever reaches a model, and that briefing size is
 independent of row count), and deployment invariants (the root `app` export,
 and state paths that can never resolve outside the volume).
 
-## Adding the Income Tax pack
-
-The panel engine is domain-agnostic: the four counsel are identical across
-laws, and only the injected knowledge differs. A second law is a new file in
-`backend/domains/` exposing the same interface as `gst.py` (notice types,
-statutory anchors, procedural grounds, State→High Court map, citation
-patterns, intake schema), registered in `backend/domains/__init__.py`. No
-change to `panel.py`, `roles.py`, `verification.py` or the UI is required.
-
 ## Tech Stack
 
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
@@ -457,4 +448,3 @@ to redistribute or commercialise a derivative, form your own view on those
 portions, or replace them — they are a few hundred lines of ordinary
 plumbing. The [NOTICE](NOTICE) file records the position in full.
 
-None of the above is legal advice.
