@@ -363,3 +363,186 @@ def intake_schema() -> dict:
             {"key": "gstin", "label": "GSTIN", "type": "text", "sensitive": True},
         ],
     }
+
+
+# --------------------------------------------------------------------------
+# Reconciliation buckets
+#
+# A 2A/3B difference is not one number, it is several problems wearing one
+# number. Each category carries a DIFFERENT legal argument and a different
+# prospect of success, and a reply that argues the aggregate concedes ground
+# it did not need to concede.
+#
+# The order here matters: classification tries each bucket in turn, so the
+# unambiguous mechanical categories (RCM, imports, ISD) are tested before the
+# judgement-dependent ones.
+# --------------------------------------------------------------------------
+
+
+class ReconBucket:
+    def __init__(self, key, label, keywords, strength, position, action):
+        self.key = key
+        self.label = label
+        self.keywords = keywords
+        self.strength = strength      # strong | defensible | weak | concede
+        self.position = position      # the argument for this bucket
+        self.action = action          # what the reply does with it
+
+    def as_dict(self):
+        return {"key": self.key, "label": self.label, "strength": self.strength,
+                "position": self.position, "action": self.action}
+
+
+RECONCILIATION_BUCKETS = [
+    ReconBucket(
+        "rcm", "Reverse charge — not expected in GSTR-2A",
+        ["rcm", "reverse charge", "self invoice", "section 9(3)", "section 9(4)"],
+        "strong",
+        "Tax paid under reverse charge is self-assessed and discharged by the "
+        "recipient. It appears in GSTR-3B by design and has no counterpart in "
+        "GSTR-2A. It is not a mismatch and its inclusion in the notice is an "
+        "error of comparison.",
+        "Excluded from the demand at the threshold.",
+    ),
+    ReconBucket(
+        "import_igst", "IGST on imports — not expected in GSTR-2A",
+        ["import", "boe", "bill of entry", "customs", "igst on import"],
+        "strong",
+        "IGST paid on import of goods is availed on the strength of the Bill "
+        "of Entry and is reflected in GSTR-2A only through ICEGATE. Absence "
+        "from GSTR-2A does not bear on eligibility.",
+        "Excluded from the demand at the threshold.",
+    ),
+    ReconBucket(
+        "isd", "ISD credit — distributed, not invoiced",
+        ["isd", "input service distributor"],
+        "strong",
+        "Credit distributed by an Input Service Distributor is availed on an "
+        "ISD invoice and reported separately. It is not expected to appear in "
+        "the recipient's GSTR-2A as a supplier invoice.",
+        "Excluded from the demand at the threshold.",
+    ),
+    ReconBucket(
+        "timing", "Timing — supplier furnished GSTR-1 in a later period",
+        ["timing", "later period", "subsequent period", "next month", "filed late",
+         "delayed filing", "reflected subsequently", "appears in later",
+         "belated", "next quarter"],
+        "strong",
+        "GSTR-2A is a dynamic statement that updates as suppliers furnish "
+        "GSTR-1. Where the supplier has since filed and the credit now appears, "
+        "the conditions in section 16(2) were satisfied at the material time "
+        "and no reversal arises. The subsequent GSTR-2A is produced in support.",
+        "Contested with documentary proof of the later filing.",
+    ),
+    ReconBucket(
+        "amendment", "Amendments and credit notes",
+        ["amendment", "amended", "credit note", "debit note", "revised",
+         "cdnr", "b2ba"],
+        "defensible",
+        "The difference arises from amendments or credit notes reflected in "
+        "one statement and not the other for the period under comparison. "
+        "Reconciled on the documents.",
+        "Contested with the amendment trail.",
+    ),
+    ReconBucket(
+        "supplier_error", "Supplier reporting error",
+        ["supplier error", "wrong gstin", "reported under", "wrongly reported",
+         "b2c instead", "incorrect gstin", "supplier mistake"],
+        "defensible",
+        "The supplier has reported the supply incorrectly — against another "
+        "GSTIN, or as B2C. The recipient has satisfied every condition within "
+        "its control under section 16(2), and cannot be visited with the "
+        "consequence of the supplier's reporting error.",
+        "Contested; supplier confirmation to be obtained.",
+    ),
+    ReconBucket(
+        "non_filer", "Supplier appears not to have furnished GSTR-1",
+        ["non filer", "non-filer", "not filed", "supplier not filed",
+         "return defaulter", "gstr-1 not filed", "supplier defaulter",
+         "cancelled supplier", "registration cancelled"],
+        "weak",
+        "This is the exposed category. Section 16(2)(c) requires the tax to "
+        "have been paid to the Government. Where the supplier has not filed, "
+        "the department will press this and the recipient's answer rests on "
+        "having satisfied the conditions within its control — a genuine "
+        "transaction, an invoice, receipt of the supply, and payment through "
+        "banking channels. Establish each on the documents, and consider "
+        "whether contesting this portion is commercially worthwhile.",
+        "Weakest limb. Documentary proof essential; consider the arithmetic "
+        "of contesting versus reversing.",
+    ),
+    ReconBucket(
+        "ineligible", "Ineligible credit under section 17(5)",
+        ["ineligible", "blocked", "17(5)", "section 17(5)", "blocked credit",
+         "not eligible", "disallowed"],
+        "concede",
+        "Credit blocked under section 17(5) is not available. Where it has "
+        "been availed it should be reversed voluntarily with interest, which "
+        "both closes the exposure and supports a plea against penalty.",
+        "Reverse voluntarily. Do not contest.",
+    ),
+    ReconBucket(
+        "clerical", "Clerical or data entry difference",
+        ["clerical", "data entry", "typo", "rounding", "keying error",
+         "posting error", "duplicate"],
+        "defensible",
+        "A recording difference rather than a credit issue. Reconciled on the "
+        "books and corrected.",
+        "Explained with the corrected working.",
+    ),
+]
+
+RECONCILIATION_BUCKETS_BY_KEY = {b.key: b for b in RECONCILIATION_BUCKETS}
+
+# Anything that matches nothing above. Deliberately named so it cannot be
+# read as benign: an unexplained difference is the part of the demand with no
+# argument behind it, and the reply must not pretend otherwise.
+UNRECONCILED = ReconBucket(
+    "unreconciled", "Not yet reconciled",
+    [],
+    "weak",
+    "This portion has not been explained. Until it is traced to a category it "
+    "must be treated as unsupported, and the reply should not assert a "
+    "position on it.",
+    "Trace before filing, or concede this portion.",
+)
+
+
+def reconciliation_brief(summary: dict) -> str:
+    """
+    Render a bucketed reconciliation for the panel.
+
+    Only aggregates travel: bucket totals, counts, and the strength of each
+    position. Invoice-level data never leaves the machine, which keeps this at
+    a few hundred tokens instead of hundreds of thousands.
+    """
+    if not summary or not summary.get("buckets"):
+        return ""
+
+    lines = [
+        "RECONCILIATION OF THE DIFFERENCE (from the taxpayer's own records):",
+        "",
+        f"Total difference analysed: Rs. {summary['total']:,.0f} "
+        f"across {summary['row_count']} line(s).",
+        "",
+    ]
+    for entry in summary["buckets"]:
+        bucket = RECONCILIATION_BUCKETS_BY_KEY.get(entry["key"], UNRECONCILED)
+        lines.append(
+            f"- {bucket.label}: Rs. {entry['amount']:,.0f} "
+            f"({entry['count']} line(s), {entry['share']:.0%} of the difference) "
+            f"— position: {bucket.strength.upper()}"
+        )
+        lines.append(f"    {bucket.position}")
+        lines.append("")
+
+    lines += [
+        "HOW TO USE THIS:",
+        "Argue each category on its own footing and quantify it. A reply that "
+        "meets the difference as a single figure concedes ground it need not "
+        "concede — the mechanical categories fall away at the threshold, the "
+        "timing difference is answered on documents, and only the residue is "
+        "genuinely in issue. Where a category is weak or unreconciled, say so "
+        "to the signing partner rather than papering over it.",
+    ]
+    return "\n".join(lines)

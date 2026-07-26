@@ -189,11 +189,20 @@ async def run_panel_stream(
 
     briefing_text = grounding.briefing_block(briefing)
 
+    # Reconciliation, if the user attached one. Already bucketed and
+    # aggregated locally — this is a few hundred tokens of summary, never the
+    # underlying rows.
+    recon_text = ""
+    reconciliation = working_matter.get("reconciliation")
+    if reconciliation:
+        recon_text = pack.reconciliation_brief(reconciliation)
+
     # ---- Stage 1: opening analyses ---------------------------------------
     yield {"type": "stage1_start"}
 
     async def run_counsel(role):
-        prompt = build_role_prompt(role, working_matter, pack, briefing_text)
+        prompt = build_role_prompt(role, working_matter, pack,
+                                   briefing_text, recon_text)
         result = await query_model(
             models.get(role.key, models["chairman"]),
             [{"role": "user", "content": prompt}],
@@ -290,7 +299,8 @@ async def run_panel_stream(
     yield {"type": "stage3_start"}
 
     chairman_prompt = build_chairman_prompt(
-        working_matter, pack, analyses, cross_exams, briefing_text
+        working_matter, pack, analyses, cross_exams, briefing_text,
+        recon_text,
     )
     chairman_result = await query_model(
         models["chairman"],
@@ -354,6 +364,7 @@ async def run_panel_stream(
             "watermark": tier["watermark"],
             "models": models,
             "grounded": bool(briefing and briefing.get("available")),
+            "reconciled": bool(reconciliation),
             "failures": {"stage1": stage1_failures, "stage2": stage2_failures},
             "usage": usage,
         },

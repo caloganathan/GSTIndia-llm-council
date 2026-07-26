@@ -5,6 +5,8 @@ export const CONFIDENCE_META = {
   defensible: { label: 'Defensible', cls: 'badge-info' },
   weak: { label: 'Weak', cls: 'badge-warning' },
   insufficient_information: { label: 'Insufficient information', cls: 'badge-danger' },
+  // Reconciliation bucket positions reuse the same scale.
+  concede: { label: 'Reverse', cls: 'badge-danger' },
 };
 
 export const STATUS_META = {

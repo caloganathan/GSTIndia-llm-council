@@ -119,6 +119,27 @@ export const api = {
     }
     return response.json();
   },
+  /** Upload a 2A/3B reconciliation; returns the bucketed summary. */
+  async uploadReconciliation(file, { domain = 'gst', tier } = {}) {
+    const body = new FormData();
+    body.append('file', file);
+    const params = new URLSearchParams({ domain, ...(tier ? { tier } : {}) });
+    const response = await fetch(apiUrl(`/api/panel/reconciliation?${params}`), {
+      method: 'POST',
+      headers: authHeaders(),
+      body,
+    });
+    if (!response.ok) {
+      let detail = `Could not read the reconciliation (${response.status})`;
+      try {
+        const payload = await response.json();
+        if (payload.detail) detail = payload.detail;
+      } catch { /* non-JSON error body */ }
+      throw new ApiError(detail, response.status);
+    }
+    return response.json();
+  },
+
   dashboard: () => json('/api/dashboard'),
   listMatters: () => json('/api/matters'),
   getMatter: (id) => json(`/api/matters/${id}`),

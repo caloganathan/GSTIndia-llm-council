@@ -254,7 +254,7 @@ def format_matter(matter: Dict[str, Any], pack) -> str:
 
 
 def build_role_prompt(role: Role, matter: Dict[str, Any], pack,
-                      briefing_text: str = "") -> str:
+                      briefing_text: str = "", recon_text: str = "") -> str:
     """Stage 1: a single counsel's opening analysis."""
     return f"""\
 You are {role.title} on a tax panel convened by a chartered accountancy firm
@@ -268,6 +268,7 @@ reply is signed.
 {briefing_text}
 {pack.jurisdiction_brief(matter.get('state'))}
 
+{recon_text}
 {pack.STATUTORY_FRAMEWORK}
 
 {pack.PROCEDURAL_GROUNDS if role.key == 'procedural' else ''}
@@ -326,6 +327,7 @@ def build_chairman_prompt(
     analyses: List[Dict[str, str]],
     cross_exams: List[Dict[str, str]],
     briefing_text: str = "",
+    recon_text: str = "",
 ) -> str:
     """Stage 3: the signing partner's structured determination."""
     analyses_text = "\n\n".join(
@@ -351,6 +353,7 @@ counsel have argued and cross-examined. You decide.
 
 {format_matter(matter, pack)}
 
+{recon_text}
 OPENING ANALYSES:
 {analyses_text}
 
@@ -374,6 +377,12 @@ judgement:
   present a doubtful authority as settled.
 - If the panel's material is too thin to reach a view, say so and list what is
   needed. An honest "insufficient information" is a valid determination.
+- WHERE A RECONCILIATION IS SUPPLIED, the draft reply must meet the difference
+  category by category with the figures, never as a single number. State what
+  falls away at the threshold, what is answered on documents, what is
+  genuinely in issue, and what is being reversed — each with its amount. A
+  reply that argues the aggregate concedes ground it did not need to concede.
+  Treat any unreconciled portion as unsupported and say so to the partner.
 
 DRAFTING REGISTER
 

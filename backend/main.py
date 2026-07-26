@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, export, intake, storage, users
+from . import config, export, intake, reconciliation, storage, users
 from .auth import redact_for_role, require_auth, require_permission, resolve_user
 from .council import (
     generate_conversation_title,
@@ -347,6 +347,47 @@ async def extract_notice(
         raise HTTPException(
             status_code=500,
             detail="The notice could not be read. Enter the details manually.",
+        )
+
+
+@router.post("/panel/reconciliation")
+async def upload_reconciliation(
+    file: UploadFile = File(...),
+    domain: str = "gst",
+    tier: str = config.DEFAULT_TIER,
+    user: Dict[str, Any] = Depends(require_auth),
+):
+    """
+    Parse and bucket an uploaded reconciliation.
+
+    Parsing, classification and aggregation all happen here, in process. The
+    row data is never sent to a model and is never written to disk — only the
+    aggregate summary is returned, and only that reaches the panel.
+    """
+    try:
+        pack = get_pack(domain)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    tier_config = config.get_tier(tier)
+    try:
+        return reconciliation.read_reconciliation(
+            file.filename or "", content, pack,
+            # Supplier GSTINs are third-party data. On the anonymising tier
+            # they are withheld even from the user-facing summary.
+            mask_suppliers=tier_config.get("anonymise", False),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Reconciliation parsing failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="The reconciliation could not be read.",
         )
 
 

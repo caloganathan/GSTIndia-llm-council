@@ -15,6 +15,12 @@ A second mode alongside the generic council, for Indian GST notice work.
 - **`sanitizer.py`** — free-tier anonymisation. `IDENTIFIER_RULES` order matters: GSTIN before PAN, or the embedded PAN leaks as a fragment. `audit_leaks()` runs as a pre-flight assertion and the panel ABORTS if anything survives.
 - **`users.py` / `auth.py`** — partner/manager/staff with PBKDF2 + session tokens. Legacy `APP_ACCESS_TOKEN` still works and maps to partner. `redact_for_role` strips `analyses`/`cross_exams` for staff.
 - **`export.py`** — DOCX reply pack. The ICAI review disclaimer is mandatory and not configurable away by the UI.
+- **`reconciliation.py`** — 2A/2B vs 3B workbook ingestion. Parses xlsx/csv, detects columns by alias, classifies each row into a `RECONCILIATION_BUCKETS` entry, aggregates by bucket.
+
+### The reconciliation rows never reach a model
+A real 2A/3B reconciliation is thousands of invoice lines — roughly 500k tokens, and third-party supplier data the client has no business disclosing. Bucketing is deterministic arithmetic, so it happens in Python. Only `reconciliation_brief()` (a ~200–700 token aggregate: bucket, count, amount, share, legal position) is put in front of the panel. Do not "improve" this by passing rows to a model. `tests/test_reconciliation.py::TestBriefing` asserts both halves: no invoice-level data travels, and briefing size is independent of row count.
+
+Each bucket carries its own legal position and strength — `strong` (RCM/import IGST/ISD, excluded at the threshold; timing), `defensible` (amendment, supplier error, clerical), `weak` (non-filer — the s.16(2)(c) exposure), `concede` (ineligible). `UNRECONCILED` is named so it cannot be read as benign. Supplier GSTINs are masked on the anonymising tier.
 
 ### Stage 2 is cross-examination, NOT ranking
 The generic council ranks because every model answers the same question. Panel counsel answer *different* questions, so ranking is meaningless. Do not reintroduce it here.
