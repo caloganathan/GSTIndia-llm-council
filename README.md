@@ -3,11 +3,14 @@
 ![llmcouncil](header.jpg)
 
 > **Built on [Andrej Karpathy's LLM Council](https://github.com/karpathy/llm-council).**
-> The original multi-model deliberation engine was conceived and open-sourced by
-> [Andrej Karpathy](https://github.com/karpathy). This repository extends it into a
-> domain-specific compliance tool for Indian tax practice.
-> **Extended and maintained on [CA Loganathan Anandan's GST LLM Council](https://github.com/caloganathan/GSTIndia-llm-council).** by **[CA Loganathan Anandan](https://www.linkedin.com/in/caloganathan)**,
-> Chartered Accountant - India, Indonesia & Singapore.
+> The multi-model deliberation approach — parallel responses, anonymised peer
+> review, synthesis by a chairman — was conceived and published by
+> [Andrej Karpathy](https://github.com/karpathy). This repository extends that idea
+> into a domain-specific compliance tool for Indian tax practice.
+>
+> **Extended and maintained by [CA Loganathan Anandan](https://www.linkedin.com/in/caloganathan)**,
+> Chartered Accountant — India, Indonesia & Singapore.
+> Repository: [GSTIndia-llm-council](https://github.com/caloganathan/GSTIndia-llm-council)
 
 Two modes in one application:
 
@@ -428,3 +431,30 @@ change to `panel.py`, `roles.py`, `verification.py` or the UI is required.
 - **Reconciliation:** openpyxl for xlsx, csv.Sniffer for delimiter detection — parsed in memory, never written to disk
 - **Storage:** JSON files in `data/conversations/` (atomic writes)
 - **Packaging:** uv for Python, npm for JavaScript, multi-stage Dockerfile
+
+## Licence and attribution
+
+The compliance layer — the panel, citation verification, anonymisation,
+notice intake, reconciliation, the reply pack and the domain packs — is the
+original work of CA Loganathan Anandan and is licensed under the
+**[Apache License 2.0](LICENSE)**. Use it, modify it, run it in your firm,
+build on it commercially. The conditions are the ordinary Apache ones: keep
+the copyright notice, keep the [NOTICE](NOTICE) file, and state what you
+changed.
+
+**One thing to be aware of before you redistribute.** This project began as a
+derivative of [karpathy/llm-council](https://github.com/karpathy/llm-council),
+which **carries no licence file**. Under default copyright that means the
+upstream author reserves all rights, and a licence cannot be granted over his
+code by anyone else. The Apache grant above therefore covers this project's
+own contributions only — which is the overwhelming majority of the codebase,
+but not the whole of it. Portions of the original scaffolding may survive in
+the OpenRouter transport, the JSON storage layer and parts of the FastAPI
+routing.
+
+In practice: running this in your own firm is uncontroversial. If you intend
+to redistribute or commercialise a derivative, form your own view on those
+portions, or replace them — they are a few hundred lines of ordinary
+plumbing. The [NOTICE](NOTICE) file records the position in full.
+
+None of the above is legal advice.
