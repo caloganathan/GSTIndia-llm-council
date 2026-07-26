@@ -1,0 +1,11 @@
+backend/
+tests/
+evals/
+data/
+Dockerfile
+docker-compose.yml
+render.yaml
+Procfile
+main.py
+pyproject.toml
+uv.lock

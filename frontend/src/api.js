@@ -1,9 +1,22 @@
 /**
  * API client.
  *
- * Relative URLs throughout: Vite proxies /api to :8001 in development and the
- * backend serves the built frontend same-origin in production.
+ * By default the API is same-origin: Vite proxies /api to :8001 in
+ * development, and in a single-service deployment the backend serves this
+ * bundle itself.
+ *
+ * Set VITE_API_BASE_URL at build time to point the frontend at a backend on a
+ * different host — the split deployment where the UI is served from a static
+ * host and the API runs elsewhere. Include the scheme and no trailing slash,
+ * e.g. https://llm-council.onrender.com
  */
+
+const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+/** Resolve an API path against the configured base. */
+export function apiUrl(path) {
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
 
 const TOKEN_KEY = 'llm_council_token';
 
@@ -29,7 +42,7 @@ export class ApiError extends Error {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -59,7 +72,7 @@ export const api = {
   checkAuth: () => json('/api/auth/check'),
 
   async login(email, password) {
-    const response = await fetch('/api/auth/login', {
+    const response = await fetch(apiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -90,7 +103,7 @@ export const api = {
   getMatter: (id) => json(`/api/matters/${id}`),
   deleteMatter: (id) => json(`/api/matters/${id}`, { method: 'DELETE' }),
 
-  exportUrl: (id) => `/api/matters/${id}/export`,
+  exportUrl: (id) => apiUrl(`/api/matters/${id}/export`),
 
   async downloadMatter(id, filename) {
     const response = await request(`/api/matters/${id}/export`);
@@ -107,7 +120,7 @@ export const api = {
 
   /** Run the panel, streaming stage events. */
   async runPanel(payload, onEvent) {
-    const response = await fetch('/api/panel/run', {
+    const response = await fetch(apiUrl('/api/panel/run'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(payload),
@@ -137,7 +150,7 @@ export const api = {
 
   async sendMessageStream(conversationId, content, options, onEvent) {
     const response = await fetch(
-      `/api/conversations/${conversationId}/message/stream`,
+      apiUrl(`/api/conversations/${conversationId}/message/stream`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
