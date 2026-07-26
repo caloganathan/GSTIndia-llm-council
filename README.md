@@ -2,6 +2,13 @@
 
 ![llmcouncil](header.jpg)
 
+> **Built on [Andrej Karpathy's LLM Council](https://github.com/karpathy/llm-council).**
+> The original multi-model deliberation engine was conceived and open-sourced by
+> [Andrej Karpathy](https://github.com/karpathy). This repository extends it into a
+> domain-specific compliance tool for Indian tax practice.
+> Extended and maintained by **[CA Loganathan Anandan](https://www.linkedin.com/in/loganathananandam/)**,
+> Chartered Accountant — JCSS Management Consulting, India & Indonesia.
+
 Two modes in one application:
 
 **Compliance Panel** — an adversarial panel for Indian GST notice work. Four
