@@ -41,13 +41,48 @@ ruling does not. The intake captures the State, and the prompts weight binding
 against persuasive precedent accordingly — which is exactly what a group
 operating across several registrations needs, and what generic tools ignore.
 
+### Reading the notice
+
+Upload the notice as PDF, Word or text. Most of the intake form is filled
+**without a model at all** — GSTIN, entity name, notice type, reference
+number, dates, amounts, section invoked and tax period are read locally by
+pattern, and the State is derived from the first two digits of the GSTIN,
+which is what drives the jurisdiction weighting.
+
+A model reads only the two fields a pattern cannot: what the issues are and a
+summary of the facts. On the free tier the notice text is scrubbed first, so
+an uploaded notice is no less private than a typed one. The uploaded file is
+parsed in memory and never written to disk.
+
+Everything extracted is a **proposal**, shown with its source, for the user to
+correct before the panel runs. Scanned notices with no text layer are reported
+honestly rather than guessed at — OCR is deliberately out of scope, because a
+wrong OCR read is worse than an empty field.
+
 ### Citation verification
 
 The most dangerous failure mode is a fabricated authority reaching a signing
 partner. Every citation — from the authorities table *and* from the body of
-the draft reply — is extracted and checked. Nothing is ever silently upgraded:
-if the checker fails, returns nonsense, or the panel itself flagged a citation
-as uncertain, the result is UNVERIFIED.
+the draft reply — is extracted and checked for three things: does it exist,
+does it support the proposition, and **is it still good law**. That third
+check catches the quiet failure: a circular withdrawn last quarter reads
+exactly like sound authority.
+
+| Status | Meaning |
+|---|---|
+| VERIFIED | Traced, supports the proposition, and appears current |
+| SUPERSEDED | Exists but amended, withdrawn, overruled or stayed |
+| UNVERIFIED | Could not be confirmed |
+| NOT_FOUND | Could not be located — treat as fabricated |
+
+Nothing is ever silently upgraded: if the checker fails, returns nonsense, or
+the panel itself flagged a citation as uncertain, the result is UNVERIFIED.
+
+**Be clear about what this is.** Verification searches public sources on the
+open web. It is not a licensed citator such as Taxmann or Manupatra, and it
+will miss things a citator catches. It is a safety net against fabrication and
+obvious staleness, not a substitute for reading the authority. The UI and the
+reply pack both say so.
 
 ### Two tiers — a risk tier, not just a price tier
 

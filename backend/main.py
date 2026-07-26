@@ -9,13 +9,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
+from fastapi import (APIRouter, Depends, FastAPI, File, Header, HTTPException,
+                     Response, UploadFile)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, export, storage, users
+from . import config, export, intake, storage, users
 from .auth import redact_for_role, require_auth, require_permission, resolve_user
 from .council import (
     generate_conversation_title,
@@ -310,6 +311,43 @@ async def export_matter(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/panel/extract")
+async def extract_notice(
+    file: UploadFile = File(...),
+    domain: str = "gst",
+    tier: str = config.DEFAULT_TIER,
+    user: Dict[str, Any] = Depends(require_auth),
+):
+    """
+    Read an uploaded notice and propose intake fields.
+
+    Nothing returned here is authoritative — every field is a proposal the
+    user confirms before the panel runs. The uploaded file is parsed in
+    memory and never written to disk.
+    """
+    try:
+        pack = get_pack(domain)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    try:
+        return await intake.read_notice(
+            file.filename or "", content, pack, config.get_tier(tier)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Notice extraction failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="The notice could not be read. Enter the details manually.",
+        )
 
 
 @router.post("/panel/run")

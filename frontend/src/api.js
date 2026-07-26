@@ -98,6 +98,27 @@ export const api = {
 
   // ---- panel ----
   panelConfig: () => json('/api/panel/config'),
+
+  /** Upload a notice and get proposed intake fields back. */
+  async extractNotice(file, { domain = 'gst', tier } = {}) {
+    const body = new FormData();
+    body.append('file', file);
+    const params = new URLSearchParams({ domain, ...(tier ? { tier } : {}) });
+    const response = await fetch(apiUrl(`/api/panel/extract?${params}`), {
+      method: 'POST',
+      headers: authHeaders(),   // no Content-Type: the browser sets the boundary
+      body,
+    });
+    if (!response.ok) {
+      let detail = `Could not read the notice (${response.status})`;
+      try {
+        const payload = await response.json();
+        if (payload.detail) detail = payload.detail;
+      } catch { /* non-JSON error body */ }
+      throw new ApiError(detail, response.status);
+    }
+    return response.json();
+  },
   dashboard: () => json('/api/dashboard'),
   listMatters: () => json('/api/matters'),
   getMatter: (id) => json(`/api/matters/${id}`),
