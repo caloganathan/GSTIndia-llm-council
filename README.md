@@ -72,7 +72,22 @@ locally, so the partner still reads real names while the model never saw them.
 | **Staff** | Determination and verification trail only — not the counsel arguments |
 
 On first run the server creates a partner account and prints the credentials
-to its console.
+to its console. If that log has scrolled away, or the account needs to change,
+use the admin CLI — it operates directly on the persisted user store, so it
+works against a live deployment as well as locally:
+
+```bash
+python -m backend.cli create-admin --email you@firm.in --password ...   # or omit --password to be prompted
+python -m backend.cli reset-password --email you@firm.in --password ...
+python -m backend.cli set-role --email someone@firm.in --role manager
+python -m backend.cli list-users
+```
+
+On Render, run this from the service's **Shell** tab so it operates on the
+mounted volume the running app reads. In the meantime, the shared
+`APP_ACCESS_TOKEN` (Environment tab → reveal the auto-generated value) always
+works as a full partner login via *"Use a shared access token instead"* on the
+login screen — the fastest way in if you're locked out right now.
 
 ### The reply pack
 
