@@ -59,27 +59,35 @@ def counsel_text(analyses: List[Dict[str, Any]], role_key: str = None) -> str:
 
 
 def score_citation_integrity(verification: Dict[str, Any]) -> Dict[str, Any]:
-    """Fabricated authorities are the one failure that is never acceptable."""
+    """
+    Two failures are never acceptable, and they are equally serious.
+
+    A FABRICATED authority is the obvious one. A SUPERSEDED one is the quiet
+    one: it exists, it reads as sound authority, and it will be filed unless
+    something catches it. Both fail the matter outright.
+    """
     summary = (verification or {}).get("summary") or {}
     total = summary.get("total", 0)
     verified = summary.get("verified", 0)
     not_found = summary.get("not_found", 0)
+    superseded = summary.get("superseded", 0)
 
-    fabricated = [
-        a.get("citation")
-        for a in (verification or {}).get("authorities") or []
-        if a.get("status") == "NOT_FOUND"
-    ]
+    authorities = (verification or {}).get("authorities") or []
+    fabricated = [a.get("citation") for a in authorities
+                  if a.get("status") == "NOT_FOUND"]
+    stale = [a.get("citation") for a in authorities
+             if a.get("status") == "SUPERSEDED"]
 
     return {
         "total": total,
         "verified": verified,
         "unverified": summary.get("unverified", 0),
+        "superseded": superseded,
         "not_found": not_found,
         "verified_rate": round(verified / total, 3) if total else None,
         "fabricated": fabricated,
-        # A single fabricated citation fails the matter outright.
-        "passed": not_found == 0,
+        "stale": stale,
+        "passed": not_found == 0 and superseded == 0,
     }
 
 
@@ -246,6 +254,11 @@ def aggregate(matter_scores: List[Dict[str, Any]]) -> Dict[str, Any]:
         for m in matter_scores
         for c in m["scores"]["citations"]["fabricated"]
     ]
+    stale = [
+        (m["id"], c)
+        for m in matter_scores
+        for c in m["scores"]["citations"].get("stale", [])
+    ]
 
     return {
         "matters": len(matter_scores),
@@ -255,6 +268,7 @@ def aggregate(matter_scores: List[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         "citation_verified_rate": rate(lambda m: m["scores"]["citations"]["verified_rate"]),
         "fabricated_citations": fabricated,
+        "superseded_citations": stale,
         "issue_coverage": rate(lambda m: m["scores"]["issues"]["rate"]),
         "procedural_catch": rate(lambda m: m["scores"]["procedural"]["rate"]),
         "position_agreement": rate(

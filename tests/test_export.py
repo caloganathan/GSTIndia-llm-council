@@ -238,3 +238,41 @@ class TestDegradedInput:
             "verification": {"authorities": []},
         }}
         assert "No authority has been cited" in _all_text(_document(matter))
+
+
+class TestSupersededInThePack:
+    """A superseded authority must be as visible as a fabricated one."""
+
+    def _matter_with(self, status, note="", correction=""):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["verification"] = {
+            "checked": True,
+            "summary": {"verified": 0, "superseded": 1 if status == "SUPERSEDED" else 0,
+                        "unverified": 0, "not_found": 0, "total": 1},
+            "authorities": [{
+                "citation": "Circular No. 183/15/2022-GST",
+                "proposition": "2A mismatch", "status": status,
+                "note": note, "correction": correction,
+            }],
+        }
+        return matter
+
+    def test_labelled_in_plain_language(self):
+        text = _all_text(_document(self._matter_with("SUPERSEDED")))
+        assert "Superseded" in text
+        assert "SUPERSEDED" not in text.replace("Superseded", "")
+
+    def test_raised_for_the_reviewer(self):
+        text = _all_text(_document(self._matter_with(
+            "SUPERSEDED", note="withdrawn", correction="Circular No. 220/2025")))
+        assert "must not be relied on as cited" in text
+        assert "Circular No. 220/2025" in text
+
+    def test_counted_as_outstanding(self):
+        text = _all_text(_document(self._matter_with("SUPERSEDED")))
+        assert "require confirmation before filing" in text
+
+    def test_footnote_explains_the_status(self):
+        text = _all_text(_document(self._matter_with("SUPERSEDED")))
+        assert "amended, withdrawn, overruled or stayed" in text

@@ -9,6 +9,9 @@ export const CONFIDENCE_META = {
 
 export const STATUS_META = {
   VERIFIED: { label: 'Verified', cls: 'badge-success' },
+  // Real but no longer good law — reads like sound authority, so it is
+  // surfaced as loudly as a fabrication.
+  SUPERSEDED: { label: 'Superseded', cls: 'badge-danger' },
   UNVERIFIED: { label: 'Unverified', cls: 'badge-warning' },
   NOT_FOUND: { label: 'Not found', cls: 'badge-danger' },
 };

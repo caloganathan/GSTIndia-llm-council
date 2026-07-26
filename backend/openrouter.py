@@ -23,6 +23,8 @@ def _build_payload(
     effort: Optional[str],
     web_search: bool,
     zdr: bool = False,
+    max_tokens: Optional[int] = None,
+    web_max_results: Optional[int] = None,
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "model": model,
@@ -32,8 +34,15 @@ def _build_payload(
     }
     if effort and effort != "none":
         payload["reasoning"] = {"effort": effort}
+    if max_tokens:
+        # A cap is a cost control, not a quality control: counsel that runs to
+        # 4,000 tokens where 1,200 would do is padding, not reasoning.
+        payload["max_tokens"] = max_tokens
     if web_search:
-        payload["plugins"] = [{"id": "web"}]
+        plugin: Dict[str, Any] = {"id": "web"}
+        if web_max_results:
+            plugin["max_results"] = web_max_results
+        payload["plugins"] = [plugin]
     if zdr:
         # Route only to providers that do not retain or train on prompt data.
         payload["provider"] = {"data_collection": "deny"}
@@ -57,6 +66,8 @@ async def query_model(
     effort: Optional[str] = None,
     web_search: bool = False,
     zdr: bool = False,
+    max_tokens: Optional[int] = None,
+    web_max_results: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Query a single model via OpenRouter API.
@@ -69,6 +80,8 @@ async def query_model(
             REASONING_EFFORT). Stripped automatically if the model rejects it.
         web_search: Enable OpenRouter's web search plugin for this call
         zdr: Restrict routing to providers that do not retain prompt data
+        max_tokens: Cap on completion length, to stop verbose padding
+        web_max_results: Number of web results when web_search is on
 
     Returns:
         On success: {'ok': True, 'model', 'content', 'reasoning_details', 'usage'}
@@ -81,7 +94,8 @@ async def query_model(
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = _build_payload(model, messages, effort, web_search, zdr)
+    payload = _build_payload(model, messages, effort, web_search, zdr,
+                             max_tokens, web_max_results)
     last_error = "unknown error"
 
     async with httpx.AsyncClient(timeout=timeout) as client:

@@ -78,6 +78,9 @@ function Authorities({ verification }) {
           </div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <span className="badge badge-success">{s.verified || 0} verified</span>
+            {(s.superseded || 0) > 0 && (
+              <span className="badge badge-danger">{s.superseded} superseded</span>
+            )}
             <span className="badge badge-warning">{s.unverified || 0} unverified</span>
             {(s.not_found || 0) > 0 && (
               <span className="badge badge-danger">{s.not_found} not found</span>
@@ -86,7 +89,9 @@ function Authorities({ verification }) {
         </div>
         {verification.note && (
           <div
-            className={`alert ${(s.not_found || 0) > 0 ? 'alert-danger' : 'alert-info'}`}
+            className={`alert ${
+              (s.not_found || 0) + (s.superseded || 0) > 0 ? 'alert-danger' : 'alert-info'
+            }`}
             style={{ marginTop: 'var(--sp-3)' }}
           >
             {verification.note}
@@ -112,9 +117,14 @@ function Authorities({ verification }) {
                 <td><StatusBadge status={authority.status} /></td>
                 <td className="muted" style={{ fontSize: 'var(--text-sm)' }}>
                   {authority.note}
+                  {authority.as_of && (
+                    <div style={{ marginTop: 2, fontSize: 'var(--text-xs)' }}>
+                      As at: {authority.as_of}
+                    </div>
+                  )}
                   {authority.correction && (
                     <div style={{ marginTop: 4, color: 'var(--warning)' }}>
-                      Suggested: {authority.correction}
+                      Now governed by: {authority.correction}
                     </div>
                   )}
                 </td>

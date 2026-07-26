@@ -253,7 +253,8 @@ def format_matter(matter: Dict[str, Any], pack) -> str:
     return out
 
 
-def build_role_prompt(role: Role, matter: Dict[str, Any], pack) -> str:
+def build_role_prompt(role: Role, matter: Dict[str, Any], pack,
+                      briefing_text: str = "") -> str:
     """Stage 1: a single counsel's opening analysis."""
     return f"""\
 You are {role.title} on a tax panel convened by a chartered accountancy firm
@@ -264,6 +265,7 @@ reply is signed.
 
 {COMMON_DISCIPLINE}
 
+{briefing_text}
 {pack.jurisdiction_brief(matter.get('state'))}
 
 {pack.STATUTORY_FRAMEWORK}
@@ -323,6 +325,7 @@ def build_chairman_prompt(
     pack,
     analyses: List[Dict[str, str]],
     cross_exams: List[Dict[str, str]],
+    briefing_text: str = "",
 ) -> str:
     """Stage 3: the signing partner's structured determination."""
     analyses_text = "\n\n".join(
@@ -343,6 +346,7 @@ You are the CHAIRMAN of this panel — in practice, the signing partner of an
 Indian chartered accountancy firm who will put their name to the reply. Four
 counsel have argued and cross-examined. You decide.
 
+{briefing_text}
 {pack.jurisdiction_brief(matter.get('state'))}
 
 {format_matter(matter, pack)}
