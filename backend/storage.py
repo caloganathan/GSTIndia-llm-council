@@ -160,7 +160,7 @@ def update_conversation_title(conversation_id: str, title: str):
 
 
 def _matters_dir() -> str:
-    return os.path.join(os.path.dirname(config.DATA_DIR.rstrip("/")), "matters")
+    return os.path.join(config.STATE_DIR, "matters")
 
 
 def _matter_path(matter_id: str) -> str:

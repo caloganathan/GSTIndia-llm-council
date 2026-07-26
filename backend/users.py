@@ -56,7 +56,7 @@ _PBKDF2_ROUNDS = 240_000
 
 
 def _store_path() -> str:
-    return os.path.join(os.path.dirname(config.DATA_DIR.rstrip("/")), "users.json")
+    return os.path.join(config.STATE_DIR, "users.json")
 
 
 def _now() -> datetime:

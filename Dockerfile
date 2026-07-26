@@ -12,16 +12,24 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# Dependencies first, for layer caching. README.md is copied because
+# pyproject.toml declares it and the project build reads it.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/ ./backend/
+COPY main.py ./
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
-# Conversation data lives here — mount a persistent volume at /app/data
-ENV DATA_DIR=/app/data/conversations
-ENV PORT=8001
+# Persisted state lives under /app/data — mount a volume there.
+# DATA_DIR holds conversations; STATE_DIR holds matters and user accounts.
+ENV DATA_DIR=/app/data/conversations \
+    STATE_DIR=/app/data \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH"
+
 EXPOSE 8001
 
-CMD ["uv", "run", "--frozen", "--no-dev", "python", "-m", "backend.main"]
+# Bind to $PORT when the platform injects one, else 8001. Exec form via sh so
+# the variable is expanded at run time rather than baked in at build time.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8001}"]

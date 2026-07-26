@@ -9,11 +9,28 @@ services:
       mountPath: /app/data
       sizeGB: 1
     envVars:
+      # Required. Set this in the Render dashboard; it is never committed.
       - key: OPENROUTER_API_KEY
-        sync: false          # set in the Render dashboard
+        sync: false
+
+      # Shared access token. Render generates one — read it from the
+      # dashboard. Named user accounts can be added later from Administration.
       - key: APP_ACCESS_TOKEN
-        generateValue: true  # Render generates a strong secret; read it in the dashboard
+        generateValue: true
+
+      # First-run partner account. Set ADMIN_PASSWORD in the dashboard, or
+      # leave it unset and read the generated password from the deploy logs.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # Persistence. Both point inside the mounted disk at /app/data:
+      # DATA_DIR holds conversations, STATE_DIR holds matters and users.
       - key: DATA_DIR
         value: /app/data/conversations
+      - key: STATE_DIR
+        value: /app/data
+
       - key: REASONING_EFFORT
         value: medium
