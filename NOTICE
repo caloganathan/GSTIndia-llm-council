@@ -1,0 +1,64 @@
+Compliance Panel — GST advisory, plus the general LLM Council
+Copyright 2025-2026 CA Loganathan Anandan
+
+This product includes software developed by CA Loganathan Anandan,
+Chartered Accountant (India, Indonesia and Singapore).
+https://www.linkedin.com/in/caloganathan
+https://github.com/caloganathan/GSTIndia-llm-council
+
+--------------------------------------------------------------------------
+ORIGINAL WORK AND ATTRIBUTION
+--------------------------------------------------------------------------
+
+This project began as a derivative of "LLM Council" by Andrej Karpathy:
+
+    https://github.com/karpathy/llm-council
+
+That project introduced the multi-model deliberation approach on which the
+general council mode is based — parallel model responses, anonymised peer
+review with self-vote exclusion, and synthesis by a chairman model. Credit
+for that idea belongs to its author.
+
+At the time of writing, the upstream project carries no licence file. The
+author released it publicly stating it was "provided here as is for other
+people's inspiration". Portions of the original scaffolding may survive in
+this repository — principally in the OpenRouter transport layer, the JSON
+storage layer, and parts of the FastAPI routing. Those portions remain the
+copyright of their author and are not licensed by this NOTICE. The Apache
+License 2.0 in the accompanying LICENSE file is granted by CA Loganathan
+Anandan over his own contributions only.
+
+--------------------------------------------------------------------------
+ORIGINAL CONTRIBUTIONS OF THIS PROJECT
+--------------------------------------------------------------------------
+
+The following are original works of CA Loganathan Anandan, written for this
+project and licensed under the Apache License 2.0:
+
+    The adversarial compliance panel — four counsel organised by role in the
+    argument, cross-examination in place of ranking, and chairman
+    determination returned as a structured professional deliverable.
+
+    Citation verification, including the currency check and the rule that a
+    citation is never silently upgraded to verified.
+
+    Enforced identifier anonymisation with a pre-flight leak audit that
+    aborts the run rather than transmitting client data.
+
+    Notice intake — local pattern extraction of statutory identifiers, and
+    jurisdiction derivation driving binding-versus-persuasive precedent
+    weighting.
+
+    Reconciliation ingestion — deterministic local bucketing of input tax
+    credit mismatches, designed so that invoice-level data never reaches a
+    model.
+
+    The reply pack export, the domain pack interface, and the GST domain
+    pack.
+
+--------------------------------------------------------------------------
+
+This software assists with the preparation of professional work product. It
+does not provide legal, tax or accounting advice, and its output is a draft
+requiring review, settlement and signature by a qualified professional
+before it is relied upon or filed.
