@@ -8,6 +8,15 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from .config import CHAIRMAN_MODEL, COUNCIL_MODELS, HISTORY_MAX_TURNS, TITLE_MODEL
 from .openrouter import query_model, query_models_parallel
 
+# Headers that mark the start of a referee's closing ordered list. The first is
+# what the prompt asks for; the rest are formats models fall into unprompted and
+# which are cheaper to accept than to argue with.
+RANKING_HEADERS = (
+    "ORDER OF MERIT:",
+    "FINAL RANKING:",
+    "RANKING:",
+)
+
 
 def build_history_messages(
     prior_messages: List[Dict[str, Any]],
@@ -57,7 +66,7 @@ async def stage1_collect_responses(
     web_search: bool = False,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """
-    Stage 1: Collect individual responses from all council models.
+    Stage 1: put the question to every seat on the council at once.
 
     Returns:
         Tuple of (successful results, failures). Each result has
@@ -99,33 +108,45 @@ def _build_ranking_prompt(
     )
     labels_list = ", ".join(f"Response {label}" for label, _ in labeled_responses)
 
-    return f"""You are evaluating different responses to the following question:
+    return f"""Act as an impartial referee. Several answers to one question are
+set out below. Their authors are withheld from you deliberately, and one of the
+answers may be missing because it was your own — judge only what you are shown.
 
-{context_block}Question: {user_query}
+{context_block}The question put to the council:
 
-Here are the responses from different models (anonymized):
+{user_query}
+
+The answers under review:
 
 {responses_text}
 
-Your task:
-1. First, evaluate each response individually. For each response, assess factual accuracy, depth of insight, completeness, and practical usefulness. Explain what it does well and what it does poorly, and flag any errors or unsupported claims.
-2. Then, at the very end of your response, provide a final ranking of ALL of these responses: {labels_list}.
+Work through this in two parts.
 
-IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
-- Start with the line "FINAL RANKING:" (all caps, with colon)
-- Then list the responses from best to worst as a numbered list
-- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
-- Include every label exactly once
-- Do not add any other text or explanations in the ranking section
+PART ONE — assess each answer on its own terms. Take them one at a time and say,
+for each: whether its factual claims hold up, whether it engaged the actual
+question or drifted to an adjacent one, where its reasoning is load-bearing and
+where it is decorative, and what it omitted that a careful reader would want.
+Name any claim you believe is wrong or unsupported, and say why. Do not soften a
+real objection to seem even-handed, and do not manufacture criticism of an answer
+that is simply good.
 
-Example of the correct format for the end of your response:
+PART TWO — order the answers you were shown, strongest first. Rank on how well
+each one serves someone who has to act on it, not on length or polish. If two are
+genuinely close, break the tie on accuracy before style. If the best answer still
+has a defect, rank it first and say so in Part One rather than demoting it.
 
-FINAL RANKING:
-1. Response C
+Close your reply with the ordering on its own lines, in exactly this shape:
+
+ORDER OF MERIT:
+1. Response B
 2. Response A
-3. Response B
 
-Now provide your evaluation and ranking:"""
+Rules for that closing block: the header on its own line in capitals, one label
+per numbered line and nothing else on the line, every label you were shown
+appearing once and once only, no commentary inside the block. The labels
+available to you are: {labels_list}.
+
+Begin with Part One."""
 
 
 async def stage2_collect_rankings(
@@ -134,7 +155,7 @@ async def stage2_collect_rankings(
     history: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[Dict[str, str]]]:
     """
-    Stage 2: Each model ranks the anonymized responses of its PEERS.
+    Stage 2: every seat referees the others, with authorship withheld.
 
     A model never sees or ranks its own response, which removes
     self-preference bias from the aggregate.
@@ -203,7 +224,7 @@ async def stage3_synthesize_final(
     history: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """
-    Stage 3: Chairman synthesizes final response.
+    Stage 3: the chair settles the council and writes the answer.
 
     The chairman receives the individual responses, the peer evaluations, the
     label→model mapping (so it can connect verdicts to answers), and the
@@ -233,13 +254,15 @@ async def stage3_synthesize_final(
         ) or "No aggregate ranking could be computed."
 
         review_section = f"""
-STAGE 2 - Peer Reviews (each reviewer saw only anonymized responses, and never its own):
+WHAT THE REFEREES SAID
+Each referee saw the others' answers without authorship, and never its own:
+
 {stage2_text}
 
-Label-to-model mapping (reviewers referred to responses by these labels):
+Which label belonged to which model:
 {mapping_text}
 
-Peer-review consensus, best to worst (lower score is better):
+Where the referees landed overall, strongest first — a lower score is better:
 {aggregate_text}
 """
 
@@ -247,25 +270,51 @@ Peer-review consensus, best to worst (lower score is better):
     history_snippet = format_history_snippet(history or [], max_turns=HISTORY_MAX_TURNS)
     if history_snippet:
         context_block = f"""
-Conversation so far (for context — the question below is a continuation):
+WHAT CAME BEFORE
+The question below continues this exchange:
 {history_snippet}
 """
 
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question{', and then anonymously reviewed and ranked each other’s responses' if stage2_results else ''}.
-{context_block}
-Original Question: {user_query}
+    reviewed_clause = (
+        " They then reviewed one another's work without knowing who wrote what."
+        if stage2_results else ""
+    )
 
-STAGE 1 - Individual Responses:
+    chairman_prompt = f"""You are chairing a council. Several models were asked
+the same question and answered independently.{reviewed_clause} Their work is
+below. Yours is to settle it.
+{context_block}
+THE QUESTION
+
+{user_query}
+
+WHAT THE COUNCIL ANSWERED
 {stage1_text}
 {review_section}
-Your task as Chairman is to synthesize all of this into the single best possible answer to the user's original question. Guidelines:
-- Weight the peer-review consensus, but exercise independent judgment — if the top-ranked response contains an error a reviewer caught, correct it.
-- Where the models disagree on substance, resolve the disagreement explicitly rather than averaging over it, and say which position you adopted and why.
-- Preserve concrete, actionable detail from the strongest responses; do not water the answer down to generic advice.
-- If material uncertainty remains (e.g., the council disagreed and neither side is verifiable), state it plainly.
-- Answer the user directly — do not describe the council process in your answer.
+Now write the answer the user should receive. How to weigh what you have:
 
-Provide the final answer now:"""
+Treat the referees as informed opinion, not as instruction. Where they are
+right, follow them. Where the answer they placed first carries a mistake one of
+them caught, take the answer and drop the mistake — you are not bound by the
+order.
+
+Where the council genuinely split on a question of substance, do not average
+the positions into something no member argued. Decide, say which way you went,
+and give the reason in a line.
+
+Keep what is specific. A concrete figure, a named exception, a worked step —
+these are the reason one answer beat another, and they are the first things
+lost to a cautious summary. Do not trade them for safer phrasing.
+
+Where real doubt survives — the council divided and nothing available settles
+it — say so plainly and say what would settle it. A confident answer built over
+an unresolved disagreement is the worst thing you can hand back.
+
+Write to the user directly. They asked a question; they did not ask about the
+council, the referees, or how this answer was assembled. None of that belongs
+in your reply.
+
+Your answer:"""
 
     messages = list(history or []) + [{"role": "user", "content": chairman_prompt}]
 
@@ -292,16 +341,25 @@ def parse_ranking_from_text(
     valid_labels: Optional[List[str]] = None,
 ) -> List[str]:
     """
-    Parse the FINAL RANKING section from the model's response.
+    Pull the closing ordered list out of a referee's reply.
 
     Deduplicates labels (first occurrence wins) and, when valid_labels is
     given, drops any label that wasn't actually in the ranked set — so stray
     "Response X" mentions in prose can't corrupt the ranking.
     """
     section = ranking_text
-    if "FINAL RANKING:" in ranking_text:
-        # Use the LAST occurrence: models sometimes restate the header in prose
-        section = ranking_text.rsplit("FINAL RANKING:", 1)[1]
+    # Take the LAST header present: models restate the header in prose more
+    # often than they emit two genuine blocks, and the real one closes the
+    # reply. RANKING_HEADERS carries the legacy wording because a model that
+    # has seen enough of the internet will sometimes answer in it regardless
+    # of what it was asked for.
+    cut = max(
+        (ranking_text.rfind(header) + len(header) for header in RANKING_HEADERS
+         if header in ranking_text),
+        default=-1,
+    )
+    if cut >= 0:
+        section = ranking_text[cut:]
 
     # Prefer the strict numbered-list format
     matches = re.findall(r"\d+\.\s*(Response [A-Z])", section)

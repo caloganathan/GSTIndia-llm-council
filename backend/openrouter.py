@@ -1,7 +1,18 @@
-"""OpenRouter API client with retries, usage accounting, and reasoning support."""
+"""
+Transport to OpenRouter.
+
+One function matters here: `query_model`. Everything in this module exists to
+make that call return a *result* rather than raise, because a council is a
+fan-out of a dozen concurrent calls and a single upstream hiccup must degrade
+one seat, never the deliberation.
+
+The contract, therefore, is total: every path — network failure, malformed
+body, empty completion, refusal, timeout — returns a dict carrying `ok`.
+Callers branch on that and nothing else.
+"""
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import httpx
 
@@ -13,50 +24,111 @@ from .config import (
     REQUEST_TIMEOUT,
 )
 
-# Statuses worth retrying: rate limits, timeouts, and upstream flakiness.
-RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+# Transient upstream conditions. Anything outside this set is the caller's
+# problem (bad key, bad model id, insufficient credit) and retrying it only
+# delays an error the user needs to see.
+TRANSIENT_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504})
+
+# Backoff between attempts, in seconds. Short by design: these calls sit in
+# front of a user watching a progress indicator.
+BACKOFF_SCHEDULE = (2, 4, 8)
 
 
-def _build_payload(
+def _failed(model: str, reason: str) -> Dict[str, Any]:
+    return {"ok": False, "model": model, "error": reason}
+
+
+def _succeeded(model: str, message: Dict[str, Any],
+               body: Dict[str, Any]) -> Dict[str, Any]:
+    meter = body.get("usage") or {}
+    return {
+        "ok": True,
+        "model": model,
+        "content": message.get("content") or "",
+        "reasoning_details": message.get("reasoning_details"),
+        "usage": {
+            "prompt_tokens": meter.get("prompt_tokens"),
+            "completion_tokens": meter.get("completion_tokens"),
+            "total_tokens": meter.get("total_tokens"),
+            "cost": meter.get("cost"),
+        },
+    }
+
+
+def _compose_request(
     model: str,
-    messages: List[Dict[str, str]],
+    messages: Sequence[Dict[str, str]],
     effort: Optional[str],
     web_search: bool,
-    zdr: bool = False,
-    max_tokens: Optional[int] = None,
-    web_max_results: Optional[int] = None,
+    zdr: bool,
+    max_tokens: Optional[int],
+    web_max_results: Optional[int],
 ) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
+    """Assemble the request body. Optional features are added only when asked
+    for — an unrecognised key is a 400 on some providers."""
+    body: Dict[str, Any] = {
         "model": model,
-        "messages": messages,
-        # Ask OpenRouter to include token counts and dollar cost in the response
+        "messages": list(messages),
+        # Token counts and dollar cost come back on the response, which is the
+        # only way the cost line shown to the user can be truthful.
         "usage": {"include": True},
     }
+
     if effort and effort != "none":
-        payload["reasoning"] = {"effort": effort}
+        body["reasoning"] = {"effort": effort}
+
     if max_tokens:
-        # A cap is a cost control, not a quality control: counsel that runs to
-        # 4,000 tokens where 1,200 would do is padding, not reasoning.
-        payload["max_tokens"] = max_tokens
+        # A ceiling is cost control, not quality control. Counsel that runs to
+        # four thousand tokens where twelve hundred would do is padding.
+        body["max_tokens"] = max_tokens
+
     if web_search:
         plugin: Dict[str, Any] = {"id": "web"}
         if web_max_results:
             plugin["max_results"] = web_max_results
-        payload["plugins"] = [plugin]
+        body["plugins"] = [plugin]
+
     if zdr:
-        # Route only to providers that do not retain or train on prompt data.
-        payload["provider"] = {"data_collection": "deny"}
-    return payload
+        # Confine routing to providers that neither retain nor train on the
+        # prompt. Client facts travel under this flag or not at all.
+        body["provider"] = {"data_collection": "deny"}
+
+    return body
 
 
-def _extract_usage(data: Dict[str, Any]) -> Dict[str, Any]:
-    usage = data.get("usage") or {}
-    return {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-        "cost": usage.get("cost"),
-    }
+def _read_completion(model: str, response: httpx.Response) -> Dict[str, Any]:
+    """
+    Turn a 200 into a result.
+
+    A 200 is not success. OpenRouter returns 200 with an error object for
+    moderation refusals, and 200 with an empty string when a provider gives up
+    mid-generation. Both are failures and are reported as such — a blank
+    counsel opinion silently joining a deliberation is worse than a visible
+    error.
+    """
+    try:
+        body = response.json()
+    except ValueError as exc:
+        return _failed(model, f"response was not JSON: {exc}")
+
+    if not isinstance(body, dict):
+        return _failed(model, "response was not a JSON object")
+
+    if "choices" not in body and "error" in body:
+        detail = body["error"]
+        if isinstance(detail, dict):
+            detail = detail.get("message") or detail
+        return _failed(model, f"provider refused: {detail}")
+
+    try:
+        message = body["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError):
+        return _failed(model, "response carried no completion")
+
+    if not (message.get("content") or "").strip():
+        return _failed(model, "provider returned an empty completion")
+
+    return _succeeded(model, message, body)
 
 
 async def query_model(
@@ -70,92 +142,65 @@ async def query_model(
     web_max_results: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Query a single model via OpenRouter API.
+    Put one prompt to one model and return what came back.
+
+    Never raises. On success the result carries `content`, `reasoning_details`
+    and `usage`; on failure it carries `error`. Both carry `ok` and `model`.
 
     Args:
-        model: OpenRouter model identifier (e.g., "openai/gpt-5.5")
-        messages: List of message dicts with 'role' and 'content'
-        timeout: Request timeout in seconds (defaults to REQUEST_TIMEOUT)
-        effort: Reasoning effort ("low"/"medium"/"high"/"none"; defaults to
-            REASONING_EFFORT). Stripped automatically if the model rejects it.
-        web_search: Enable OpenRouter's web search plugin for this call
-        zdr: Restrict routing to providers that do not retain prompt data
-        max_tokens: Cap on completion length, to stop verbose padding
-        web_max_results: Number of web results when web_search is on
-
-    Returns:
-        On success: {'ok': True, 'model', 'content', 'reasoning_details', 'usage'}
-        On failure: {'ok': False, 'model', 'error'}
+        model: OpenRouter identifier, e.g. "openai/gpt-5.5"
+        messages: chat messages, each with 'role' and 'content'
+        timeout: seconds for the whole request; falls back to REQUEST_TIMEOUT
+        effort: reasoning budget — low, medium, high or none. Falls back to
+            REASONING_EFFORT. Dropped automatically if the provider rejects it.
+        web_search: attach OpenRouter's web plugin to this call
+        zdr: restrict routing to providers that do not retain prompt data
+        max_tokens: ceiling on completion length
+        web_max_results: number of search results when web_search is set
     """
-    timeout = timeout if timeout is not None else REQUEST_TIMEOUT
+    timeout = REQUEST_TIMEOUT if timeout is None else timeout
     effort = REASONING_EFFORT if effort is None else effort
 
-    headers = {
+    credentials = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = _build_payload(model, messages, effort, web_search, zdr,
-                             max_tokens, web_max_results)
-    last_error = "unknown error"
+    body = _compose_request(model, messages, effort, web_search, zdr,
+                            max_tokens, web_max_results)
+
+    setback = "no attempt completed"
+    attempts_spent = 0
 
     async with httpx.AsyncClient(timeout=timeout) as client:
-        attempt = 0
-        while attempt <= MAX_RETRIES:
+        while attempts_spent <= MAX_RETRIES:
             try:
                 response = await client.post(
-                    OPENROUTER_API_URL, headers=headers, json=payload
+                    OPENROUTER_API_URL, headers=credentials, json=body
                 )
-            except httpx.HTTPError as e:
-                last_error = f"network error: {type(e).__name__}: {e}"
+            except httpx.HTTPError as exc:
+                setback = f"network error: {type(exc).__name__}: {exc}"
             else:
                 if response.status_code == 200:
-                    try:
-                        data = response.json()
-                    except ValueError as e:
-                        return {"ok": False, "model": model,
-                                "error": f"invalid JSON from OpenRouter: {e}"}
+                    return _read_completion(model, response)
 
-                    # OpenRouter can return 200 with an error body (e.g. moderation)
-                    if "error" in data and "choices" not in data:
-                        err = data["error"]
-                        return {"ok": False, "model": model,
-                                "error": f"API error: {err.get('message', err)}"}
-
-                    try:
-                        message = data["choices"][0]["message"]
-                    except (KeyError, IndexError, TypeError):
-                        return {"ok": False, "model": model,
-                                "error": "malformed response: missing choices"}
-
-                    content = message.get("content") or ""
-                    if not content.strip():
-                        return {"ok": False, "model": model,
-                                "error": "model returned an empty response"}
-
-                    return {
-                        "ok": True,
-                        "model": model,
-                        "content": content,
-                        "reasoning_details": message.get("reasoning_details"),
-                        "usage": _extract_usage(data),
-                    }
-
-                # Some models reject the reasoning parameter — retry without it,
-                # without consuming the retry budget.
-                if response.status_code == 400 and "reasoning" in payload:
-                    payload.pop("reasoning")
+                # Not every model accepts a reasoning budget. Shed the
+                # parameter and go again — this is a negotiation, not a
+                # failure, so it does not spend the retry allowance.
+                if response.status_code == 400 and "reasoning" in body:
+                    body.pop("reasoning")
                     continue
 
-                last_error = f"HTTP {response.status_code}: {response.text[:300]}"
-                if response.status_code not in RETRYABLE_STATUS:
+                setback = (f"HTTP {response.status_code}: "
+                           f"{response.text[:300]}")
+                if response.status_code not in TRANSIENT_STATUSES:
                     break
 
-            attempt += 1
-            if attempt <= MAX_RETRIES:
-                await asyncio.sleep(2 ** attempt)  # 2s, 4s, ...
+            if attempts_spent < len(BACKOFF_SCHEDULE) and attempts_spent < MAX_RETRIES:
+                await asyncio.sleep(BACKOFF_SCHEDULE[attempts_spent])
+            attempts_spent += 1
 
-    print(f"Error querying model {model}: {last_error}")
-    return {"ok": False, "model": model, "error": last_error}
+    print(f"Model {model} did not answer: {setback}")
+    return _failed(model, setback)
 
 
 async def query_models_parallel(
@@ -164,11 +209,13 @@ async def query_models_parallel(
     web_search: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Query multiple models in parallel with the same messages.
+    Put the same prompt to several models at once.
 
-    Returns:
-        Dict mapping model identifier to its result dict (see query_model)
+    Returns a mapping of model identifier to its individual result. Because
+    `query_model` never raises, a failing seat appears as a failed result
+    beside its successful peers rather than collapsing the gather.
     """
-    tasks = [query_model(model, messages, web_search=web_search) for model in models]
-    responses = await asyncio.gather(*tasks)
-    return {model: response for model, response in zip(models, responses)}
+    seats = [
+        query_model(model, messages, web_search=web_search) for model in models
+    ]
+    return dict(zip(models, await asyncio.gather(*seats)))

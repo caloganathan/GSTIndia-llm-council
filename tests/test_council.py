@@ -12,7 +12,7 @@ class TestParseRanking:
     def test_strict_format(self):
         text = """Response A is decent. Response B is stronger.
 
-FINAL RANKING:
+ORDER OF MERIT:
 1. Response B
 2. Response A
 3. Response C"""
@@ -21,14 +21,14 @@ FINAL RANKING:
         ]
 
     def test_duplicates_deduped(self):
-        text = """FINAL RANKING:
+        text = """ORDER OF MERIT:
 1. Response B
 2. Response B
 3. Response A"""
         assert parse_ranking_from_text(text) == ["Response B", "Response A"]
 
     def test_invalid_labels_dropped(self):
-        text = """FINAL RANKING:
+        text = """ORDER OF MERIT:
 1. Response D
 2. Response A
 3. Response B"""
@@ -38,7 +38,7 @@ FINAL RANKING:
     def test_prose_mentions_after_header_ignored_when_numbered(self):
         text = """As I noted, Response C was weak.
 
-FINAL RANKING:
+ORDER OF MERIT:
 1. Response A
 2. Response B
 3. Response C
@@ -57,16 +57,45 @@ Overall Response C had issues but Response A shined."""
         ]
 
     def test_last_header_occurrence_wins(self):
-        text = """I will provide my FINAL RANKING: below after analysis.
+        text = """I will give my ORDER OF MERIT: below after analysis.
 Response A is good. Response B is bad.
 
-FINAL RANKING:
+ORDER OF MERIT:
 1. Response A
 2. Response B"""
         assert parse_ranking_from_text(text) == ["Response A", "Response B"]
 
     def test_empty(self):
         assert parse_ranking_from_text("no labels here") == []
+
+
+class TestRefereeHeaderTolerance:
+    """
+    The prompt asks for ORDER OF MERIT, but a model that has read enough of the
+    internet will sometimes answer in a format it was never asked for. Losing a
+    whole review to a header mismatch is not an acceptable failure mode.
+    """
+
+    def test_legacy_header_still_parses(self):
+        text = """FINAL RANKING:
+1. Response C
+2. Response A"""
+        assert parse_ranking_from_text(text) == ["Response C", "Response A"]
+
+    def test_bare_ranking_header_parses(self):
+        text = """RANKING:
+1. Response A
+2. Response B"""
+        assert parse_ranking_from_text(text) == ["Response A", "Response B"]
+
+    def test_latest_header_of_any_kind_wins(self):
+        # A model that restates one header in prose and closes with another.
+        text = """My RANKING: will follow. Response B disappointed.
+
+ORDER OF MERIT:
+1. Response A
+2. Response B"""
+        assert parse_ranking_from_text(text) == ["Response A", "Response B"]
 
 
 class TestAggregateRankings:

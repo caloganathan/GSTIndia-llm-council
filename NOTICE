@@ -10,7 +10,7 @@ https://github.com/caloganathan/GSTIndia-llm-council
 ORIGINAL WORK AND ATTRIBUTION
 --------------------------------------------------------------------------
 
-This project began as a derivative of "LLM Council" by Andrej Karpathy:
+This project began from "LLM Council" by Andrej Karpathy:
 
     https://github.com/karpathy/llm-council
 
@@ -19,14 +19,22 @@ general council mode is based — parallel model responses, anonymised peer
 review with self-vote exclusion, and synthesis by a chairman model. Credit
 for that idea belongs to its author.
 
-At the time of writing, the upstream project carries no licence file. The
-author released it publicly stating it was "provided here as is for other
-people's inspiration". Portions of the original scaffolding may survive in
-this repository — principally in the OpenRouter transport layer, the JSON
-storage layer, and parts of the FastAPI routing. Those portions remain the
-copyright of their author and are not licensed by this NOTICE. The Apache
-License 2.0 in the accompanying LICENSE file is granted by CA Loganathan
-Anandan over his own contributions only.
+This acknowledgement is permanent and unconditional. It does not lapse because
+the implementation was rewritten, and it is to be carried forward into every
+further application built on this foundation, in any jurisdiction. The insight
+came first; everything here followed from it.
+
+The upstream project carries no licence file. Its author released it publicly
+stating it was "provided here as is for other people's inspiration". Because
+no licence could be relied upon, the implementation here has since been
+rewritten: the transport layer, the storage layer, the deliberation prompts
+and the request schema were each reimplemented, and what remains in common
+with the original is limited to function signatures, dictionary keys, import
+statements and framework idiom — matter dictated by the libraries in use
+rather than by any authorial choice.
+
+The Apache License 2.0 in the accompanying LICENSE file is granted by
+CA Loganathan Anandan over this work.
 
 --------------------------------------------------------------------------
 ORIGINAL CONTRIBUTIONS OF THIS PROJECT

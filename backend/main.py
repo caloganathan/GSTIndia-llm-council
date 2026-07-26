@@ -64,28 +64,26 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
 MODEL_VALIDATION: Dict[str, Any] = {"checked": False}
 
 
-class CreateConversationRequest(BaseModel):
-    """Request to create a new conversation."""
-    pass
-
-
-class SendMessageRequest(BaseModel):
-    """Request to send a message in a conversation."""
+class CouncilQuestion(BaseModel):
+    """A question put to the general council."""
     content: str
-    mode: str = "full"          # "full" = 3-stage deliberation, "quick" = skip peer review
-    web_search: bool = False    # ground Stage 1 with OpenRouter's web search plugin
+    # "full" runs all three stages; "quick" skips peer review, which is
+    # roughly half the cost and most of the speed.
+    mode: str = "full"
+    # Ground the opening responses with OpenRouter's web search plugin.
+    web_search: bool = False
 
 
-class ConversationMetadata(BaseModel):
-    """Conversation metadata for list view."""
+class ConversationEntry(BaseModel):
+    """One row of the conversation index — enough to render the sidebar."""
     id: str
     created_at: str
     title: str
     message_count: int
 
 
-class Conversation(BaseModel):
-    """Full conversation with all messages."""
+class ConversationRecord(BaseModel):
+    """A conversation with its full message history."""
     id: str
     created_at: str
     title: str
@@ -572,21 +570,19 @@ async def admin_settings(
     }
 
 
-@router.get("/conversations", response_model=List[ConversationMetadata])
+@router.get("/conversations", response_model=List[ConversationEntry])
 async def list_conversations():
-    """List all conversations (metadata only)."""
+    """The conversation index, newest first."""
     return storage.list_conversations()
 
 
-@router.post("/conversations", response_model=Conversation)
-async def create_conversation(request: CreateConversationRequest):
-    """Create a new conversation."""
-    conversation_id = str(uuid.uuid4())
-    conversation = storage.create_conversation(conversation_id)
-    return conversation
+@router.post("/conversations", response_model=ConversationRecord)
+async def create_conversation():
+    """Open a new, empty conversation and return it."""
+    return storage.create_conversation(str(uuid.uuid4()))
 
 
-@router.get("/conversations/{conversation_id}", response_model=Conversation)
+@router.get("/conversations/{conversation_id}", response_model=ConversationRecord)
 async def get_conversation(conversation_id: str):
     """Get a specific conversation with all its messages."""
     conversation = storage.get_conversation(conversation_id)
@@ -604,7 +600,7 @@ async def delete_conversation(conversation_id: str):
 
 
 @router.post("/conversations/{conversation_id}/message")
-async def send_message(conversation_id: str, request: SendMessageRequest):
+async def send_message(conversation_id: str, request: CouncilQuestion):
     """
     Send a message and run the council process (non-streaming).
     Returns the complete response with all stages.
@@ -642,7 +638,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
 
 
 @router.post("/conversations/{conversation_id}/message/stream")
-async def send_message_stream(conversation_id: str, request: SendMessageRequest):
+async def send_message_stream(conversation_id: str, request: CouncilQuestion):
     """
     Send a message and stream the council process.
     Returns Server-Sent Events as each stage completes.
