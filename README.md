@@ -222,6 +222,36 @@ production. A deployment that writes user accounts outside the volume loses
 every account on redeploy, which is why both are stated in `render.yaml`
 rather than inferred.
 
+### Deploying the frontend separately (Vercel, Netlify, Cloudflare Pages)
+
+The API is a stateful, long-running service: it writes conversations, matters
+and user accounts to disk, and a full panel run takes two to four minutes.
+**Serverless platforms cannot host it** — their filesystems are ephemeral, so
+every account and matter would be lost between invocations, and function
+timeouts cut a deliberation off mid-run. Keep the API on a container host with
+a persistent disk.
+
+The frontend is a static bundle and can be served from anywhere. To split it
+out, build with the API's public URL baked in:
+
+```bash
+VITE_API_BASE_URL=https://your-api.onrender.com npm run build
+```
+
+On Vercel, set `VITE_API_BASE_URL` as an environment variable — `vercel.json`
+already points the build at `frontend/` and rewrites unknown paths to
+`index.html` for client-side routing.
+
+Then let the API accept that origin:
+
+```bash
+CORS_ORIGINS=https://council.vercel.app,https://council.yourfirm.in
+CORS_ALLOW_VERCEL_PREVIEWS=true    # optional: accept *.vercel.app preview URLs
+```
+
+Leave both unset for the single-service deployment, where the bundle is
+same-origin and CORS never applies.
+
 ### Health and readiness
 
 | Endpoint | Purpose |

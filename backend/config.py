@@ -83,6 +83,23 @@ def _default_state_dir() -> str:
 
 STATE_DIR = os.getenv("STATE_DIR", "") or _default_state_dir()
 
+# Browser origins permitted to call the API.
+#
+# Only needed for a split deployment, where the UI is served from a different
+# host to the API. In the single-service setup the bundle is same-origin and
+# CORS never applies. Comma-separated, scheme included, no trailing slash:
+#   CORS_ORIGINS=https://council.vercel.app,https://council.yourfirm.in
+CORS_ORIGINS = _env_list("CORS_ORIGINS", [
+    "http://localhost:5173",
+    "http://localhost:3000",
+])
+
+# Permit any *.vercel.app preview URL. Vercel mints a new hostname for every
+# deployment, so listing them individually is not workable. Off unless set.
+CORS_ALLOW_VERCEL_PREVIEWS = os.getenv(
+    "CORS_ALLOW_VERCEL_PREVIEWS", "false"
+).lower() in ("1", "true", "yes")
+
 # Server bind address. Backend runs on port 8001 by default (NOT 8000).
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8001"))
