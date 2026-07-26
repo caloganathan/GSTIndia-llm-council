@@ -17,8 +17,12 @@ This project began from "LLM Council" by Andrej Karpathy:
 That project introduced the multi-model deliberation approach on which the
 general council mode is based — parallel model responses, anonymised peer
 review with self-vote exclusion, and synthesis by a chairman model. Credit
-for that idea belongs to its author, and is recorded here permanently and by
-choice.
+for that idea belongs to its author.
+
+This acknowledgement is permanent and unconditional. It does not lapse because
+the implementation was rewritten, and it is to be carried forward into every
+further application built on this foundation, in any jurisdiction. The insight
+came first; everything here followed from it.
 
 The upstream project carries no licence file. Its author released it publicly
 stating it was "provided here as is for other people's inspiration". Because

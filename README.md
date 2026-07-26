@@ -452,8 +452,13 @@ reimplemented. What remains in common is function signatures, dictionary keys,
 imports and framework idiom — the shape the libraries impose, not anyone's
 authorship.
 
-The credit stands regardless, and stays in [NOTICE](NOTICE) permanently. The
+**The credit stands regardless, and it is not conditional on the code.** The
 idea — several models answering, refereeing one another blind, and a chair
-settling it — is his, and ideas of that quality deserve saying out loud.
+settling it — is Andrej Karpathy's. A rewrite changes whose lines are in the
+file; it does not change whose insight started this. That acknowledgement stays
+in [NOTICE](NOTICE) permanently, and it will travel to every further
+application built on this foundation, whatever the law or the jurisdiction.
+A weekend someone spent being generous is why this exists at all, and saying so
+costs nothing worth keeping.
 
 None of the above is legal advice.
