@@ -119,6 +119,9 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
                       {v ? (
                         <span className="row" style={{ gap: 4 }}>
                           <span className="badge badge-success">{v.verified}</span>
+                          {v.superseded > 0 && (
+                            <span className="badge badge-danger">{v.superseded}</span>
+                          )}
                           {v.unverified > 0 && (
                             <span className="badge badge-warning">{v.unverified}</span>
                           )}

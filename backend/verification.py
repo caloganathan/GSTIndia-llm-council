@@ -5,11 +5,14 @@ misdescribed authority reaching a signing partner. This module extracts every
 authority the chairman relied on and checks it against live sources, then
 labels it:
 
-    VERIFIED    the authority exists and supports the stated proposition
-    UNVERIFIED  it exists but the proposition could not be confirmed, or the
-                check was inconclusive
-    NOT_FOUND   no such authority could be located — treat as fabricated
-                until proven otherwise
+    VERIFIED    exists, supports the stated proposition, and is still good law
+    SUPERSEDED  exists, but has been amended, withdrawn, overruled or stayed —
+                the quiet killer, because a stale authority reads as a sound
+                one and a verifier that only asks "does this exist?" passes it
+    UNVERIFIED  exists but the proposition could not be confirmed, or the check
+                was inconclusive
+    NOT_FOUND   no such authority could be located — treat as fabricated until
+                proven otherwise
 
 Nothing here silently upgrades a doubtful citation. When the checker itself
 fails, the result is UNVERIFIED, never VERIFIED.
@@ -19,11 +22,16 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import config
 from .openrouter import query_model
 
 VERIFIED = "VERIFIED"
+SUPERSEDED = "SUPERSEDED"
 UNVERIFIED = "UNVERIFIED"
 NOT_FOUND = "NOT_FOUND"
+
+# Statuses that must never reach a filing without a reviewer touching them.
+ACTIONABLE = (SUPERSEDED, UNVERIFIED, NOT_FOUND)
 
 # Cap the checks per run so a chatty chairman cannot blow up latency or cost.
 MAX_AUTHORITIES = 25
@@ -100,25 +108,40 @@ def _build_check_prompt(authorities: List[Dict[str, str]], pack) -> str:
     )
     return f"""\
 You are a legal research verifier for an Indian chartered accountancy firm
-working on a {pack.SHORT_NAME} matter. Your ONLY job is to check whether each
-authority below actually exists and whether it says what it is cited for.
+working on a {pack.SHORT_NAME} matter. Your job is to check, for each
+authority below, THREE things:
 
-Search the web for each one. Be sceptical: AI-generated legal drafts routinely
-contain citations that look plausible and do not exist. Finding nothing is a
-legitimate and important result.
+    (a) does it exist, in the form cited?
+    (b) does it say what it is cited for?
+    (c) IS IT STILL GOOD LAW TODAY?
 
-Rules:
-- "{VERIFIED}" ONLY if you found the authority AND it supports the stated
-  proposition (or, where no proposition is stated, the authority plainly
-  exists in the form cited).
-- "{UNVERIFIED}" if it appears to exist but you could not confirm the
-  proposition, the citation details differ, it has been overruled or is under
-  challenge, or your search was inconclusive.
-- "{NOT_FOUND}" if you could not locate it at all. Do not guess that an
-  authority probably exists because the name sounds right.
-- For statutory provisions (sections, rules), verify the provision exists in
-  the relevant Act/Rules and broadly covers the proposition.
-- For circulars and notifications, verify the number and date.
+(c) is the one people skip, and it is the one that causes real damage. A
+circular that was withdrawn last quarter, a decision since reversed on appeal,
+a provision amended with retrospective effect, a notification whose validity
+has been stayed — each of these reads exactly like sound authority and will be
+filed unless you catch it. Search for the current status, not just the
+original text.
+
+Be sceptical throughout: AI-generated legal drafts routinely contain citations
+that look plausible and do not exist. Finding nothing is a legitimate and
+important result.
+
+Assign exactly one status:
+- "{VERIFIED}" — found, supports the proposition, AND still good law. All
+  three. If you did not check currency, it is not {VERIFIED}.
+- "{SUPERSEDED}" — it exists, but has been amended, withdrawn, replaced,
+  overruled, reversed, distinguished into irrelevance, or stayed. Say what
+  replaced it and from when.
+- "{UNVERIFIED}" — appears to exist but you could not confirm the proposition,
+  the citation details differ, or your search was inconclusive.
+- "{NOT_FOUND}" — you could not locate it at all. Do not assume an authority
+  exists because the name sounds right.
+
+Also:
+- For statutory provisions, check for amendments affecting the period in
+  issue, including retrospective ones.
+- For circulars and notifications, verify number and date, and whether it has
+  since been superseded or withdrawn.
 - NEVER mark something {VERIFIED} to be helpful. An incorrect {VERIFIED} is
   worse than every other outcome, because it removes the reviewer's warning.
 
@@ -131,9 +154,10 @@ Return a SINGLE JSON object and nothing else:
   "results": [
     {{
       "index": 1,
-      "status": "{VERIFIED}" | "{UNVERIFIED}" | "{NOT_FOUND}",
+      "status": "{VERIFIED}" | "{SUPERSEDED}" | "{UNVERIFIED}" | "{NOT_FOUND}",
       "note": "one sentence: what you found, or why you could not confirm it",
-      "correction": "the correct citation if the one given is wrong, else empty"
+      "as_of": "the date or period your finding is current as at, if known",
+      "correction": "the citation that now governs, if this one is superseded or wrong; else empty"
     }}
   ]
 }}"""
@@ -162,6 +186,28 @@ def _parse_results(text: str) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+def _summary_note(summary: Dict[str, int]) -> str:
+    """One sentence naming the most serious problem found."""
+    problems = []
+    if summary.get("not_found"):
+        problems.append(
+            f"{summary['not_found']} could not be located and must be removed "
+            "or replaced before filing"
+        )
+    if summary.get("superseded"):
+        problems.append(
+            f"{summary['superseded']} no longer represent the current position "
+            "and must not be relied on as cited"
+        )
+    if problems:
+        return "Of the authorities checked, " + "; ".join(problems) + "."
+    if summary.get("unverified"):
+        return ("No fabricated or superseded authorities detected. Items marked "
+                "UNVERIFIED still require manual confirmation before filing.")
+    return "All authorities were traced, support the propositions cited, and " \
+           "appear to remain good law."
+
+
 async def verify_authorities(
     determination: Dict[str, Any],
     pack,
@@ -178,7 +224,8 @@ async def verify_authorities(
         return {
             "checked": True,
             "authorities": [],
-            "summary": {"verified": 0, "unverified": 0, "not_found": 0, "total": 0},
+            "summary": {"verified": 0, "superseded": 0, "unverified": 0,
+                        "not_found": 0, "total": 0},
             "note": "The determination cited no authorities. For a tax reply "
                     "that is itself a finding worth questioning.",
         }, []
@@ -187,6 +234,10 @@ async def verify_authorities(
         verifier_model,
         [{"role": "user", "content": _build_check_prompt(authorities, pack)}],
         web_search=True,
+        web_max_results=config.WEB_MAX_RESULTS,
+        # Lookup and comparison, not legal reasoning — do not pay for effort here.
+        effort=config.role_effort("verifier"),
+        max_tokens=config.role_max_tokens("verifier"),
     )
     usage = [result.get("usage") if result.get("ok") else None]
 
@@ -202,8 +253,9 @@ async def verify_authorities(
         return {
             "checked": False,
             "authorities": checked,
-            "summary": {"verified": 0, "unverified": len(checked),
-                        "not_found": 0, "total": len(checked)},
+            "summary": {"verified": 0, "superseded": 0,
+                        "unverified": len(checked), "not_found": 0,
+                        "total": len(checked)},
             "note": "The verification service could not be reached. Every "
                     "authority must be checked manually before filing.",
         }, usage
@@ -217,7 +269,7 @@ async def verify_authorities(
             except (TypeError, ValueError):
                 continue
 
-    valid_statuses = {VERIFIED, UNVERIFIED, NOT_FOUND}
+    valid_statuses = {VERIFIED, SUPERSEDED, UNVERIFIED, NOT_FOUND}
     for i, authority in enumerate(authorities, start=1):
         entry = by_index.get(i, {})
         status = str(entry.get("status", "")).upper().strip()
@@ -230,11 +282,13 @@ async def verify_authorities(
             **authority,
             "status": status,
             "note": entry.get("note", "") or "No verification note returned.",
+            "as_of": entry.get("as_of", "") or "",
             "correction": entry.get("correction", "") or "",
         })
 
     summary = {
         "verified": sum(1 for c in checked if c["status"] == VERIFIED),
+        "superseded": sum(1 for c in checked if c["status"] == SUPERSEDED),
         "unverified": sum(1 for c in checked if c["status"] == UNVERIFIED),
         "not_found": sum(1 for c in checked if c["status"] == NOT_FOUND),
         "total": len(checked),
@@ -245,11 +299,5 @@ async def verify_authorities(
         "authorities": checked,
         "summary": summary,
         "verifier_model": verifier_model,
-        "note": (
-            f"{summary['not_found']} authority(ies) could not be located and "
-            "must be removed or replaced before filing."
-            if summary["not_found"] else
-            "No fabricated authorities detected. Items marked UNVERIFIED still "
-            "require manual confirmation."
-        ),
+        "note": _summary_note(summary),
     }, usage

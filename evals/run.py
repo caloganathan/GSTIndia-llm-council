@@ -95,6 +95,18 @@ def write_scorecard(path: Path, summary: Dict[str, Any],
         "",
     ]
 
+    stale = summary.get("superseded_citations") or []
+    if stale:
+        lines += [
+            "> ## \u26a0 SUPERSEDED AUTHORITIES",
+            ">",
+            "> These exist but are no longer good law. They read as sound",
+            "> authority and will be filed unless caught here.",
+            ">",
+        ]
+        lines += [f"> - `{mid}` \u2014 {citation}" for mid, citation in stale]
+        lines.append("")
+
     fabricated = summary.get("fabricated_citations") or []
     if fabricated:
         lines += [
@@ -124,6 +136,7 @@ def write_scorecard(path: Path, summary: Dict[str, Any],
             f"{entry.get('description', '')}",
             "",
             f"- **Citations**: {s['citations']['verified']} verified, "
+            f"{s['citations'].get('superseded', 0)} superseded, "
             f"{s['citations']['unverified']} unverified, "
             f"{s['citations']['not_found']} not found",
             f"- **Issues**: {s['issues']['found']}/{s['issues']['expected']} covered"

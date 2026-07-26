@@ -241,3 +241,57 @@ class TestAggregate:
 
     def test_empty(self):
         assert aggregate([]) == {}
+
+
+class TestSupersededFailsAMatter:
+    """
+    Symmetry with fabrication. A superseded authority is arguably worse: it
+    survives a naive existence check, so nothing downstream stops it.
+    """
+
+    def test_superseded_fails_citation_integrity(self):
+        result = score_citation_integrity({
+            "summary": {"verified": 4, "superseded": 1, "unverified": 0,
+                        "not_found": 0, "total": 5},
+            "authorities": [{"citation": "Circular 183", "status": "SUPERSEDED"}],
+        })
+        assert result["passed"] is False
+        assert result["stale"] == ["Circular 183"]
+
+    def test_clean_run_still_passes(self):
+        result = score_citation_integrity({
+            "summary": {"verified": 5, "superseded": 0, "unverified": 0,
+                        "not_found": 0, "total": 5},
+            "authorities": [],
+        })
+        assert result["passed"] is True
+
+    def test_superseded_fails_the_whole_matter(self):
+        golden = {"id": "g1", "expected": {"issues_expected": ["x"]}}
+        result = {
+            "determination": {"recommended_position": "contest x",
+                              "draft_reply": "d", "issues": [{"issue": "x"}],
+                              "working_note": "w"},
+            "analyses": [], "cross_exams": [],
+            "verification": {
+                "summary": {"verified": 1, "superseded": 1, "unverified": 0,
+                            "not_found": 0, "total": 2},
+                "authorities": [{"citation": "stale one", "status": "SUPERSEDED"}],
+            },
+        }
+        assert score_matter(golden, result, {"usage": {}})["passed"] is False
+
+    def test_aggregate_surfaces_stale_citations(self):
+        golden = {"id": "g1", "expected": {}}
+        result = {
+            "determination": {"recommended_position": "x", "draft_reply": "d",
+                              "issues": [{"issue": "y"}], "working_note": "w"},
+            "analyses": [], "cross_exams": [],
+            "verification": {
+                "summary": {"verified": 0, "superseded": 1, "unverified": 0,
+                            "not_found": 0, "total": 1},
+                "authorities": [{"citation": "Circular 183", "status": "SUPERSEDED"}],
+            },
+        }
+        summary = aggregate([score_matter(golden, result, {"usage": {}})])
+        assert summary["superseded_citations"] == [("g1", "Circular 183")]

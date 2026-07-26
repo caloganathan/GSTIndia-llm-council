@@ -229,3 +229,76 @@ class TestVerifyAuthorities:
         }
         result, _ = await verification.verify_authorities(determination, gst, "m")
         assert result["authorities"][0]["status"] == UNVERIFIED
+
+
+class TestSupersededStatus:
+    """
+    The stale-authority hole. A real circular that was withdrawn last quarter
+    reads exactly like sound authority; a verifier that only asks "does this
+    exist?" passes it straight through to a filing.
+    """
+
+    def test_prompt_demands_a_currency_check(self):
+        from backend.domains import gst
+        prompt = verification._build_check_prompt(
+            [{"citation": "Circular No. 183/15/2022-GST", "proposition": "x"}], gst
+        )
+        assert "IS IT STILL GOOD LAW TODAY?" in prompt
+        assert verification.SUPERSEDED in prompt
+        assert "withdrawn" in prompt and "overruled" in prompt
+
+    def test_superseded_is_actionable(self):
+        assert verification.SUPERSEDED in verification.ACTIONABLE
+        assert verification.VERIFIED not in verification.ACTIONABLE
+
+    async def test_superseded_counted_and_called_out(self, monkeypatch):
+        from backend.domains import gst
+
+        async def query(*args, **kwargs):
+            return {
+                "ok": True,
+                "content": '{"results": [{"index": 1, "status": "SUPERSEDED",'
+                           ' "note": "withdrawn w.e.f. 01.04.2025",'
+                           ' "correction": "Circular No. 220/2025"}]}',
+                "usage": None,
+            }
+
+        monkeypatch.setattr(verification, "query_model", query)
+        determination = {
+            "authorities": [{"citation": "Circular No. 183/15/2022-GST",
+                             "proposition": "2A mismatch"}],
+            "draft_reply": "",
+        }
+        result, _ = await verification.verify_authorities(determination, gst, "m")
+
+        assert result["summary"]["superseded"] == 1
+        assert result["summary"]["verified"] == 0
+        assert "no longer represent the current position" in result["note"]
+        assert result["authorities"][0]["correction"] == "Circular No. 220/2025"
+
+    async def test_as_of_is_carried_through(self, monkeypatch):
+        from backend.domains import gst
+
+        async def query(*args, **kwargs):
+            return {"ok": True, "usage": None,
+                    "content": '{"results": [{"index": 1, "status": "VERIFIED",'
+                               ' "as_of": "July 2026"}]}'}
+
+        monkeypatch.setattr(verification, "query_model", query)
+        result, _ = await verification.verify_authorities(
+            {"authorities": [{"citation": "Section 73", "proposition": "x"}],
+             "draft_reply": ""}, gst, "m")
+        assert result["authorities"][0]["as_of"] == "July 2026"
+
+    async def test_clean_run_says_so_plainly(self, monkeypatch):
+        from backend.domains import gst
+
+        async def query(*args, **kwargs):
+            return {"ok": True, "usage": None,
+                    "content": '{"results": [{"index": 1, "status": "VERIFIED"}]}'}
+
+        monkeypatch.setattr(verification, "query_model", query)
+        result, _ = await verification.verify_authorities(
+            {"authorities": [{"citation": "Section 73", "proposition": "x"}],
+             "draft_reply": ""}, gst, "m")
+        assert "remain good law" in result["note"]

@@ -5,6 +5,8 @@ identical across domains — only the injected domain pack changes, which is
 what makes adding the Income Tax pack a matter of days rather than weeks.
 
 Stages
+    0  current-law briefing: one shared web search, so counsel do not argue
+       from a training snapshot on provisions that have since moved
     1  opening analyses, in parallel
     2  cross-examination: each counsel attacks the other three
     3  chairman determination, returned as structured JSON
@@ -16,7 +18,7 @@ import json
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from . import config, sanitizer
+from . import config, grounding, sanitizer
 from .domains import get_pack
 from .openrouter import query_model
 from .roles import (
@@ -172,15 +174,32 @@ async def run_panel_stream(
         "roles": [r.as_dict() for r in PANEL_ROLES],
     }
 
+    # ---- Stage 0: current-law briefing -----------------------------------
+    # One web-grounded search, shared by every counsel. Cheaper than grounding
+    # each seat separately, and it keeps the whole panel arguing from the same
+    # facts. Never fatal: if it fails, counsel are told they are working blind.
+    briefing: Optional[Dict[str, Any]] = None
+    briefing_usage: List[Optional[Dict[str, Any]]] = []
+
+    if config.PANEL_WEB_GROUNDING:
+        yield {"type": "grounding_start"}
+        briefing, usage = await grounding.build_briefing(working_matter, pack, tier)
+        briefing_usage.append(usage)
+        yield {"type": "grounding_complete", "data": briefing}
+
+    briefing_text = grounding.briefing_block(briefing)
+
     # ---- Stage 1: opening analyses ---------------------------------------
     yield {"type": "stage1_start"}
 
     async def run_counsel(role):
-        prompt = build_role_prompt(role, working_matter, pack)
+        prompt = build_role_prompt(role, working_matter, pack, briefing_text)
         result = await query_model(
             models.get(role.key, models["chairman"]),
             [{"role": "user", "content": prompt}],
             zdr=zdr,
+            effort=config.role_effort(role.key),
+            max_tokens=config.role_max_tokens("opening"),
         )
         return role, result
 
@@ -237,6 +256,8 @@ async def run_panel_stream(
                 models.get(role.key, models["chairman"]),
                 [{"role": "user", "content": prompt}],
                 zdr=zdr,
+                effort=config.role_effort("cross_exam"),
+                max_tokens=config.role_max_tokens("cross_exam"),
             )
             return role, result
 
@@ -269,12 +290,14 @@ async def run_panel_stream(
     yield {"type": "stage3_start"}
 
     chairman_prompt = build_chairman_prompt(
-        working_matter, pack, analyses, cross_exams
+        working_matter, pack, analyses, cross_exams, briefing_text
     )
     chairman_result = await query_model(
         models["chairman"],
         [{"role": "user", "content": chairman_prompt}],
         zdr=zdr,
+        effort=config.role_effort("chairman"),
+        max_tokens=config.role_max_tokens("chairman"),
     )
     chairman_usage = [_usage_of(chairman_result)]
 
@@ -310,7 +333,8 @@ async def run_panel_stream(
         cross_exams = sanitizer.restore_structure(cross_exams, replacements)
         determination = sanitizer.restore_structure(determination, replacements)
 
-    usage = _sum_usage(stage1_usage, stage2_usage, chairman_usage, verify_usage)
+    usage = _sum_usage(briefing_usage, stage1_usage, stage2_usage,
+                       chairman_usage, verify_usage)
 
     yield {
         "type": "summary",
@@ -319,6 +343,7 @@ async def run_panel_stream(
             "cross_exams": cross_exams,
             "determination": determination,
             "verification": verification,
+            "briefing": briefing,
         },
         "metadata": {
             "domain": domain,
@@ -328,6 +353,7 @@ async def run_panel_stream(
             "allow_export": tier["allow_export"],
             "watermark": tier["watermark"],
             "models": models,
+            "grounded": bool(briefing and briefing.get("available")),
             "failures": {"stage1": stage1_failures, "stage2": stage2_failures},
             "usage": usage,
         },

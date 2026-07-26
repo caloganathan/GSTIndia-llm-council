@@ -134,12 +134,17 @@ FREE_ROLE_MODELS = {
 VERIFIER_MODEL = os.getenv("VERIFIER_MODEL", "google/gemini-3.1-pro-preview")
 FREE_VERIFIER_MODEL = os.getenv("FREE_VERIFIER_MODEL", "deepseek/deepseek-r1:free")
 
+# Model that produces the opening current-law briefing (needs web search)
+GROUNDING_MODEL = os.getenv("GROUNDING_MODEL", "google/gemini-3.1-pro-preview")
+FREE_GROUNDING_MODEL = os.getenv("FREE_GROUNDING_MODEL", "deepseek/deepseek-r1:free")
+
 TIERS = {
     "free": {
         "key": "free",
         "label": "Free Council",
         "models": FREE_ROLE_MODELS,
         "verifier": FREE_VERIFIER_MODEL,
+        "grounding": FREE_GROUNDING_MODEL,
         # Enforced, not advisory: identifiers are stripped before any call.
         "anonymise": True,
         "allow_export": False,
@@ -153,6 +158,7 @@ TIERS = {
         "label": "Pro Council",
         "models": PRO_ROLE_MODELS,
         "verifier": VERIFIER_MODEL,
+        "grounding": GROUNDING_MODEL,
         "anonymise": False,
         "allow_export": True,
         "watermark": None,
@@ -162,6 +168,64 @@ TIERS = {
 }
 
 DEFAULT_TIER = os.getenv("DEFAULT_PANEL_TIER", "pro")
+
+# ---------------------------------------------------------------------------
+# Token routing
+# ---------------------------------------------------------------------------
+# Effort and output length are set per seat rather than globally. A verifier
+# performing lookups does not need the reasoning budget that Procedural
+# Counsel needs to compute limitation, and paying for it on every call is
+# waste that compounds across ten calls a run.
+
+ROLE_EFFORT = {
+    "revenue": os.getenv("EFFORT_REVENUE", "medium"),
+    "assessee": os.getenv("EFFORT_ASSESSEE", "medium"),
+    # Limitation arithmetic and jurisdiction are where matters are won or lost.
+    "procedural": os.getenv("EFFORT_PROCEDURAL", "high"),
+    "risk": os.getenv("EFFORT_RISK", "medium"),
+    # The chairman is making the decision the firm signs.
+    "chairman": os.getenv("EFFORT_CHAIRMAN", "high"),
+    # Cross-examination is critique of material already reasoned about.
+    "cross_exam": os.getenv("EFFORT_CROSS_EXAM", "medium"),
+    # Both of these are retrieval and summarising, not legal reasoning.
+    "briefing": os.getenv("EFFORT_BRIEFING", "low"),
+    "verifier": os.getenv("EFFORT_VERIFIER", "low"),
+}
+
+# Completion caps. These stop padding, not reasoning — a counsel that runs to
+# 4,000 tokens where 1,500 would do is repeating itself.
+ROLE_MAX_TOKENS = {
+    "opening": int(os.getenv("MAX_TOKENS_OPENING", "2200")),
+    "cross_exam": int(os.getenv("MAX_TOKENS_CROSS_EXAM", "1400")),
+    "chairman": int(os.getenv("MAX_TOKENS_CHAIRMAN", "4500")),
+    "briefing": int(os.getenv("MAX_TOKENS_BRIEFING", "1200")),
+    "verifier": int(os.getenv("MAX_TOKENS_VERIFIER", "1800")),
+}
+
+
+def role_effort(key: str) -> str:
+    return ROLE_EFFORT.get(key, REASONING_EFFORT)
+
+
+def role_max_tokens(key: str) -> int:
+    return ROLE_MAX_TOKENS.get(key, 2000)
+
+
+# ---------------------------------------------------------------------------
+# Current-law grounding
+# ---------------------------------------------------------------------------
+# Verification catches a citation that does not exist. It does not, on its own,
+# catch one that exists but has been superseded — and in GST the things that
+# move are exactly the things in dispute: amnesty windows, GSTAT procedure,
+# retrospective ITC relief, rate changes, limitation extensions.
+#
+# So the panel opens with a single shared web-grounded briefing on the current
+# position, injected into every counsel. One search per run rather than one
+# per counsel: cheaper, and every counsel argues from the same facts.
+PANEL_WEB_GROUNDING = os.getenv("PANEL_WEB_GROUNDING", "true").lower() in (
+    "1", "true", "yes"
+)
+WEB_MAX_RESULTS = int(os.getenv("WEB_MAX_RESULTS", "6"))
 
 # Ask OpenRouter to route only to providers that do not retain prompt data.
 ENFORCE_ZDR = os.getenv("ENFORCE_ZDR", "true").lower() in ("1", "true", "yes")

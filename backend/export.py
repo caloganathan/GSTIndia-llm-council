@@ -23,7 +23,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from . import config
-from .verification import NOT_FOUND, UNVERIFIED, VERIFIED
+from .verification import ACTIONABLE, NOT_FOUND, SUPERSEDED, UNVERIFIED, VERIFIED
 
 BLACK = RGBColor(0x00, 0x00, 0x00)
 GREY = RGBColor(0x40, 0x40, 0x40)
@@ -35,6 +35,7 @@ BODY_SIZE = Pt(11)
 # internal vocabulary of the verification layer is not what they need to read.
 STATUS_LABEL = {
     VERIFIED: "Verified",
+    SUPERSEDED: "Superseded",
     UNVERIFIED: "To be confirmed",
     NOT_FOUND: "Not traced",
 }
@@ -309,7 +310,10 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
 
     if authorities:
         summary = verification.get("summary") or {}
-        outstanding = (summary.get("unverified", 0) or 0) + (summary.get("not_found", 0) or 0)
+        outstanding = sum(
+            summary.get(k, 0) or 0
+            for k in ("superseded", "unverified", "not_found")
+        )
         if outstanding:
             _para(doc,
                   f"{outstanding} of {summary.get('total', len(authorities))} "
@@ -338,9 +342,12 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
             _set_cell(cells[3], remark)
         _para(doc, space_after=Pt(4))
         _para(doc,
-              "'Verified' indicates the authority was traced and supports the "
-              "proposition for which it is cited. 'To be confirmed' and 'Not "
-              "traced' are to be settled against the reported text before filing.",
+              "'Verified' indicates the authority was traced, supports the "
+              "proposition for which it is cited, and appears to remain good "
+              "law. 'Superseded' indicates it has been amended, withdrawn, "
+              "overruled or stayed and must not be relied on as cited. 'To be "
+              "confirmed' and 'Not traced' are to be settled against the "
+              "reported text before filing.",
               italic=True, size=Pt(9))
     else:
         _para(doc,
@@ -350,9 +357,7 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
     # ---- 5. Points for reviewer attention --------------------------------
     risk_flags = determination.get("risk_flags") or []
     open_questions = determination.get("open_questions") or []
-    unresolved = [
-        a for a in authorities if a.get("status") in (UNVERIFIED, NOT_FOUND)
-    ]
+    unresolved = [a for a in authorities if a.get("status") in ACTIONABLE]
 
     if risk_flags or open_questions or unresolved:
         _heading(doc, "5.  Points for Reviewer Attention", 1)
@@ -362,9 +367,13 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
             _para(doc, f"{counter}.  {flag}")
         for authority in unresolved:
             counter += 1
-            _para(doc, f"{counter}.  Authority to be confirmed before filing: "
-                       f"{authority.get('citation', '')} "
-                       f"({STATUS_LABEL.get(authority.get('status'), 'to be confirmed')}).")
+            status = authority.get("status")
+            label = STATUS_LABEL.get(status, "to be confirmed")
+            detail = f" {authority.get('correction')}" if authority.get("correction") else ""
+            action = ("must not be relied on as cited"
+                      if status == SUPERSEDED else "to be confirmed before filing")
+            _para(doc, f"{counter}.  Authority {action}: "
+                       f"{authority.get('citation', '')} ({label}).{detail}")
         for question in open_questions:
             counter += 1
             _para(doc, f"{counter}.  {question}")
