@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import Deliberation from './Deliberation';
 import { Loading } from './shared';
@@ -19,6 +19,9 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
   const [result, setResult] = useState({ analyses: [], cross_exams: [] });
   const [metadata, setMetadata] = useState(null);
   const [error, setError] = useState('');
+  const [reading, setReading] = useState(false);
+  const [readResult, setReadResult] = useState(null);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -44,6 +47,25 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
   const required = schema.fields.filter((f) => f.required);
   const missing = required.filter((f) => !String(form[f.key] || '').trim());
   const canRun = missing.length === 0 && !running;
+
+  const onFile = async (file) => {
+    if (!file) return;
+    setReading(true);
+    setError('');
+    setReadResult(null);
+    try {
+      const result = await api.extractNotice(file, { tier });
+      // Everything read from the notice is a PROPOSAL. It pre-fills the form
+      // for the user to correct — it is never treated as confirmed.
+      setForm((current) => ({ ...current, ...result.fields }));
+      setReadResult({ ...result, filename: file.name });
+    } catch (err) {
+      if (!onAuthError(err)) setError(err.message);
+    } finally {
+      setReading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
 
   const run = async () => {
     setRunning(true);
@@ -183,6 +205,51 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
             amounts are stripped before any request leaves this machine, and
             restored only in what you read here. Free-tier output is research
             grade and cannot be exported as a reply pack.
+          </div>
+        )}
+      </div>
+
+      <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+        <div className="section-title">Upload the notice</div>
+        <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.docx,.txt"
+            onChange={(e) => onFile(e.target.files?.[0])}
+            disabled={reading}
+            style={{ width: 'auto', flex: 1, minWidth: 240 }}
+          />
+          {reading && (
+            <span className="row" style={{ gap: 'var(--sp-2)' }}>
+              <span className="spinner" />
+              <span className="muted">Reading…</span>
+            </span>
+          )}
+        </div>
+        <div className="field-help">
+          PDF, Word or text. The file is read in memory and never stored.
+          Identifiers, dates, amounts and jurisdiction are read locally without
+          any model. Everything below is a proposal for you to check.
+        </div>
+
+        {readResult && (
+          <div style={{ marginTop: 'var(--sp-3)' }}>
+            <div className="row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+              <span className="badge badge-success">
+                {readResult.filename} read
+              </span>
+              {Object.entries(readResult.sources || {}).map(([field, origin]) => (
+                <span key={field} className="badge">
+                  {field.replace(/_/g, ' ')} · {origin}
+                </span>
+              ))}
+            </div>
+            {(readResult.warnings || []).length > 0 && (
+              <div className="alert alert-warning" style={{ marginTop: 'var(--sp-3)' }}>
+                {readResult.warnings.map((w, i) => <div key={i}>{w}</div>)}
+              </div>
+            )}
           </div>
         )}
       </div>

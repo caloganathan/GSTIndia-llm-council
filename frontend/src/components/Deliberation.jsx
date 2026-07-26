@@ -87,6 +87,11 @@ function Authorities({ verification }) {
             )}
           </div>
         </div>
+        <div className="field-help" style={{ marginTop: 'var(--sp-2)' }}>
+          Checked against public sources on the open web. This is not a
+          licensed citator — an authority shown as Verified should still be
+          read before it is relied on.
+        </div>
         {verification.note && (
           <div
             className={`alert ${
