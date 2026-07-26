@@ -6,8 +6,8 @@
 > The original multi-model deliberation engine was conceived and open-sourced by
 > [Andrej Karpathy](https://github.com/karpathy). This repository extends it into a
 > domain-specific compliance tool for Indian tax practice.
-> Extended and maintained by **[CA Loganathan Anandan](https://www.linkedin.com/in/loganathananandam/)**,
-> Chartered Accountant — JCSS Management Consulting, India & Indonesia.
+> **Extended and maintained on [CA Loganathan Anandan's GST LLM Council](https://github.com/caloganathan/GSTIndia-llm-council).** by **[CA Loganathan Anandan](https://www.linkedin.com/in/caloganathan)**,
+> Chartered Accountant - India, Indonesia & Singapore.
 
 Two modes in one application:
 
