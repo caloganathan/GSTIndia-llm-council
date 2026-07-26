@@ -1,11 +1,17 @@
 .git
+.github
 .env
 .venv
 data/
+evals/golden/
+evals/results/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 __pycache__/
+**/__pycache__/
 *.pyc
 tests/
 header.jpg
+*.md
+!README.md

@@ -58,6 +58,31 @@ OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 # Data directory for conversation storage (point at a persistent volume in prod)
 DATA_DIR = os.getenv("DATA_DIR", "data/conversations")
 
+# Root for all other persisted state: matters, user accounts, sessions.
+#
+# Derived from DATA_DIR by default so a single setting still works, but stated
+# explicitly because deriving it was a data-loss bug: DATA_DIR="/app/data/"
+# with a trailing slash resolved the parent to "/app", putting users.json
+# OUTSIDE the mounted volume where it vanished on every redeploy. Set
+# STATE_DIR directly to remove all doubt.
+def _default_state_dir() -> str:
+    normalised = DATA_DIR.rstrip("/\\")
+    if not normalised:
+        return "data"
+
+    # Only step up when DATA_DIR is clearly the conversations subdirectory of a
+    # state root ("<root>/conversations"). Anything else is treated as the root
+    # itself, so DATA_DIR="/app/data/" keeps state inside /app/data rather than
+    # writing it to /app, which on a container is outside the mounted volume.
+    if os.path.basename(normalised).lower() == "conversations":
+        parent = os.path.dirname(normalised)
+        if parent and parent not in ("/", "."):
+            return parent
+    return normalised
+
+
+STATE_DIR = os.getenv("STATE_DIR", "") or _default_state_dir()
+
 # Server bind address. Backend runs on port 8001 by default (NOT 8000).
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8001"))

@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,7 +26,24 @@ from .domains import available_domains, get_pack
 from .panel import run_panel_stream
 from .roles import PANEL_ROLES
 
-app = FastAPI(title="LLM Council API")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """
+    Startup work, none of which may prevent the service from coming up.
+
+    A deployment that refuses to start because the model catalogue was briefly
+    unreachable is worse than one that starts and reports the problem on its
+    health endpoint.
+    """
+    for step in (ensure_state_dirs, bootstrap_users, validate_models):
+        try:
+            await step()
+        except Exception as e:  # noqa: BLE001 - startup must never be fatal
+            print(f"Startup step {step.__name__} failed (continuing): {e}")
+    yield
+
+
+app = FastAPI(title="LLM Council API", lifespan=lifespan)
 
 # CORS for local development (in production the frontend is served same-origin)
 app.add_middleware(
@@ -106,6 +125,25 @@ class PanelRunRequest(BaseModel):
 async def healthz():
     """Unauthenticated liveness probe (used by the hosting platform)."""
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """
+    Unauthenticated readiness probe.
+
+    Reports the things that make a deployment useless even though the process
+    is alive: no API key, or state that cannot be persisted.
+    """
+    checks = {
+        "api_key_configured": bool(config.OPENROUTER_API_KEY),
+        "state_writable": STATE_WRITABLE.get("ok"),
+        "frontend_bundled": FRONTEND_DIST.is_dir(),
+        "auth_enabled": bool(config.APP_ACCESS_TOKEN) or users.user_count() > 0,
+    }
+    ready = bool(checks["api_key_configured"]) and checks["state_writable"] is not False
+    return {"status": "ready" if ready else "degraded", "checks": checks,
+            "state_dir": config.STATE_DIR, "data_dir": config.DATA_DIR}
 
 
 @router.get("/auth/check")
@@ -589,7 +627,34 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 app.include_router(router)
 
 
-@app.on_event("startup")
+STATE_WRITABLE: Dict[str, Any] = {"ok": None}
+
+
+async def ensure_state_dirs():
+    """
+    Create the persistence directories and prove they are writable.
+
+    On a container with a misconfigured volume mount this is the difference
+    between finding out at startup and finding out when a partner loses a
+    deliberation they have just paid for.
+    """
+    paths = [config.DATA_DIR, os.path.join(config.STATE_DIR, "matters")]
+    for path in paths:
+        Path(path).mkdir(parents=True, exist_ok=True)
+
+    probe = Path(config.STATE_DIR) / ".write-probe"
+    try:
+        probe.write_text("ok")
+        probe.unlink()
+        STATE_WRITABLE.update({"ok": True, "state_dir": config.STATE_DIR})
+        print(f"State directory ready: {config.STATE_DIR}")
+    except OSError as e:
+        STATE_WRITABLE.update({"ok": False, "state_dir": config.STATE_DIR,
+                               "error": str(e)})
+        print(f"WARNING: {config.STATE_DIR} is not writable ({e}). "
+              "Matters and user accounts cannot be saved. Check the volume mount.")
+
+
 async def bootstrap_users():
     """Create the first partner account when the user store is empty."""
     try:
@@ -598,7 +663,6 @@ async def bootstrap_users():
         print(f"Could not bootstrap the admin account: {e}")
 
 
-@app.on_event("startup")
 async def validate_models():
     """Check configured model IDs against OpenRouter's catalog (best-effort)."""
     configured = set(config.COUNCIL_MODELS) | {config.CHAIRMAN_MODEL, config.TITLE_MODEL}
