@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import Deliberation from './Deliberation';
-import { Loading } from './shared';
+import { ConfidenceBadge, Loading } from './shared';
+import { formatCurrency } from '../format';
 
 const STAGE_LABELS = {
   stage1: 'Opening analyses',
@@ -21,7 +22,10 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
   const [error, setError] = useState('');
   const [reading, setReading] = useState(false);
   const [readResult, setReadResult] = useState(null);
+  const [recon, setRecon] = useState(null);
+  const [reconciling, setReconciling] = useState(false);
   const fileRef = useRef(null);
+  const reconRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -67,6 +71,21 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
     }
   };
 
+  const onReconFile = async (file) => {
+    if (!file) return;
+    setReconciling(true);
+    setError('');
+    try {
+      setRecon({ ...(await api.uploadReconciliation(file, { tier })),
+                 filename: file.name });
+    } catch (err) {
+      if (!onAuthError(err)) setError(err.message);
+    } finally {
+      setReconciling(false);
+      if (reconRef.current) reconRef.current.value = '';
+    }
+  };
+
   const run = async () => {
     setRunning(true);
     setError('');
@@ -77,7 +96,8 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
     let matterId = null;
     try {
       await api.runPanel(
-        { intake: form, domain: 'gst', tier },
+        { intake: recon ? { ...form, reconciliation: recon } : form,
+          domain: 'gst', tier },
         (type, event) => {
           switch (type) {
             case 'matter_created':
@@ -311,6 +331,65 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
         </div>
 
         {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
+
+        <div className="section-title" style={{ marginTop: 'var(--sp-5)' }}>
+          Reconciliation (optional)
+        </div>
+        <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
+          <input
+            ref={reconRef}
+            type="file"
+            accept=".xlsx,.xlsm,.csv"
+            onChange={(e) => onReconFile(e.target.files?.[0])}
+            disabled={reconciling}
+            style={{ width: 'auto', flex: 1, minWidth: 240 }}
+          />
+          {reconciling && (
+            <span className="row" style={{ gap: 'var(--sp-2)' }}>
+              <span className="spinner" /><span className="muted">Reconciling…</span>
+            </span>
+          )}
+        </div>
+        <div className="field-help">
+          Your 2A/3B working, as Excel or CSV. Parsed and bucketed on this
+          machine — only the totals reach the panel, never the rows. A remarks
+          column describing each difference gives a materially better result.
+        </div>
+
+        {recon && (
+          <div style={{ marginTop: 'var(--sp-4)' }}>
+            <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <strong>{recon.filename}</strong>
+              <span className="muted">
+                {formatCurrency(recon.total)} across {recon.row_count} lines
+              </span>
+            </div>
+            <div className="table-wrap" style={{ marginTop: 'var(--sp-2)' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Category</th><th>Amount</th><th>Share</th><th>Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recon.buckets.map((b) => (
+                    <tr key={b.key}>
+                      <td>{b.label}</td>
+                      <td>{formatCurrency(b.amount)}</td>
+                      <td>{(b.share * 100).toFixed(0)}%</td>
+                      <td><ConfidenceBadge value={b.strength} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(recon.warnings || []).length > 0 && (
+              <div className="alert alert-warning" style={{ marginTop: 'var(--sp-3)' }}>
+                {recon.warnings.map((w, i) => <div key={i}>{w}</div>)}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="row" style={{ justifyContent: 'space-between', marginTop: 'var(--sp-4)' }}>
           <div className="muted" style={{ fontSize: 'var(--text-sm)' }}>
