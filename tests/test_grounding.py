@@ -181,22 +181,34 @@ class TestTokenRouting:
 class TestPayloadWiring:
     """The routing decisions must actually reach the wire."""
 
+    @staticmethod
+    def _body(effort="low", web_search=False, zdr=False,
+              max_tokens=None, web_max_results=None):
+        from backend.openrouter import _compose_request
+        return _compose_request("m", [], effort, web_search, zdr,
+                                max_tokens, web_max_results)
+
     def test_max_tokens_reaches_the_payload(self):
-        from backend.openrouter import _build_payload
-        payload = _build_payload("m", [], "low", False, max_tokens=900)
-        assert payload["max_tokens"] == 900
+        assert self._body(max_tokens=900)["max_tokens"] == 900
 
     def test_omitted_when_unset(self):
-        from backend.openrouter import _build_payload
-        assert "max_tokens" not in _build_payload("m", [], "low", False)
+        assert "max_tokens" not in self._body()
 
     def test_web_result_count_reaches_the_plugin(self):
-        from backend.openrouter import _build_payload
-        payload = _build_payload("m", [], "low", True, web_max_results=6)
-        assert payload["plugins"] == [{"id": "web", "max_results": 6}]
+        body = self._body(web_search=True, web_max_results=6)
+        assert body["plugins"] == [{"id": "web", "max_results": 6}]
 
     def test_zdr_and_search_coexist(self):
-        from backend.openrouter import _build_payload
-        payload = _build_payload("m", [], "low", True, zdr=True, web_max_results=3)
-        assert payload["provider"] == {"data_collection": "deny"}
-        assert payload["plugins"][0]["id"] == "web"
+        body = self._body(web_search=True, zdr=True, web_max_results=3)
+        assert body["provider"] == {"data_collection": "deny"}
+        assert body["plugins"][0]["id"] == "web"
+
+    def test_zdr_absent_unless_asked(self):
+        # The confidentiality flag must never be set by accident, in either
+        # direction: absent when not requested, exact when requested.
+        assert "provider" not in self._body()
+
+    def test_usage_accounting_always_requested(self):
+        # The cost figure shown to the user is only truthful if every call
+        # asks for it.
+        assert self._body()["usage"] == {"include": True}

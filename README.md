@@ -442,19 +442,18 @@ build on it commercially. The conditions are the ordinary Apache ones: keep
 the copyright notice, keep the [NOTICE](NOTICE) file, and state what you
 changed.
 
-**One thing to be aware of before you redistribute.** This project began as a
-derivative of [karpathy/llm-council](https://github.com/karpathy/llm-council),
-which **carries no licence file**. Under default copyright that means the
-upstream author reserves all rights, and a licence cannot be granted over his
-code by anyone else. The Apache grant above therefore covers this project's
-own contributions only — which is the overwhelming majority of the codebase,
-but not the whole of it. Portions of the original scaffolding may survive in
-the OpenRouter transport, the JSON storage layer and parts of the FastAPI
-routing.
+**On the origin of this project.** It began from
+[karpathy/llm-council](https://github.com/karpathy/llm-council), which carries
+no licence file — its author released it stating it was "provided here as is
+for other people's inspiration". Since no licence could be relied upon, the
+inherited implementation has been rewritten: the transport layer, the storage
+layer, the deliberation prompts and the request schema were each
+reimplemented. What remains in common is function signatures, dictionary keys,
+imports and framework idiom — the shape the libraries impose, not anyone's
+authorship.
 
-In practice: running this in your own firm is uncontroversial. If you intend
-to redistribute or commercialise a derivative, form your own view on those
-portions, or replace them — they are a few hundred lines of ordinary
-plumbing. The [NOTICE](NOTICE) file records the position in full.
+The credit stands regardless, and stays in [NOTICE](NOTICE) permanently. The
+idea — several models answering, refereeing one another blind, and a chair
+settling it — is his, and ideas of that quality deserve saying out loud.
 
 None of the above is legal advice.
