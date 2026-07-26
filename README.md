@@ -14,6 +14,52 @@ table, risk flags, board summary, and a working note for the file.
 **General Council** — the original multi-model council, for open research
 questions rather than a specific notice.
 
+## What this actually does — a handover note for smaller practices
+
+If you're forking this to run in your own firm, here is the plain-language
+version to pass to whoever will actually use it day to day.
+
+**What it's for.** You upload a GST notice. Four AI "counsel" argue it from
+different angles — the department's case, the assessee's case, procedure and
+limitation, and risk and ethics — then a "chairman" decides the firm's
+position and drafts a reply. Every case citation in that draft is checked
+against current sources before anyone sees it, and marked Verified /
+Superseded / To be confirmed rather than trusted blindly. If you also have a
+2A/2B-vs-3B reconciliation working, upload the Excel — the ITC mismatch is
+auto-sorted into categories (timing, RCM, import IGST, non-filing supplier,
+genuinely ineligible, etc.) and the draft reply addresses each category with
+its own figures, instead of arguing one lump-sum number.
+
+**What it produces.** A Word document formatted like a normal firm output —
+Arial, monochrome, bold headings, nothing that reads as machine-generated —
+containing the draft reply, an issue-wise analysis, a schedule of
+authorities, risk flags for a reviewing partner, and a note for the file.
+
+**Two tiers, and why.** *Free* strips the client's name, GSTIN and PAN before
+anything leaves the machine — good for a first read, export is disabled.
+*Pro* sends full facts through zero-retention routing and enables export —
+use this for anything actually going to the department.
+
+**Instructions to hand to your team:**
+
+1. Log in with the credentials you were given.
+2. New Matter → upload the notice (and the reconciliation Excel, if you have
+   one).
+3. Check the auto-extracted facts (GSTIN, dates, amounts, section) — correct
+   anything wrong before running the panel.
+4. Choose Free (quick check) or Pro (real work) and run it.
+5. Read all four counsel opinions and the chairman's determination. **This is
+   a draft for professional review, not a filing.** Any citation marked "to be
+   confirmed" or "not traced" must be checked against the reported text before
+   it goes anywhere near a signature.
+6. Edit as needed, export to Word, and route it through the firm's normal
+   sign-off — a partner reads and signs every output, same as a junior's
+   draft today.
+
+**The one honest caveat to give them up front:** this is new and still being
+validated notice by notice. Treat its output as a strong first draft from a
+very well-read junior — not a substitute for the partner's judgment.
+
 ## The Compliance Panel
 
 ### Why the counsel are organised this way
@@ -58,6 +104,36 @@ Everything extracted is a **proposal**, shown with its source, for the user to
 correct before the panel runs. Scanned notices with no text layer are reported
 honestly rather than guessed at — OCR is deliberately out of scope, because a
 wrong OCR read is worse than an empty field.
+
+### Reconciliation ingestion (2A/2B vs 3B)
+
+ITC-mismatch notices are answered with numbers, not just argument, and the
+architecture reflects one hard constraint: **the reconciliation rows never
+reach a model.** A real working is thousands of invoice lines — on the order
+of 500,000 tokens — and it is third-party supplier data the client has no
+business disclosing to an external API. Bucketing the mismatch is
+deterministic arithmetic, so it happens locally in Python. Only the
+aggregate — bucket, count, amount, share of the total, legal position — is
+put in front of the panel: a few hundred tokens, regardless of whether the
+sheet has twenty rows or twenty thousand.
+
+Upload the xlsx/csv on the intake screen; columns are detected by alias
+(supplier GSTIN, invoice details, book vs portal amounts, remarks) and each
+row is classified into one of nine buckets:
+
+| Strength | Buckets | Meaning |
+|---|---|---|
+| Strong | RCM, import IGST, ISD, timing | Excluded at the threshold, or a timing difference — not a real mismatch |
+| Defensible | Amendment, supplier error, clerical | Explicable, needs documentation |
+| Weak | Non-filer | The genuine section 16(2)(c) exposure |
+| Concede | Ineligible | No credible argument — say so |
+
+`Unreconciled` is a separate, deliberately blunt category for whatever
+doesn't sort cleanly — it is never folded into a benign bucket. Supplier
+GSTINs are masked on the anonymising tier, since they belong to a third
+party, not the client. The chairman is instructed to meet the difference
+category by category with the figures, never as a single undifferentiated
+number.
 
 ### Citation verification
 
@@ -321,11 +397,13 @@ that starts and reports the problem.
 uv run pytest
 ```
 
-163 tests. The suites that matter most: the sanitizer (identifier leaks —
+308 tests. The suites that matter most: the sanitizer (identifier leaks —
 a failure there is a confidentiality breach, not a bug), citation verification
 and its never-upgrade rule, reply-pack formatting (Arial-only, monochrome-only,
-no machine vocabulary in the deliverable), and deployment invariants (the root
-`app` export, and state paths that can never resolve outside the volume).
+no machine vocabulary in the deliverable), reconciliation ingestion (proof
+that no invoice-level data ever reaches a model, and that briefing size is
+independent of row count), and deployment invariants (the root `app` export,
+and state paths that can never resolve outside the volume).
 
 ## Adding the Income Tax pack
 
@@ -340,5 +418,6 @@ change to `panel.py`, `roles.py`, `verification.py` or the UI is required.
 
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
 - **Frontend:** React + Vite, react-markdown for rendering
+- **Reconciliation:** openpyxl for xlsx, csv.Sniffer for delimiter detection — parsed in memory, never written to disk
 - **Storage:** JSON files in `data/conversations/` (atomic writes)
 - **Packaging:** uv for Python, npm for JavaScript, multi-stage Dockerfile
