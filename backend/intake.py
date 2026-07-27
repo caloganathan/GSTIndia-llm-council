@@ -34,7 +34,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import config, sanitizer
+from . import config, defects, notice_tables, sanitizer
 from .openrouter import query_model
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
@@ -44,9 +44,16 @@ SUPPORTED = (".pdf", ".docx", ".txt")
 # layer rather than a genuinely short notice.
 MIN_USEFUL_TEXT = 200
 
-# How much of the notice reaches the model. Notices run long with annexures;
-# the operative part is at the front, and sending the rest is waste.
-MAX_MODEL_CHARS = 12000
+# How much of the notice reaches the model.
+#
+# This was 12,000, on the reasoning that the operative part of a notice is at
+# the front. It is not. A real scrutiny attachment ran to 21,000 characters
+# with its last three defects — including the only limb that went on to a show
+# cause notice — beyond the cut, and they were never read at all. Defect
+# segmentation now happens locally over the whole document, so the model sees
+# the notice for context rather than for structure, but it still must see the
+# operative part in full.
+MAX_MODEL_CHARS = int(os.getenv("MAX_NOTICE_MODEL_CHARS", "48000"))
 
 
 # ---------------------------------------------------------------------------
@@ -72,11 +79,30 @@ GSTIN_STATE_CODES = {
 
 GSTIN_RE = re.compile(r"\b(\d{2})[A-Z]{5}\d{4}[A-Z][0-9A-Z]{3}\b")
 
+# Portal-issued identifiers. These are the handles the officer files the matter
+# under, and a reply that does not quote them can be rejected on its face.
+#
+# The shape is fixed: two letters, a run of digits, then a check character —
+# ZD330226255583F for a scrutiny reference, AD330226081676X for an ARN. The
+# first version of this matched on the WORD "notice" followed by capitals and
+# duly extracted the reference "proposing" from a sentence, so the anchor is
+# now the identifier's own format rather than the label beside it.
+PORTAL_ID_RE = re.compile(r"\b([A-Z]{2}\d{10,14}[A-Z0-9])\b")
+
 REFERENCE_RE = re.compile(
-    r"(?:reference|ref|notice)\s*(?:no|number)?\s*[.:\-]?\s*"
-    r"([A-Z]{2}[A-Z0-9/\-]{6,30})",
+    r"(?:reference|ref|scrutiny\s+ref)\.?\s*(?:no|number)?\.?\s*[:\-]?\s*"
+    r"([A-Z]{2}\d{10,14}[A-Z0-9])",
     re.IGNORECASE,
 )
+
+ARN_RE = re.compile(
+    r"\bARN\s*[:\-]?\s*([A-Z]{2}\d{10,14}[A-Z0-9])", re.IGNORECASE
+)
+
+# Document Identification Number. Circular 128/2/2020-GST makes it mandatory,
+# and its absence is a live ground of challenge — so it is captured whether or
+# not the notice bothers to supply it.
+DIN_RE = re.compile(r"\bDIN\s*[:\-]?\s*([A-Z0-9]{15,25})\b", re.IGNORECASE)
 
 # 14.06.2026 / 14-06-2026 / 14/06/2026
 NUMERIC_DATE_RE = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})\b")
@@ -101,8 +127,60 @@ FY_RE = re.compile(
 )
 BARE_FY_RE = re.compile(r"\b(20\d{2})\s*[-–]\s*(\d{2})\b")
 
+# Statutory references, WITH their sub-sections.
+#
+# The earlier version captured "16" from "section 16(2)(aa)" and then took only
+# the first match in the whole notice. On a real scrutiny notice that reported
+# the single provision "9" — read out of the phrase "section 9(5), if
+# applicable" in boilerplate — for a notice issued under section 61. The
+# sub-section is not a detail here: 16(2)(aa) and 16(4) are different disputes
+# with different defences, and "16" names neither of them.
 SECTION_RE = re.compile(
-    r"(?:under\s+)?(?:section|sec\.?|u/s)\s*(\d{1,3}[A-Z]?)", re.IGNORECASE
+    r"(?:section|sec\.?|u/s)\s*(\d{1,3}[A-Z]?(?:\s*\(\s*[0-9a-zA-Z]{1,3}\s*\))*)",
+    re.IGNORECASE,
+)
+
+RULE_RE = re.compile(
+    r"\brules?\s*(\d{1,3}[A-Z]?(?:\s*\(\s*[0-9a-zA-Z]{1,3}\s*\))*)",
+    re.IGNORECASE,
+)
+
+# The portal form states the provision in a labelled row. Where that row is
+# present it is authoritative and beats anything scraped from the prose.
+LABELLED_SECTION_RE = re.compile(
+    r"Section\s+under\s+which\s+(?:the\s+)?notice\s+is\s+issued\s*[:\-]?\s*"
+    r"(\d{1,3}[A-Z]?)",
+    re.IGNORECASE,
+)
+
+LABELLED_DUE_DATE_RE = re.compile(
+    r"Date\s+by\s+which\s+(?:the\s+)?reply\s+(?:has\s+to\s+be|is\s+to\s+be|to\s+be)"
+    r"\s+submitted\s*[:\-]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{4})",
+    re.IGNORECASE,
+)
+
+LABELLED_NOTICE_DATE_RE = re.compile(
+    r"Reference\s*No\.?\s*[:\-]?\s*[A-Z0-9]+\s*Date\s*[:\-]?\s*"
+    r"(\d{1,2}[./\-]\d{1,2}[./\-]\d{4})",
+    re.IGNORECASE,
+)
+
+# The issuing officer, from the portal form's signature block.
+OFFICER_NAME_RE = re.compile(
+    r"Signature\s*\n?\s*Name\s*[:\-]\s*([A-Za-z][A-Za-z.\s]{2,40}?)\s*\n",
+    re.IGNORECASE,
+)
+OFFICER_DESIGNATION_RE = re.compile(
+    r"Designation\s*[:\-]\s*([A-Za-z()/,.\s]{4,60}?)\s*\n", re.IGNORECASE
+)
+# Jurisdiction runs onto a second line in the portal form ("RAM NAGAR ,
+# Coimbatore-\nII , COIMBATORE , Tamil Nadu"), so a single-line match truncates
+# the circle name mid-word.
+JURISDICTION_RE = re.compile(
+    r"Jurisdiction\s*[:\-]\s*([^\n]{3,90}(?:\n[^\n:]{1,60})?)", re.IGNORECASE
+)
+CIRCLE_RE = re.compile(
+    r"Circle\s*[:\-]\s*([A-Za-z0-9 \-]{3,40})", re.IGNORECASE
 )
 
 # Entity name, identified by its statutory suffix.
@@ -112,11 +190,25 @@ SECTION_RE = re.compile(
 # Without it the free tier strips the GSTIN and PAN but leaves the company
 # name standing in the notice text — which is exactly the leak the test suite
 # caught.
+# The suffix group is case-insensitive but the name itself is not. Notices
+# print the taxpayer in full capitals — "GRAM ENVOSOLUTION PRIVATE LIMITED" —
+# and a wholly case-sensitive pattern silently found nothing on every one of
+# them, leaving the sanitiser with no company name to scrub. Making the WHOLE
+# pattern case-insensitive is not the fix either: it then matches ordinary
+# prose such as "the limited relief sought".
 ENTITY_RE = re.compile(
     r"\b((?:[A-Z][\w&.'\-]*\s+){1,6}"
-    r"(?:Private\s+Limited|Pvt\.?\s*Ltd\.?|Public\s+Limited|Limited|Ltd\.?"
-    r"|LLP|Limited\s+Liability\s+Partnership|&\s*Co\.?|and\s+Company"
-    r"|&\s*Sons|Enterprises|Industries|Associates))\b"
+    r"(?i:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|PUBLIC\s+LIMITED|LIMITED|LTD\.?"
+    r"|LLP|LIMITED\s+LIABILITY\s+PARTNERSHIP|&\s*CO\.?|AND\s+COMPANY"
+    r"|&\s*SONS|ENTERPRISES|INDUSTRIES|ASSOCIATES|TRADERS|AGENCIES"
+    r"|ELECTRICALS|HOTELS))\b"
+)
+
+# "Tvl." (Tamil Nadu), "M/s." and "Messrs." introduce the taxpayer by name and
+# are the most reliable signal of all where present.
+PREFIXED_ENTITY_RE = re.compile(
+    r"(?:M/s\.?|Tvl\.?|Messrs\.?)\s+"
+    r"([A-Z][\w&.'\-]*(?:\s+[A-Z][\w&.'\-]*){0,7})"
 )
 
 DUE_DATE_HINT_RE = re.compile(
@@ -253,25 +345,54 @@ def find_notice_type(text: str, pack) -> Optional[str]:
     )
     upper = text.upper()
     for code in codes:
-        # Tolerate ASMT-10, ASMT 10, ASMT10
-        pattern = code.replace("-", r"[\s\-]?")
+        # Tolerate ASMT-10, ASMT 10, ASMT10 and "GST ASMT - 10", which is how
+        # the portal actually prints the form header.
+        pattern = code.replace("-", r"[\s\-]*")
         if re.search(rf"\b{pattern}\b", upper):
             return code
     return None
 
 
+def find_sections(text: str) -> List[str]:
+    """
+    Every statutory section in the text, sub-sections intact, in document order.
+
+    Deduplicated but never truncated to one: a notice engages several
+    provisions and the reply has to answer each of them.
+    """
+    return _collect(SECTION_RE, text)
+
+
+def find_rules(text: str) -> List[str]:
+    return _collect(RULE_RE, text)
+
+
+def _collect(pattern: re.Pattern, text: str) -> List[str]:
+    seen, ordered = set(), []
+    for match in pattern.finditer(text or ""):
+        # "16 ( 2 ) ( aa )" and "16(2)(aa)" are the same provision.
+        reference = re.sub(r"\s+", "", match.group(1))
+        if reference and reference not in seen:
+            seen.add(reference)
+            ordered.append(reference)
+    return ordered
+
+
 def find_entity_name(text: str) -> Optional[str]:
     """
-    The taxpayer's name, found by its statutory suffix.
+    The taxpayer's name.
 
-    Longest match wins: "Acme Steel Industries Private Limited" should not be
-    truncated to "Acme Steel Industries".
+    A "Tvl."/"M/s." prefix is the strongest signal and is preferred outright.
+    Failing that, the statutory suffix is used and the longest match wins, so
+    "Acme Steel Industries Private Limited" is not truncated to "Acme Steel
+    Industries".
     """
-    candidates = [m.group(1).strip() for m in ENTITY_RE.finditer(text)]
+    prefixed = [m.group(1).strip(" .,") for m in PREFIXED_ENTITY_RE.finditer(text or "")]
+    if prefixed:
+        return max(prefixed, key=len)
+    candidates = [m.group(1).strip() for m in ENTITY_RE.finditer(text or "")]
     if not candidates:
         return None
-    # Prefer the longest, then the earliest — notices name the taxpayer before
-    # they name anyone else.
     return max(candidates, key=len)
 
 
@@ -297,69 +418,158 @@ def find_tax_period(text: str) -> Optional[str]:
     return f"FY {start}-{end}"
 
 
+def _iso_from_numeric(raw: str) -> Optional[str]:
+    match = NUMERIC_DATE_RE.search(raw or "")
+    if not match:
+        return None
+    day, month, year = (int(g) for g in match.groups())
+    return _iso_date(day, month, year)
+
+
 def extract_fields_local(text: str, pack) -> Dict[str, Any]:
     """
     Everything derivable without a model.
 
-    Each field carries where it came from, so the UI can show the user what
-    was read off the notice versus what a model proposed.
+    Each field carries where it came from, so the UI can show the user what was
+    read off the notice versus what a model proposed.
+
+    Dates and the provision invoked are taken from the portal form's LABELLED
+    rows wherever those rows exist, and only fall back to position heuristics
+    when they do not. The heuristics that used to run unconditionally — first
+    date in the document is the notice date, last date is the deadline — read a
+    rate-notification date from 2022 as the date of a 2026 notice and an
+    invoice date from an annexure as the reply deadline. Position is a poor
+    proxy for meaning in a document that carries dozens of dates.
     """
     fields: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
 
+    def put(key: str, value: Any, source: str):
+        if value not in (None, "", []):
+            fields[key] = value
+            sources[key] = source
+
     gstin_match = GSTIN_RE.search(text)
     if gstin_match:
-        fields["gstin"] = gstin_match.group(0)
-        sources["gstin"] = "notice"
-        state = GSTIN_STATE_CODES.get(gstin_match.group(1))
-        if state:
-            fields["state"] = state
-            sources["state"] = "gstin"
+        put("gstin", gstin_match.group(0), "notice")
+        put("state", GSTIN_STATE_CODES.get(gstin_match.group(1)), "gstin")
 
-    entity = find_entity_name(text)
-    if entity:
-        fields["client_name"] = entity
-        sources["client_name"] = "notice"
+    put("client_name", find_entity_name(text), "notice")
+    put("notice_type", find_notice_type(text, pack), "notice")
+    put("tax_period", find_tax_period(text), "notice")
 
-    notice_type = find_notice_type(text, pack)
-    if notice_type:
-        fields["notice_type"] = notice_type
-        sources["notice_type"] = "notice"
-
+    # --- Identifiers ------------------------------------------------------
     reference = REFERENCE_RE.search(text)
     if reference:
-        fields["notice_reference"] = reference.group(1).strip()
-        sources["notice_reference"] = "notice"
+        put("notice_reference", reference.group(1).strip(), "notice")
+    else:
+        loose = PORTAL_ID_RE.search(text)
+        if loose:
+            put("notice_reference", loose.group(1), "notice")
 
-    period = find_tax_period(text)
-    if period:
-        fields["tax_period"] = period
-        sources["tax_period"] = "notice"
+    arn = ARN_RE.search(text)
+    if arn:
+        put("notice_arn", arn.group(1), "notice")
 
-    section = SECTION_RE.search(text)
-    if section:
-        fields["section_invoked"] = section.group(1)
-        sources["section_invoked"] = "notice"
+    din = DIN_RE.search(text)
+    if din:
+        put("din", din.group(1), "notice")
 
-    dates = find_dates(text)
-    if dates:
-        # The earliest date in a notice is almost always its own date; the
-        # latest is almost always the reply deadline. Both are proposals for
-        # the user to confirm, never assumptions.
-        fields["notice_date"] = dates[0]
-        sources["notice_date"] = "notice"
-        if len(dates) > 1:
-            fields["due_date"] = dates[-1]
-            sources["due_date"] = "notice"
+    # --- Provision invoked ------------------------------------------------
+    labelled_section = LABELLED_SECTION_RE.search(text)
+    sections = find_sections(text)
+    if labelled_section:
+        put("section_invoked", labelled_section.group(1), "notice-labelled")
+    elif sections:
+        put("section_invoked", sections[0], "notice")
+    put("sections_cited", sections, "notice")
+    put("rules_cited", find_rules(text), "notice")
 
-    amounts = find_amounts(text)
-    if amounts:
-        # The largest figure is usually the demand; smaller ones are usually
-        # its tax/interest/penalty components.
-        fields["amount_disputed"] = max(amounts)
-        sources["amount_disputed"] = "notice"
+    # --- Dates ------------------------------------------------------------
+    labelled_notice_date = LABELLED_NOTICE_DATE_RE.search(text)
+    if labelled_notice_date:
+        put("notice_date", _iso_from_numeric(labelled_notice_date.group(1)),
+            "notice-labelled")
+
+    labelled_due = LABELLED_DUE_DATE_RE.search(text)
+    if labelled_due:
+        put("due_date", _iso_from_numeric(labelled_due.group(1)),
+            "notice-labelled")
+
+    if not fields.get("notice_date"):
+        dates = find_dates(text)
+        if dates:
+            put("notice_date", dates[0], "notice-inferred")
+
+    # --- Issuing officer --------------------------------------------------
+    officer_name = OFFICER_NAME_RE.search(text)
+    designation = OFFICER_DESIGNATION_RE.search(text)
+    parts = [
+        officer_name.group(1).strip() if officer_name else "",
+        designation.group(1).strip() if designation else "",
+    ]
+    put("issuing_officer", ", ".join(p for p in parts if p), "notice")
+
+    jurisdiction = JURISDICTION_RE.search(text)
+    if jurisdiction:
+        office = re.sub(r"\s*\n\s*", "", jurisdiction.group(1))
+        office = re.sub(r"\s*,\s*", ", ", office).strip(" ,")
+        put("jurisdiction_office", office, "notice")
+    else:
+        circle = CIRCLE_RE.search(text)
+        if circle:
+            put("jurisdiction_office", circle.group(1).strip(" ,"), "notice")
 
     return {"fields": fields, "sources": sources}
+
+
+def extract_defects(text: str, pack) -> List[Dict[str, Any]]:
+    """
+    Decompose a notice into the limbs it will actually be decided in.
+
+    Each defect gets its own head-wise amount read straight off the department's
+    own annexure, its own sections, and the evidence list for its type. Where a
+    figure cannot be read with confidence the defect is flagged rather than
+    filled — a reviewer who can see an empty amount will supply it; one who
+    cannot see a wrong amount will file it.
+    """
+    catalogue = getattr(pack, "DEFECT_TYPES", [])
+    found = defects.segment(text, catalogue)
+    if not found:
+        return []
+
+    head_order = notice_tables.detect_head_order(text)
+
+    for defect in found:
+        body = defect.get("notice_extract", "")
+        row = notice_tables.read_defect_amount(
+            body, head_order, defect.pop("preamble", ""),
+        )
+        if row:
+            defect["amount_by_head"] = defects.normalise_heads(row["amounts"])
+            defect["amount_basis"] = row.get("basis")
+            defect["amount_label"] = row.get("label")
+        else:
+            defect["amount_unread"] = True
+
+        # Sections stated inside the limb beat the catalogue's defaults, which
+        # are only a starting point.
+        cited = find_sections(body)
+        if cited:
+            defect["sections"] = _merge_preserving_order(defect["sections"], cited)
+        cited_rules = find_rules(body)
+        if cited_rules:
+            defect["rules"] = _merge_preserving_order(defect["rules"], cited_rules)
+
+    return found
+
+
+def _merge_preserving_order(primary: List[str], extra: List[str]) -> List[str]:
+    merged = list(primary)
+    for item in extra:
+        if item not in merged:
+            merged.append(item)
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -503,19 +713,66 @@ async def read_notice(
     tier: Dict[str, Any],
     use_model: bool = True,
 ) -> Dict[str, Any]:
+    """Single-document convenience wrapper over `read_notice_set`."""
+    return await read_notice_set([(filename, content)], pack, tier, use_model)
+
+
+async def read_notice_set(
+    documents: List[Tuple[str, bytes]],
+    pack,
+    tier: Dict[str, Any],
+    use_model: bool = True,
+) -> Dict[str, Any]:
     """
-    Turn an uploaded notice into proposed intake fields.
+    Turn one or more uploaded documents into a proposed matter.
+
+    A scrutiny notice does not arrive as one file. The portal issues a one-page
+    form carrying the reference number, the provision, the reply date and the
+    officer's name, and attaches a separate document — often twenty pages —
+    carrying the actual defects and their annexures. Neither is sufficient
+    alone, and asking a partner to upload them one at a time and reconcile the
+    result by hand defeats the point of the upload.
+
+    Documents are read in order and the FIRST value found for a field wins, so
+    a portal form uploaded alongside its attachment supplies the identifiers
+    while the attachment supplies the defects.
 
     Nothing here is authoritative. Everything is a proposal the user reviews
-    before the panel runs — a wrong tax period silently accepted is worse
-    than an empty one.
+    before the panel runs — a wrong tax period silently accepted is worse than
+    an empty one.
     """
-    text, warnings = extract_text(filename, content)
-
-    local = extract_fields_local(text, pack)
-    fields = dict(local["fields"])
-    sources = dict(local["sources"])
+    warnings: List[str] = []
+    fields: Dict[str, Any] = {}
+    sources: Dict[str, str] = {}
+    read_documents: List[Dict[str, Any]] = []
+    combined: List[str] = []
+    found_defects: List[Dict[str, Any]] = []
     usage = None
+
+    for filename, content in documents:
+        text, file_warnings = extract_text(filename, content)
+        warnings.extend(f"{filename}: {w}" for w in file_warnings)
+        combined.append(text)
+
+        local = extract_fields_local(text, pack)
+        for key, value in local["fields"].items():
+            if key not in fields:
+                fields[key] = value
+                sources[key] = local["sources"].get(key, "notice")
+
+        # The document with the most defects is the attachment; a portal form
+        # or a covering letter contributes none and must not displace it.
+        document_defects = extract_defects(text, pack)
+        if len(document_defects) > len(found_defects):
+            found_defects = document_defects
+
+        read_documents.append({
+            "filename": filename,
+            "text_length": len(text),
+            "defects_found": len(document_defects),
+        })
+
+    text = "\n\n".join(t for t in combined if t)
 
     if use_model and len(text) >= MIN_USEFUL_TEXT:
         assisted, usage, model_warnings = await extract_fields_assisted(
@@ -526,11 +783,34 @@ async def read_notice(
             sources[key] = "read"
         warnings.extend(model_warnings)
 
-    missing = [f for f in ("notice_type", "state", "tax_period", "issues", "facts")
+    if found_defects:
+        fields["defects"] = found_defects
+        sources["defects"] = "notice"
+        summary = defects.triage(found_defects)
+        fields["amount_disputed"] = summary["total_amount"]
+        sources["amount_disputed"] = "defects"
+
+        unread = [d["heading"] for d in found_defects if d.get("amount_unread")]
+        if unread:
+            warnings.append(
+                "The amount could not be read for "
+                f"{len(unread)} of {len(found_defects)} defects "
+                f"({'; '.join(unread[:4])}"
+                f"{'…' if len(unread) > 4 else ''}). Enter these from the "
+                "notice annexure before running the panel."
+            )
+    else:
+        warnings.append(
+            "No defect headings were found, so this notice could not be broken "
+            "into limbs. Add them by hand — a reply that answers a multi-limb "
+            "notice as one issue concedes ground it need not concede."
+        )
+
+    missing = [f for f in ("notice_type", "state", "tax_period", "facts")
                if not fields.get(f)]
     if missing:
         warnings.append(
-            "Could not determine: " + ", ".join(missing.copy()) +
+            "Could not determine: " + ", ".join(missing) +
             ". Complete these before running the panel."
         )
 
@@ -538,9 +818,10 @@ async def read_notice(
         "fields": fields,
         "sources": sources,
         "warnings": warnings,
+        "documents": read_documents,
         "text_length": len(text),
         "usage": usage,
         # The extracted text is returned so the user can see what was read and
-        # copy from it. The uploaded file itself is never persisted.
+        # copy from it. The uploaded files themselves are never persisted.
         "text": text[:MAX_MODEL_CHARS],
     }

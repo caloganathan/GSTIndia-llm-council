@@ -549,3 +549,54 @@ tbody tr:last-child td {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* ---------------------------------------------------------------------------
+   Defect list
+   ---------------------------------------------------------------------------
+   A notice is decided limb by limb, so it is reviewed limb by limb. Colour
+   comes from the tokens only — no component here hardcodes one.
+   ------------------------------------------------------------------------ */
+
+.btn-secondary {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+
+.defect-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.defect-row {
+  padding: var(--sp-4);
+}
+
+.defect-row:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+/* The department's own words, shown verbatim so a reviewer can check a figure
+   against the source rather than against our reading of it. Wrapped rather
+   than scrolled horizontally — a table the reviewer has to scroll sideways is
+   a table the reviewer does not read. */
+.notice-extract {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--text-xs, 12px);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}

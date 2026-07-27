@@ -6,16 +6,87 @@ This file contains technical details, architectural decisions, and important imp
 
 A second mode alongside the generic council, for Indian GST notice work.
 
+### THE ONE THING TO UNDERSTAND FIRST: a notice is N defects, not one dispute
+
+A GST notice is a parameter-wise list of defects, and the department raises and
+disposes of them **one at a time**. In the matter this product was rebuilt
+against — a Tamil Nadu ASMT-10 attachment for a GSTR-9C filer — the
+adjudication order says *"Hence this defect is dropped"* eight separate times.
+Seven of eight limbs were dropped; the eighth went to a show cause notice.
+
+Everything in the architecture below follows from that. `defects.py` holds the
+unit of work; the panel argues only the limbs that turn on law; the export
+assembles the reply limb by limb. The first version of this product modelled a
+notice as one dispute with one amount and one confidence rating, and every
+defect in its output traced back to that single modelling error.
+
+**Why the eighth limb was lost matters more than why seven were won.** The
+officer's own findings record it: the taxpayer argued the e-invoicing mandate
+date correctly and was understood, but had *"not provided first e-invoice for
+the month of august 2023 for verification."* A correct legal position lost a
+limb because one system report was not attached. That is why `evidence_gap` is
+a first-class output, why `gst_defects.py` names the artefact rather than the
+category, and why `evidence_gap_catch` is the number to watch in the evals.
+
 ### Architecture
 
+- **`defects.py`** — the defect record, the five postures, triage and validation. Postures are not a severity scale; they are the five different things a reply can say about a limb, each producing different drafting. `explained` / `contested` / `agreed_paid` / `paid_under_protest` / `partial`, with `undecided` as the honest default. Only `contested`, `partial` and `undecided` convene counsel.
+- **`notice_tables.py`** — reads head-wise figures off the department's annexure using the checksum the table carries for free: four component amounts that sum to their own printed total. A run that fails its own arithmetic is discarded. **Returns None rather than a guess** — a blank the reviewer can see is safe, a wrong figure they cannot see is not.
+- **`domains/gst_defects.py`** — the defect catalogue: heading patterns, provisions engaged, default posture, and the evidence list. **The evidence lists are the product.** Each entry names the artefact an officer asks for before dropping that limb.
+- **`domains/gst_authorities.py`** — curated authorities indexed by defect type. See "On case citations" below.
 - **`roles.py`** — the four adversarial counsel + chairman. Organised by ROLE IN THE ARGUMENT (Revenue's Advocate / Assessee's Advocate / Procedural / Risk & Ethics), NOT by statute. This is deliberate: a notice concerns one law, so law-specialist panels emit three empty opinions. **These prompts are the product**; everything else is plumbing.
-- **`domains/gst.py`** — domain pack. Hardcodes only STABLE anchors (sections, notice-form codes, procedural doctrines, State→High Court map). **Never hardcode case citations** — they are volatile and mis-citing them is the core professional risk. Case law is generated then verified.
-- **`panel.py`** — 4 stages: parallel openings → cross-examination → chairman JSON → citation verification. Mirrors `run_council_stream`'s event shape.
-- **`verification.py`** — extracts authorities from the chairman's table AND the draft body (a citation reaching the reply but not the table is the dangerous one). **Never silently upgrades**: checker failure, unparseable output, or panel-flagged `certainty: to_verify` all resolve to UNVERIFIED.
-- **`sanitizer.py`** — free-tier anonymisation. `IDENTIFIER_RULES` order matters: GSTIN before PAN, or the embedded PAN leaks as a fragment. `audit_leaks()` runs as a pre-flight assertion and the panel ABORTS if anything survives.
+- **`domains/gst.py`** — domain pack. Stable anchors: sections, the full notice-form registry, procedural doctrines, State→High Court map.
+- **`panel.py`** — 5 stages: grounding → parallel openings → cross-examination → chairman JSON → citation verification. `merge_determination()` folds the chairman's per-defect answer onto the defects read from the notice; **the notice stays authoritative on heading, numbering and figures**, the chairman only on what we say about them.
+- **`verification.py`** — extracts authorities from every defect's list AND from filed text (a citation reaching the reply but not the list is the dangerous one). Each carries its `defect_index`. **Never silently upgrades**: checker failure, unparseable output, or panel-flagged `certainty: to_verify` all resolve to UNVERIFIED.
+- **`sanitizer.py`** — draft-tier anonymisation. `IDENTIFIER_RULES` order matters: GSTIN before PAN, or the embedded PAN leaks as a fragment. `audit_leaks()` runs as a pre-flight assertion and the panel ABORTS if anything survives.
 - **`users.py` / `auth.py`** — partner/manager/staff with PBKDF2 + session tokens. Legacy `APP_ACCESS_TOKEN` still works and maps to partner. `redact_for_role` strips `analyses`/`cross_exams` for staff.
-- **`export.py`** — DOCX reply pack. The ICAI review disclaimer is mandatory and not configurable away by the UI.
+- **`export.py`** — **two documents, never one.** See below.
 - **`reconciliation.py`** — 2A/2B vs 3B workbook ingestion. Parses xlsx/csv, detects columns by alias, classifies each row into a `RECONCILIATION_BUCKETS` entry, aggregates by bucket.
+
+### export.py produces TWO documents and they must never merge
+
+`build_filing_reply()` goes to the proper officer, on the **client's**
+letterhead over its authorised signatory, in the A-to-O framework — cause
+title, Disputes at a Glance, issue-wise reply, consolidated payments,
+evidentiary index, prayer with one relief per defect, signature block.
+
+`build_file_note()` stays in the office and carries everything the other must
+not: postures and why, filing blockers, evidence gaps, exposure, unverified
+authorities, panel disagreements, board summary. Stamped
+**INTERNAL — NOT FOR SUBMISSION** on every page.
+
+This split exists because a single combined pack was produced and read by a
+practising partner. Its "Points for Reviewer Attention" section carried *"worst
+realistic monetary exposure … approx. Rs. 2.02 lakh"* and its file note
+recorded that the firm's confidence was *"defensible, not strong, because … the
+team has not yet verified line-by-line"* — in the same file as the text
+intended for the department. `TestTheWallBetweenDocuments` asserts every class
+of that leak from both sides. Do not merge these builders.
+
+Related: the chairman prompt used to forbid a signature block ("the firm
+supplies those"). It should not have to. That single instruction is why every
+exported document needed manual surgery before it could be filed.
+
+### On case citations — a documented rule that was reversed
+
+`domains/gst.py` used to carry "never hardcode case citations", on the
+reasoning that case law is volatile and mis-citing it is the core professional
+risk. The reasoning holds; the conclusion did not. A panel told to generate its
+own authorities, with a verifier that downgrades anything doubtful, produced a
+reply carrying nine authorities of which eight were bare statutory sections and
+one was an off-point case marked *to be confirmed*. A reply with no law is not
+the safe outcome, only a worse one.
+
+The rule that replaced it, enforced in `export.py`:
+
+1. The curated library is a starting point, never an output.
+2. Every entry is verified against live sources on every run, exactly as a
+   model-generated citation is.
+3. **An authority that does not come back VERIFIED never reaches the filing
+   document.** It goes to the file note with a confirm-before-filing flag.
+
+`_is_filable()` gates this. If verification did not run at all the index is
+empty and nothing is filable — the correct failure direction.
 
 ### The reconciliation rows never reach a model
 A real 2A/3B reconciliation is thousands of invoice lines — roughly 500k tokens, and third-party supplier data the client has no business disclosing. Bucketing is deterministic arithmetic, so it happens in Python. Only `reconciliation_brief()` (a ~200–700 token aggregate: bucket, count, amount, share, legal position) is put in front of the panel. Do not "improve" this by passing rows to a model. `tests/test_reconciliation.py::TestBriefing` asserts both halves: no invoice-level data travels, and briefing size is independent of row count.
@@ -25,20 +96,53 @@ Each bucket carries its own legal position and strength — `strong` (RCM/import
 ### Stage 2 is cross-examination, NOT ranking
 The generic council ranks because every model answers the same question. Panel counsel answer *different* questions, so ranking is meaningless. Do not reintroduce it here.
 
+### Triage: most limbs do not need a panel
+On the reference eight-defect notice, six limbs are answered by reconciliation,
+documents or a payment and two turn on law. Convening four counsel on all eight
+produces prose where a table was wanted and pays four models to write it.
+`defects.triage()` splits them; the role prompts tell counsel where their effort
+belongs. **Conceding a limb is a positive recommendation**, not a failure — the
+prompts say so explicitly, because on the reference matter three limbs were
+correctly conceded and paid, and that is what made the contested limbs credible.
+
 ### Two tiers = risk tiers
-`free` forces anonymisation and blocks export; `pro` sends full facts with ZDR routing (`provider: {"data_collection": "deny"}`). Identifiers are restored locally after the run so the partner reads real names the model never saw.
+`draft` forces anonymisation and watermarks every exported page; `pro` sends
+full facts with ZDR routing (`provider: {"data_collection": "deny"}`).
+Identifiers are restored locally after the run so the partner reads real names
+the model never saw.
+
+There was a `free` tier on OpenRouter's `:free` endpoints. Every ID in it went
+stale and the tier failed silently in production — **including notice reading**,
+because `intake.extract_fields_assisted` borrows the tier's grounding model.
+One root cause, two symptoms that looked unrelated. `TIER_ALIASES` maps stored
+`tier="free"` matters to `draft`, never falling through to `pro`, which would
+send real identifiers on a re-run of work the user chose to anonymise.
 
 ### Adding the Income Tax pack
-New file in `domains/` with the same interface, registered in `domains/__init__.py`. No change to `panel.py`, `roles.py`, `verification.py` or the UI.
+New file in `domains/` with the same interface (including `DEFECT_TYPES` and
+the authorities helpers), registered in `domains/__init__.py`. No change to
+`panel.py`, `roles.py`, `verification.py`, `export.py` or the UI.
 
 ### Gotchas
 1. `_extract_json` handles fenced/prose-wrapped chairman output; failure produces `_fallback_determination` with a "must not be filed" risk flag — never a silent empty result.
 2. Matters live in `data/matters/`, conversations in `data/conversations/`. Both atomic-write.
-3. Free model IDs churn on OpenRouter. Startup validation reports stale IDs — check `/api/health` and the Admin > Panel configuration tab first when a tier silently fails.
+3. Model IDs churn on OpenRouter. Startup validation reports stale IDs — check `/api/health` and the Admin > Panel configuration tab first when a tier silently fails.
 4. The sanitizer leak test is sacred. A failure there is a confidentiality breach, not a bug.
+5. **Departmental PDFs do not emit in reading order.** The first limb's table is extracted ABOVE its own bullet heading, which is why `segment()` gives the FIRST defect a `preamble` and only the first — so no later limb can be handed a figure belonging to its neighbour.
+6. **Bound the last defect.** Without `ANNEXURE_BOUNDARY_RE` the final limb absorbs every annexure in the document; a Rs. 44 interest limb once read Rs. 1.24 crore.
+7. Extraction that cannot read a figure must report it unread. `amount_unread` surfaces in the UI as an empty field to fill. Never fill it with a zero.
 
 ### Frontend
-Design tokens in `theme.css` (light/dark via `data-theme` on `<html>`); components never hardcode colours. `format.js` holds helpers/constants separately from `shared.jsx` so React Fast Refresh works. Views: Dashboard, PanelWorkspace (intake + live deliberation), MatterList, MatterDetail, AdminPanel, GeneralCouncil.
+Design tokens in `theme.css` (light/dark via `data-theme` on `<html>`); components never hardcode colours. `format.js` holds helpers/constants separately from `shared.jsx` so React Fast Refresh works — `POSTURES` and friends live there for the same reason. Views: Dashboard, PanelWorkspace (multi-file intake + defect review + live deliberation), DefectList, MatterList, MatterDetail (two separate downloads), AdminPanel, GeneralCouncil.
+
+### Evals
+`evals/golden/gst-gram-envosolution-fy2324.json` is the reference case: eight
+defects, the department's disposal of each recorded verbatim from the
+adjudication order, and the document whose absence lost the eighth. The two
+numbers that matter are `defect_coverage` (a limb the panel never finds cannot
+be answered, and an unanswered limb is confirmed unopposed) and
+`evidence_gap_catch` (scored against a limb that was argued correctly and lost
+anyway). No prompt change should ship without running these.
 
 ---
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import Deliberation from './Deliberation';
+import DefectList from './DefectList';
 import { ConfidenceBadge, Loading } from './shared';
 import { formatCurrency } from '../format';
 
@@ -52,17 +53,18 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
   const missing = required.filter((f) => !String(form[f.key] || '').trim());
   const canRun = missing.length === 0 && !running;
 
-  const onFile = async (file) => {
-    if (!file) return;
+  const onFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
     setReading(true);
     setError('');
     setReadResult(null);
     try {
-      const result = await api.extractNotice(file, { tier });
+      const result = await api.extractNotice(files, { tier });
       // Everything read from the notice is a PROPOSAL. It pre-fills the form
       // for the user to correct — it is never treated as confirmed.
       setForm((current) => ({ ...current, ...result.fields }));
-      setReadResult({ ...result, filename: file.name });
+      setReadResult({ ...result, filename: files.map((f) => f.name).join(', ') });
     } catch (err) {
       if (!onAuthError(err)) setError(err.message);
     } finally {
@@ -223,8 +225,8 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           <div className="alert alert-warning" style={{ marginTop: 'var(--sp-4)' }}>
             <strong>Anonymised mode.</strong> Client name, GSTIN, PAN and exact
             amounts are stripped before any request leaves this machine, and
-            restored only in what you read here. Free-tier output is research
-            grade and cannot be exported as a reply pack.
+            restored only in what you read here.
+            {tierMeta.watermark && ` Every exported page is stamped "${tierMeta.watermark}".`}
           </div>
         )}
       </div>
@@ -235,8 +237,9 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           <input
             ref={fileRef}
             type="file"
+            multiple
             accept=".pdf,.docx,.txt"
-            onChange={(e) => onFile(e.target.files?.[0])}
+            onChange={(e) => onFiles(e.target.files)}
             disabled={reading}
             style={{ width: 'auto', flex: 1, minWidth: 240 }}
           />
@@ -248,9 +251,13 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           )}
         </div>
         <div className="field-help">
-          PDF, Word or text. The file is read in memory and never stored.
-          Identifiers, dates, amounts and jurisdiction are read locally without
-          any model. Everything below is a proposal for you to check.
+          PDF, Word or text — select several at once. A scrutiny notice
+          normally arrives as two files: the one-page portal form carrying the
+          reference and the reply date, and the attachment carrying the
+          defects. Upload both. Files are read in memory and never stored, and
+          identifiers, dates, amounts, provisions and the defect breakdown are
+          read locally without any model. Everything below is a proposal for
+          you to check.
         </div>
 
         {readResult && (
@@ -273,6 +280,24 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           </div>
         )}
       </div>
+
+      {form.defects?.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+          <div className="section-title">Defects raised by the notice</div>
+          <div className="field-help" style={{ marginBottom: 'var(--sp-3)' }}>
+            The department raises these separately and will dispose of them
+            separately — so the reply answers them one at a time. Check each
+            figure against the notice annexure and set the position before
+            running the panel. Only the limbs marked <em>Argued</em> convene
+            counsel; the rest are answered by arithmetic, documents or a
+            payment.
+          </div>
+          <DefectList
+            defects={form.defects}
+            onChange={(defects) => setField('defects', defects)}
+          />
+        </div>
+      )}
 
       <div className="card card-pad">
         <div className="section-title">Notice particulars</div>

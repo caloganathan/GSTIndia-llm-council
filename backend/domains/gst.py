@@ -1,14 +1,38 @@
 """GST domain pack.
 
-Design rule: this file hardcodes only STABLE anchors — statutory sections,
-notice-form codes, procedural doctrines, and the state -> High Court map.
-It deliberately does NOT hardcode case citations. Case law is volatile and
-mis-citing it is the single biggest professional risk in this product, so
-citations are produced by the panel and then checked by the verification
-layer against live sources.
+Holds the stable anchors — statutory sections, notice-form codes, procedural
+doctrines, the state -> High Court map, the defect catalogue and the curated
+authorities.
+
+ON CASE CITATIONS
+-----------------
+This file once carried a rule that no case citation would ever be hardcoded,
+because case law is volatile and mis-citing it is the largest professional risk
+here. That reasoning still holds; the conclusion drawn from it did not. A panel
+told to generate its own authorities, with a verifier that downgrades anything
+doubtful, produced replies carrying no case law at all — which is not the safe
+outcome, merely a poor one.
+
+Curated authorities now live in `gst_authorities.py`, and the safety property
+is enforced where it belongs: verification runs on every citation from every
+source, and nothing that fails it reaches the filing document. See that file
+for the full reasoning.
 """
 
 import re
+
+from .gst_authorities import (  # noqa: F401  (re-exported as pack interface)
+    AUTHORITIES,
+    authorities_brief,
+    authorities_for_defect,
+    authorities_for_tags,
+)
+from .gst_defects import (  # noqa: F401  (re-exported as pack interface)
+    DEFECT_TYPES,
+    DEFECT_TYPES_BY_KEY,
+    defect_type,
+    evidence_for,
+)
 
 NAME = "Goods and Services Tax"
 SHORT_NAME = "GST"
@@ -130,6 +154,192 @@ NOTICE_TYPES = {
             ["e-way bill expiry or absence", "clerical errors in e-way bill",
              "intent to evade — whether established", "quantum of penalty under s.129(1)"],
             deadline_note="Time-critical: goods remain detained pending resolution.",
+        ),
+        # -- Scrutiny and assessment --------------------------------------
+        NoticeType(
+            "ASMT-11", "Reply to scrutiny notice",
+            "Section 61(2) read with Rule 99(2)",
+            "The registered person's explanation to an ASMT-10.",
+            ["as raised in the ASMT-10"],
+            reply_form="ASMT-11",
+        ),
+        NoticeType(
+            "ASMT-12", "Acceptance of explanation — proceedings dropped",
+            "Section 61(3) read with Rule 99(3)",
+            "Order closing scrutiny where the explanation is found acceptable.",
+            ["closure of the scrutiny", "limbs dropped and limbs surviving"],
+        ),
+        NoticeType(
+            "ASMT-13", "Assessment of non-filers — best judgment",
+            "Section 62 read with Rule 100(1)",
+            "Best judgment assessment where the return was not furnished.",
+            ["withdrawal on filing within 30 days under s.62(2)",
+             "quantification without material", "service of the s.46 notice"],
+            reply_form="Return under s.62(2)",
+            deadline_note="Order stands withdrawn if the valid return is filed "
+                          "within 30 days of service, with interest and late fee.",
+        ),
+        NoticeType(
+            "ASMT-14", "Assessment of unregistered persons",
+            "Section 63 read with Rule 100(2)",
+            "Assessment of a taxable person who failed to obtain registration.",
+            ["liability to register", "period of liability", "quantification"],
+            reply_form="ASMT-15",
+        ),
+
+        # -- Demand, recovery and payment ---------------------------------
+        NoticeType(
+            "DRC-01B", "Intimation of liability difference (GSTR-1 vs 3B)",
+            "Rule 88C",
+            "System intimation where GSTR-1 liability exceeds GSTR-3B payment.",
+            ["timing of payment", "amendments", "credit notes",
+             "blocking of GSTR-1 on non-response"],
+            reply_form="DRC-01B Part B",
+        ),
+        NoticeType(
+            "DRC-03", "Voluntary payment / payment against a notice",
+            "Section 73(5)/74(5) read with Rule 142(2)/(3)",
+            "Challan by which tax, interest or penalty is discharged.",
+            ["pre-notice payment foreclosing penalty",
+             "payment made under protest", "appropriation via DRC-03A"],
+        ),
+        NoticeType(
+            "DRC-06", "Reply to a show cause notice",
+            "Rule 142(4)",
+            "The registered person's reply to a DRC-01.",
+            ["as raised in the DRC-01"],
+            reply_form="DRC-06",
+        ),
+        NoticeType(
+            "DRC-13", "Notice to a third person for recovery",
+            "Section 79(1)(c) read with Rule 145",
+            "Garnishee notice to a debtor of the defaulter.",
+            ["whether any amount is due", "stay of the underlying demand",
+             "pre-deposit already made"],
+            reply_form="DRC-14 / representation",
+            deadline_note="Time-critical: bank accounts and receivables are "
+                          "attached pending resolution.",
+        ),
+
+        # -- Appeals -------------------------------------------------------
+        NoticeType(
+            "APL-01", "Appeal to the Appellate Authority",
+            "Section 107 read with Rule 108",
+            "First appeal against an order.",
+            ["limitation from communication", "10% pre-deposit from the cash "
+             "ledger", "grounds not taken below", "condonation of delay"],
+            reply_form="APL-01",
+            deadline_note="3 months from communication, condonable by 1 further "
+                          "month. Pre-deposit 10% of disputed tax (10% of "
+                          "penalty where the demand is penalty only), capped, "
+                          "and payable from the Electronic Cash Ledger only.",
+        ),
+        NoticeType(
+            "APL-05", "Appeal to the Appellate Tribunal (GSTAT)",
+            "Section 112 read with Rule 110",
+            "Second appeal to the GST Appellate Tribunal.",
+            ["additional 10% pre-deposit (20% cumulative)",
+             "limitation and the backlog window", "questions of law"],
+            reply_form="APL-05",
+            deadline_note="GSTAT has been operational since 24 September 2025. "
+                          "Verify the current filing window and the backlog "
+                          "cut-off applicable to orders communicated before "
+                          "01.04.2026 before advising on limitation.",
+        ),
+
+        # -- Audit, refund, registration -----------------------------------
+        NoticeType(
+            "ADT-04", "Special audit directed",
+            "Section 66 read with Rule 102",
+            "Audit by a nominated chartered or cost accountant.",
+            ["prior approval of the Commissioner", "nature and complexity "
+             "threshold", "opportunity of hearing before direction"],
+        ),
+        NoticeType(
+            "RFD-06", "Refund sanction / rejection order",
+            "Section 54 read with Rule 92",
+            "Order sanctioning or rejecting a refund claim.",
+            ["reasons for rejection", "interest under s.56",
+             "appeal under s.107"],
+            reply_form="APL-01 (appeal)",
+        ),
+        NoticeType(
+            "REG-03", "Notice seeking clarification on a registration application",
+            "Rule 9(2)",
+            "Query on a fresh registration or amendment application.",
+            ["documents sought", "principal place of business",
+             "physical verification"],
+            reply_form="REG-04",
+            deadline_note="Reply in REG-04 within 7 working days.",
+        ),
+        NoticeType(
+            "REG-23", "Show cause notice — revocation of cancellation",
+            "Rule 23(3)",
+            "Proposed rejection of an application to revoke cancellation.",
+            ["returns and dues cleared", "reasons for the original cancellation"],
+            reply_form="REG-24",
+        ),
+        NoticeType(
+            "REG-31", "Intimation of suspension of registration",
+            "Rule 21A",
+            "Suspension pending cancellation proceedings.",
+            ["significant differences alleged", "reply within 30 days",
+             "restoration on compliance"],
+        ),
+
+        # -- Movement of goods ---------------------------------------------
+        NoticeType(
+            "MOV-06", "Order of detention of goods and conveyance",
+            "Section 129(1) read with Rule 140",
+            "Formal detention order following interception.",
+            ["intent to evade", "clerical e-way bill defects",
+             "quantum under s.129(1)(a)/(b)"],
+            reply_form="MOV-09 representation",
+            deadline_note="Time-critical: goods remain detained.",
+        ),
+        NoticeType(
+            "MOV-09", "Order of demand of tax and penalty",
+            "Section 129(3)",
+            "Penalty order after detention.",
+            ["mens rea", "proportionality", "appeal under s.107"],
+            reply_form="APL-01 (appeal)",
+        ),
+        NoticeType(
+            "MOV-10", "Notice for confiscation",
+            "Section 130 read with Rule 141",
+            "Proposed confiscation of goods and conveyance.",
+            ["ingredients of s.130 as distinct from s.129",
+             "option to pay fine in lieu of confiscation"],
+            deadline_note="Time-critical and severe: confiscation is a distinct "
+                          "and higher threshold than detention.",
+        ),
+
+        # -- Other proceedings ----------------------------------------------
+        NoticeType(
+            "SUMMONS-70", "Summons under Section 70",
+            "Section 70",
+            "Summons to give evidence or produce documents.",
+            ["scope of the summons", "right against self-incrimination",
+             "presence of an authorised representative", "record of statement"],
+            deadline_note="Attendance is compulsory. Non-appearance carries "
+                          "consequences under s.122 and the Code.",
+        ),
+        NoticeType(
+            "SPL-01", "Amnesty application — waiver of interest and penalty",
+            "Section 128A",
+            "Application for waiver on demands for FY 2017-18 to 2019-20.",
+            ["full tax paid within the notified window",
+             "withdrawal of appeals as a condition", "scope of the waiver"],
+            reply_form="SPL-01 / SPL-02",
+            deadline_note="Verify the operative dates before relying on this "
+                          "route — the window has moved more than once.",
+        ),
+        NoticeType(
+            "ARA-01", "Application for advance ruling",
+            "Section 97 read with Rule 104",
+            "Application to the Authority for Advance Ruling.",
+            ["admissibility of the question", "pendency bar under the proviso "
+             "to s.98(2)", "binding only on the applicant and the officer"],
         ),
         NoticeType(
             "OTHER", "Other GST communication",

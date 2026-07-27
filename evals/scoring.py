@@ -32,16 +32,28 @@ def determination_text(determination: Dict[str, Any]) -> str:
     parts = [
         determination.get("recommended_position", ""),
         determination.get("lead_argument", ""),
-        determination.get("draft_reply", ""),
+        determination.get("preliminary_submissions", ""),
         determination.get("working_note", ""),
         determination.get("board_summary", ""),
+        determination.get("unstructured_output", ""),
     ]
-    for issue in determination.get("issues") or []:
-        if isinstance(issue, dict):
+    for defect in determination.get("defects") or []:
+        if isinstance(defect, dict):
             parts.extend([
-                issue.get("issue", ""), issue.get("our_position", ""),
-                issue.get("authority", ""), issue.get("department_view", ""),
+                defect.get("heading", ""), defect.get("our_position", ""),
+                defect.get("department_contention", ""), defect.get("facts", ""),
+                defect.get("submission", ""), defect.get("prayer_relief", ""),
             ])
+            parts.extend(str(x) for x in (defect.get("evidence_required") or []))
+            parts.extend(str(x) for x in (defect.get("evidence_gap") or []))
+            for entry in defect.get("legal_framework") or []:
+                if isinstance(entry, dict):
+                    parts.extend([entry.get("provision", ""),
+                                  entry.get("relevance", "")])
+            for entry in defect.get("authorities") or []:
+                if isinstance(entry, dict):
+                    parts.extend([entry.get("citation", ""),
+                                  entry.get("proposition", "")])
     for entry in determination.get("panel_disagreements") or []:
         if isinstance(entry, dict):
             parts.extend([entry.get("question", ""), entry.get("resolution", "")])
@@ -189,7 +201,8 @@ def score_position(determination: Dict[str, Any],
 def score_determination_integrity(determination: Dict[str, Any]) -> Dict[str, Any]:
     """Did the chairman return usable structured output at all?"""
     degraded = bool(determination.get("_degraded"))
-    required = ("recommended_position", "draft_reply", "issues", "working_note")
+    required = ("recommended_position", "preliminary_submissions", "defects",
+                "working_note")
     present = [f for f in required if determination.get(f)]
 
     return {
@@ -202,6 +215,136 @@ def score_determination_integrity(determination: Dict[str, Any]) -> Dict[str, An
     }
 
 
+def score_defects(determination: Dict[str, Any],
+                  expected_defects: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Did the panel find every limb, and did it take the right position on each?
+
+    Scored per defect against the department's own disposal, which is the only
+    ground truth that exists for this work. A limb the panel never found cannot
+    be answered in the reply, and an unanswered limb is confirmed unopposed —
+    so a miss is scored harder than a wrong posture.
+    """
+    if not expected_defects:
+        return {"expected": 0, "found": 0, "posture_matches": 0, "rate": None,
+                "missed": [], "posture_errors": [], "passed": None}
+
+    produced = [d for d in (determination.get("defects") or [])
+                if isinstance(d, dict)]
+    by_index = {d.get("index"): d for d in produced}
+
+    missed, posture_errors, matched = [], [], 0
+    for expected in expected_defects:
+        actual = by_index.get(expected.get("index"))
+        if actual is None:
+            # Fall back to a heading match — the department's numbering is
+            # authoritative but a panel may renumber.
+            needle = _normalise(expected.get("heading_contains", ""))
+            actual = next(
+                (d for d in produced
+                 if needle and needle in _normalise(d.get("heading", ""))),
+                None,
+            )
+        if actual is None:
+            missed.append(expected.get("heading_contains")
+                          or expected.get("index"))
+            continue
+
+        wanted = expected.get("posture")
+        got = actual.get("posture")
+        if wanted and got == wanted:
+            matched += 1
+        elif wanted:
+            posture_errors.append({
+                "defect": expected.get("heading_contains") or expected.get("index"),
+                "expected": wanted,
+                "got": got,
+            })
+
+    found = len(expected_defects) - len(missed)
+    return {
+        "expected": len(expected_defects),
+        "found": found,
+        "posture_matches": matched,
+        "rate": round(found / len(expected_defects), 3),
+        "posture_rate": round(matched / len(expected_defects), 3),
+        "missed": missed,
+        "posture_errors": posture_errors,
+        # Every limb must be found. Postures are a judgement call a reviewer
+        # can correct; a missing limb is a hole in the filed reply.
+        "passed": not missed,
+    }
+
+
+def score_evidence_gaps(determination: Dict[str, Any],
+                        expected_defects: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Did the panel demand the document whose absence actually loses the limb?
+
+    This is the sharpest signal in the whole scorecard, because it is scored
+    against a limb that WAS lost, on a document that WAS missing, in a matter
+    where the argument was right. `required_evidence_that_was_missing` in a
+    golden case names that document. A run that does not surface it — in the
+    evidence list or the gap list of the right defect — has failed regardless
+    of how well it argued.
+    """
+    targets = [
+        (expected, item)
+        for expected in expected_defects or []
+        for item in (expected.get("required_evidence_that_was_missing") or [])
+    ]
+    if not targets:
+        return {"expected": 0, "found": 0, "rate": None, "missed": [],
+                "passed": None}
+
+    produced = {d.get("index"): d for d in (determination.get("defects") or [])
+                if isinstance(d, dict)}
+
+    found, missed = 0, []
+    for expected, item in targets:
+        actual = produced.get(expected.get("index")) or {}
+        haystack = "\n".join(str(x) for x in (
+            list(actual.get("evidence_required") or [])
+            + list(actual.get("evidence_gap") or [])
+            + list(actual.get("annexures") or [])
+        ))
+        # Match on the distinguishing terms rather than the whole sentence:
+        # "IRP portal report for 08/2023" and "e-invoice portal data for
+        # August 2023" are the same demand.
+        terms = [t for t in _key_terms(item) if t]
+        hits = sum(1 for t in terms if t in _normalise(haystack))
+        if terms and hits >= max(1, len(terms) // 2):
+            found += 1
+        else:
+            missed.append({
+                "defect": expected.get("heading_contains") or expected.get("index"),
+                "document": item,
+            })
+
+    return {
+        "expected": len(targets),
+        "found": found,
+        "rate": round(found / len(targets), 3),
+        "missed": missed,
+        "passed": not missed,
+    }
+
+
+# Words that carry no distinguishing force when matching a document demand.
+_STOPWORDS = {
+    "the", "for", "of", "and", "a", "an", "in", "on", "with", "its", "every",
+    "listing", "report", "data", "tax", "period", "first", "month", "each",
+    "that", "this", "was", "were", "is", "are", "to", "by", "from", "at",
+}
+
+
+def _key_terms(text: str) -> List[str]:
+    return [
+        word for word in re.findall(r"[a-z0-9/()\-]{2,}", _normalise(text))
+        if word not in _STOPWORDS
+    ][:8]
+
+
 def score_matter(golden: Dict[str, Any], result: Dict[str, Any],
                  metadata: Dict[str, Any]) -> Dict[str, Any]:
     """Score one matter end to end."""
@@ -209,6 +352,7 @@ def score_matter(golden: Dict[str, Any], result: Dict[str, Any],
     verification = result.get("verification") or {}
     analyses = result.get("analyses") or []
     expected = golden.get("expected") or {}
+    expected_defects = golden.get("expected_defects") or []
 
     scores = {
         "citations": score_citation_integrity(verification),
@@ -218,6 +362,8 @@ def score_matter(golden: Dict[str, Any], result: Dict[str, Any],
         ),
         "position": score_position(determination, expected),
         "integrity": score_determination_integrity(determination),
+        "defects": score_defects(determination, expected_defects),
+        "evidence": score_evidence_gaps(determination, expected_defects),
     }
 
     # A matter passes only if nothing that CAN fail did.
@@ -270,6 +416,16 @@ def aggregate(matter_scores: List[Dict[str, Any]]) -> Dict[str, Any]:
         "fabricated_citations": fabricated,
         "superseded_citations": stale,
         "issue_coverage": rate(lambda m: m["scores"]["issues"]["rate"]),
+        "defect_coverage": rate(lambda m: m["scores"]["defects"]["rate"]),
+        "posture_accuracy": rate(lambda m: m["scores"]["defects"].get("posture_rate")),
+        # The number to watch. It is scored against limbs that were actually
+        # lost on a missing document, in matters where the argument was right.
+        "evidence_gap_catch": rate(lambda m: m["scores"]["evidence"]["rate"]),
+        "missed_critical_evidence": [
+            (m["id"], entry["document"])
+            for m in matter_scores
+            for entry in m["scores"]["evidence"].get("missed", [])
+        ],
         "procedural_catch": rate(lambda m: m["scores"]["procedural"]["rate"]),
         "position_agreement": rate(
             lambda m: 1.0 if m["scores"]["position"]["agrees"] else
