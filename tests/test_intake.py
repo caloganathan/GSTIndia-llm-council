@@ -115,12 +115,26 @@ class TestLocalExtraction:
     def test_section_invoked(self):
         assert self.fields["section_invoked"] == "61"
 
-    def test_dates(self):
+    def test_notice_date_read_from_the_document(self):
         assert self.fields["notice_date"] == "2026-06-14"
-        assert self.fields["due_date"] == "2026-07-30"
 
-    def test_largest_amount_taken_as_the_demand(self):
-        assert self.fields["amount_disputed"] == 4120000.0
+    def test_due_date_is_not_guessed_from_position(self):
+        """
+        The reply deadline comes from the portal form's labelled row or not at
+        all. Taking the LAST date in the document read an invoice date out of
+        an annexure and presented it as the deadline — an error that, acted on,
+        loses the client the right to reply.
+        """
+        assert "due_date" not in self.fields
+
+    def test_amount_is_not_guessed_from_the_largest_figure(self):
+        """
+        Amounts come from the defect annexures, head by head. Taking the
+        largest rupee figure in the document reported a single penalty limb as
+        the whole demand on a real notice, understating it by a factor of
+        seventy.
+        """
+        assert "amount_disputed" not in self.fields
 
     def test_every_field_records_its_source(self):
         for key in self.fields:
@@ -319,3 +333,111 @@ class TestFreeTierNameScrubbing:
         )
         assert "Acme" not in sent["prompt"]
         assert sanitizer.TAXPAYER_PLACEHOLDER in sent["prompt"]
+
+
+class TestFieldsTheOldExtractorGotWrong:
+    """
+    One regression test per field that a real scrutiny notice was read wrongly.
+
+    Every assertion below corresponds to a value the previous extractor
+    actually produced on a live Tamil Nadu ASMT-10 attachment. Six of seven
+    auto-filled fields were wrong, and none of them were wrong in a way the
+    reviewer could see.
+    """
+
+    NOTICE = """\
+GST ASMT - 10
+[See rule 99(1)]
+Reference No.: ZD330226255583F Date:  27/02/2026
+To
+GSTIN: 33AAGCG4663G1ZO
+Name: GRAM ENVOSOLUTION PRIVATE LIMITED.
+Tax period: APR 2023 - MAR 2024 F.Y.: 2023-2024
+Notice for intimating discrepancies in the return after scrutiny
+The following discrepancies were noticed including liabilities under
+section 9(5), if applicable. Attention is invited to section 16(2)(aa),
+section 16(4) and Rule 36(4). Interest arises under section 50(3).
+As per Notification 02/2022-CT(rate) dt 31.03.2022, certain rates changed.
+Invoice GRAM/23-24/056 dated 21-06-2023 was amended.
+Sr. No. Description Particulars
+1 Section under which notice is issued 61
+2 Date by which reply has to be submitted 28/03/2026
+Signature
+Name: Vidhya V
+Designation: Assistant Commissioner
+Jurisdiction: RAM NAGAR , Coimbatore-
+II , COIMBATORE , Tamil Nadu
+"""
+
+    @classmethod
+    @pytest.fixture(scope="class")
+    def fields(cls):
+        return intake.extract_fields_local(cls.NOTICE, gst)["fields"]
+
+    def test_provision_comes_from_the_labelled_row(self, fields):
+        """Previously read '9' out of 'section 9(5), if applicable'."""
+        assert fields["section_invoked"] == "61"
+
+    def test_every_provision_is_captured_with_its_sub_section(self, fields):
+        """Previously only the first match, truncated to '16'."""
+        cited = fields["sections_cited"]
+        assert "16(2)(aa)" in cited
+        assert "16(4)" in cited
+        assert "50(3)" in cited
+        assert len(cited) > 1
+
+    def test_reference_is_an_identifier_not_an_english_word(self, fields):
+        """Previously matched on the word 'notice' and returned 'proposing'."""
+        assert fields["notice_reference"] == "ZD330226255583F"
+
+    def test_notice_date_is_the_notice_date(self, fields):
+        """Previously the earliest date in the document — a 2022 notification."""
+        assert fields["notice_date"] == "2026-02-27"
+
+    def test_due_date_is_the_labelled_deadline(self, fields):
+        """Previously the latest date in the document — an invoice date."""
+        assert fields["due_date"] == "2026-03-28"
+
+    def test_taxpayer_named_in_capitals_is_found(self, fields):
+        """
+        Previously nothing: the suffix pattern was case-sensitive, so every
+        notice printing "PRIVATE LIMITED" left the sanitiser with no company
+        name to scrub.
+        """
+        assert fields["client_name"] == "GRAM ENVOSOLUTION PRIVATE LIMITED"
+
+    def test_form_code_with_spaces_is_recognised(self, fields):
+        """The portal prints "GST ASMT - 10", which did not match at all."""
+        assert fields["notice_type"] == "ASMT-10"
+
+    def test_issuing_officer_is_captured(self, fields):
+        assert fields["issuing_officer"] == "Vidhya V, Assistant Commissioner"
+
+    def test_jurisdiction_survives_a_line_break(self, fields):
+        assert fields["jurisdiction_office"].startswith("RAM NAGAR")
+        assert "COIMBATORE" in fields["jurisdiction_office"]
+
+    def test_state_derived_from_the_gstin(self, fields):
+        assert fields["state"] == "Tamil Nadu"
+
+
+class TestPrefixedEntityNames:
+    def test_tvl_prefix_wins(self):
+        assert intake.find_entity_name(
+            "Tvl. Gram Envosolution Private Limited, Coimbatore"
+        ) == "Gram Envosolution Private Limited"
+
+    def test_m_s_prefix_wins(self):
+        assert intake.find_entity_name(
+            "M/s. Acme Steel Industries has filed its returns."
+        ) == "Acme Steel Industries"
+
+    def test_longest_suffix_match_wins(self):
+        assert intake.find_entity_name(
+            "Acme Steel Industries Private Limited was registered"
+        ) == "Acme Steel Industries Private Limited"
+
+    def test_ordinary_prose_is_not_a_company(self):
+        assert intake.find_entity_name(
+            "the limited relief sought in the petition"
+        ) is None

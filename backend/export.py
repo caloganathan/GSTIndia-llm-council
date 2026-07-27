@@ -1,28 +1,60 @@
-"""Reply pack export.
+"""Reply pack export — two documents, never one.
 
-The deliverable is a professional work product: a submission drafted for the
-engagement partner to settle and sign, with the analysis and the schedule of
-authorities that support it. It is formatted the way a tax practice in India
-formats a file that goes to a partner and then to the department.
+WHY TWO
+-------
+The first version of this module produced a single file containing both the
+draft submission and the firm's internal analysis. That file was read by a
+practising partner, who said it could not be sent to a client, let alone filed.
+He was right, and the reason was worse than presentation.
 
-Typography is deliberately plain — Arial 11pt throughout, black on white,
-bold for headings and nothing else. No colour, no shading, no decoration. A
-document that looks designed looks amateur; a document that looks like every
-other well-run file on the partner's desk gets read.
+Section 5 of that document was headed "Points for Reviewer Attention" and
+contained, among other things, "worst realistic monetary exposure … approx.
+Rs. 2.02 lakh" and "this is a real exposure and must be quantified, not assumed
+away". Section 7 recorded that the firm's own confidence was "defensible, not
+strong, because … the team has not yet verified line-by-line." Every word of
+that is proper working-paper content. All of it sat in the same file as the
+text intended for the proper officer.
+
+So there are now two builders and no option to merge them:
+
+    build_filing_reply()   goes to the department, over the CLIENT's
+                           letterhead and its authorised signatory. Contains
+                           submissions, figures, authorities that VERIFIED,
+                           annexures, and a prayer. Contains no assessment of
+                           the firm's own confidence, no exposure arithmetic,
+                           no unverified citation, and no trace of how it was
+                           prepared.
+
+    build_file_note()      stays in the office. Contains everything the other
+                           document must not: postures and why, weaknesses,
+                           exposure, evidence gaps, unverified authorities,
+                           panel disagreements, and the board summary.
+
+STRUCTURE OF THE FILING DOCUMENT
+--------------------------------
+The A-to-O framework used before Adjudicating Authorities, Commissioner
+(Appeals) and the GSTAT — cause title, Disputes at a Glance, issue-wise reply,
+consolidated payments, evidentiary index, prayer. Not a memo with a draft in
+it. A document that can be signed and uploaded.
+
+Typography is deliberately plain: Arial 11pt, black on white, bold for
+headings and nothing else. A document that looks designed looks amateur.
 """
 
 import io
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from docx import Document
+from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
-from . import config
+from . import config, defects
 from .verification import ACTIONABLE, NOT_FOUND, SUPERSEDED, UNVERIFIED, VERIFIED
 
 BLACK = RGBColor(0x00, 0x00, 0x00)
@@ -31,8 +63,6 @@ GREY = RGBColor(0x40, 0x40, 0x40)
 BODY_FONT = "Arial"
 BODY_SIZE = Pt(11)
 
-# Plain-language equivalents. The reviewer needs to know what to check; the
-# internal vocabulary of the verification layer is not what they need to read.
 STATUS_LABEL = {
     VERIFIED: "Verified",
     SUPERSEDED: "Superseded",
@@ -53,6 +83,13 @@ CONFIDENCE_LABEL = {
     "insufficient_information": "Further information required",
 }
 
+ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI",
+         "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"]
+
+
+def _roman(n: int) -> str:
+    return ROMAN[n - 1] if 1 <= n <= len(ROMAN) else str(n)
+
 
 # ---------------------------------------------------------------------------
 # Typography
@@ -65,7 +102,6 @@ def _configure_styles(doc: Document):
     normal.font.name = BODY_FONT
     normal.font.size = BODY_SIZE
     normal.font.color.rgb = BLACK
-    # East Asian font mapping, or Word substitutes on some systems
     normal.element.rPr.rFonts.set(qn("w:eastAsia"), BODY_FONT)
     normal.paragraph_format.space_after = Pt(6)
     normal.paragraph_format.line_spacing = 1.15
@@ -94,12 +130,15 @@ def _configure_styles(doc: Document):
 
 
 def _para(doc: Document, text: str = "", bold: bool = False,
-          italic: bool = False, size: Pt = None, align=None, space_after=None):
+          italic: bool = False, size: Pt = None, align=None, space_after=None,
+          indent=None):
     paragraph = doc.add_paragraph()
     if align is not None:
         paragraph.alignment = align
     if space_after is not None:
         paragraph.paragraph_format.space_after = space_after
+    if indent is not None:
+        paragraph.paragraph_format.left_indent = indent
     if text:
         run = paragraph.add_run(text)
         run.font.name = BODY_FONT
@@ -124,7 +163,6 @@ def _heading(doc: Document, text: str, level: int = 1):
 
 
 def _rule(doc: Document):
-    """A thin horizontal rule — the only ornament this document uses."""
     paragraph = doc.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(2)
     paragraph.paragraph_format.space_after = Pt(8)
@@ -145,19 +183,38 @@ def _plain_table(doc: Document, columns: int):
     return table
 
 
-def _set_cell(cell, text: str, bold: bool = False):
+def _set_cell(cell, text: str, bold: bool = False, size: Pt = None):
     cell.text = ""
     paragraph = cell.paragraphs[0]
     paragraph.paragraph_format.space_after = Pt(2)
     run = paragraph.add_run(str(text) if text not in (None, "") else "—")
     run.font.name = BODY_FONT
-    run.font.size = Pt(10)
+    run.font.size = size or Pt(10)
     run.font.color.rgb = BLACK
     run.bold = bold
 
 
+def _grid(doc: Document, headers: List[str], rows: List[List[str]],
+          widths: List[float] = None, bold_columns: Tuple[int, ...] = ()):
+    """A bordered table with a bold header row — how a reply states figures."""
+    if not rows:
+        return None
+    table = _plain_table(doc, len(headers))
+    if widths:
+        for index, width in enumerate(widths):
+            table.columns[index].width = Inches(width)
+    header_cells = table.add_row().cells
+    for cell, label in zip(header_cells, headers):
+        _set_cell(cell, label, bold=True)
+    for row in rows:
+        cells = table.add_row().cells
+        for index, value in enumerate(row[:len(headers)]):
+            _set_cell(cells[index], value, bold=index in bold_columns)
+    _para(doc, space_after=Pt(4))
+    return table
+
+
 def _particulars(doc: Document, rows):
-    """Two-column particulars block, as a file cover sheet is set out."""
     rows = [(k, v) for k, v in rows if v not in (None, "", [])]
     if not rows:
         return
@@ -171,13 +228,8 @@ def _particulars(doc: Document, rows):
     _para(doc, space_after=Pt(4))
 
 
-def _numbered_body(doc: Document, text: str):
-    """
-    Render pre-numbered draft text.
-
-    The chairman returns paragraphs already numbered, which is how a reply is
-    actually written. Indent continuation lines so numbering stays legible.
-    """
+def _numbered_body(doc: Document, text: str, indent_continuations: bool = True):
+    """Render pre-numbered text, indenting continuation lines."""
     for block in str(text or "").split("\n"):
         stripped = block.strip()
         if not stripped:
@@ -185,7 +237,10 @@ def _numbered_body(doc: Document, text: str):
         paragraph = doc.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(8)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        if stripped[:1].isdigit() and ("." in stripped[:5] or ")" in stripped[:5]):
+        numbered = stripped[:1].isdigit() and (
+            "." in stripped[:6] or ")" in stripped[:6]
+        )
+        if indent_continuations and numbered:
             paragraph.paragraph_format.left_indent = Inches(0.35)
             paragraph.paragraph_format.first_line_indent = Inches(-0.35)
         run = paragraph.add_run(stripped)
@@ -194,48 +249,507 @@ def _numbered_body(doc: Document, text: str):
         run.font.color.rgb = BLACK
 
 
-def _page_footer(doc: Document, reference: str):
-    """Matter reference and page number, as any professional file carries."""
+def _page_footer(doc: Document, left: str):
     footer = doc.sections[0].footer
     paragraph = footer.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = paragraph.add_run(f"{reference}    |    Page ")
+    run = paragraph.add_run(f"{left}    |    Page ")
     run.font.name = BODY_FONT
     run.font.size = Pt(8)
     run.font.color.rgb = GREY
-
-    # PAGE field
     fld = OxmlElement("w:fldSimple")
     fld.set(qn("w:instr"), "PAGE")
     paragraph._p.append(fld)
 
 
-# ---------------------------------------------------------------------------
-# The pack
-# ---------------------------------------------------------------------------
+def _page_header(doc: Document, text: str):
+    """A running header — used to stamp a draft as not for filing."""
+    if not text:
+        return
+    header = doc.sections[0].header
+    paragraph = header.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = paragraph.add_run(text)
+    run.font.name = BODY_FONT
+    run.font.size = Pt(9)
+    run.font.color.rgb = BLACK
+    run.bold = True
 
 
-def build_reply_pack(matter: Dict[str, Any]) -> bytes:
-    """Render a completed matter as a reply pack for partner review."""
-    intake = matter.get("intake", {})
-    result = matter.get("result") or {}
-    determination = result.get("determination") or {}
-    verification = result.get("verification") or {}
-    metadata = matter.get("metadata") or {}
-
-    doc = Document()
-    _configure_styles(doc)
-
+def _margins(doc: Document):
     section = doc.sections[0]
     section.top_margin = Inches(0.9)
     section.bottom_margin = Inches(0.9)
     section.left_margin = Inches(1.0)
     section.right_margin = Inches(1.0)
 
-    reference = f"Ref: {str(matter.get('id', ''))[:8].upper()}"
-    _page_footer(doc, reference)
 
-    # ---- Cover -----------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Shared reading of a matter
+# ---------------------------------------------------------------------------
+
+
+def _unpack(matter: Dict[str, Any]):
+    intake = matter.get("intake", {})
+    result = matter.get("result") or {}
+    determination = result.get("determination") or {}
+    verification = result.get("verification") or {}
+    metadata = matter.get("metadata") or {}
+    defect_list = determination.get("defects") or intake.get("defects") or []
+    return intake, determination, verification, metadata, defect_list
+
+
+def _verified_index(verification: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Citation text -> its verification record, for gating the filing document."""
+    index = {}
+    for authority in verification.get("authorities") or []:
+        citation = (authority.get("citation") or "").strip().lower()
+        if citation:
+            index[citation] = authority
+    return index
+
+
+def _is_filable(citation: str, index: Dict[str, Dict[str, Any]]) -> bool:
+    """
+    May this authority appear in the document that goes to the officer?
+
+    An authority nobody checked is not filable. If verification did not run at
+    all the index is empty and NOTHING is filable, which is the correct
+    failure direction: a reply with fewer authorities is recoverable, a reply
+    with a fabricated one is not.
+    """
+    record = index.get((citation or "").strip().lower())
+    return bool(record and record.get("status") == VERIFIED)
+
+
+def _reply_form(intake: Dict[str, Any], pack_types: Dict[str, Any]) -> str:
+    notice = pack_types.get(intake.get("notice_type"))
+    return (notice.reply_form if notice else None) or "the appropriate reply form"
+
+
+# ---------------------------------------------------------------------------
+# 1. The filing document
+# ---------------------------------------------------------------------------
+
+
+def build_filing_reply(matter: Dict[str, Any]) -> bytes:
+    """
+    The document that is signed and filed.
+
+    Everything in here is written to be read by the proper officer. Nothing in
+    here assesses the firm's own confidence, quantifies the client's exposure,
+    or carries an authority that failed verification.
+    """
+    from .domains import get_pack
+    intake, determination, verification, metadata, defect_list = _unpack(matter)
+    pack = get_pack(matter.get("domain", "gst"))
+    verified = _verified_index(verification)
+
+    doc = Document()
+    _configure_styles(doc)
+    _margins(doc)
+
+    watermark = metadata.get("watermark")
+    if watermark:
+        _page_header(doc, watermark)
+
+    client = intake.get("client_name") or "the Noticee"
+    reference = intake.get("notice_reference") or str(matter.get("id", ""))[:8].upper()
+    _page_footer(doc, f"{client} — {intake.get('tax_period', '')}".strip(" —"))
+
+    # ---- Cause title -----------------------------------------------------
+    forum = _forum_line(intake)
+    for line in forum:
+        _para(doc, line, bold=True, size=Pt(12),
+              align=WD_ALIGN_PARAGRAPH.CENTER, space_after=Pt(0))
+    _para(doc, space_after=Pt(4))
+    _rule(doc)
+
+    _particulars(doc, [
+        ("Noticee", f"Tvl. {client}" if intake.get("state") == "Tamil Nadu"
+                    else f"M/s. {client}"),
+        ("GSTIN", intake.get("gstin")),
+        ("Period in dispute", intake.get("tax_period")),
+        ("Impugned notice", _notice_line(intake, pack)),
+        ("Reference", reference),
+        ("ARN", intake.get("notice_arn")),
+        ("DIN", intake.get("din")),
+        ("Amount in dispute", _rupees(_matter_amount(defect_list, intake))),
+        ("Reply due", _date(intake.get("due_date"))),
+        ("Filed in", _reply_form(intake, pack.NOTICE_TYPES)),
+    ])
+
+    _para(doc, "COMPREHENSIVE WRITTEN REPLY", bold=True, size=Pt(12),
+          align=WD_ALIGN_PARAGRAPH.CENTER)
+    _rule(doc)
+
+    # ---- A. Preliminary submissions --------------------------------------
+    _heading(doc, "A.  Preliminary Submissions", 1)
+    preliminary = determination.get("preliminary_submissions")
+    if preliminary:
+        _numbered_body(doc, preliminary)
+    else:
+        _para(doc, _default_preliminary(intake, client, pack))
+
+    # ---- B. Disputes at a glance -----------------------------------------
+    if defect_list:
+        _heading(doc, "B.  Disputes at a Glance", 1)
+        rows = []
+        for defect in defect_list:
+            amount = defects.defect_total(defect)
+            allegation = defect.get("heading") or ""
+            if amount:
+                allegation += f" — Rs. {defects.indian_number(amount)}"
+            rows.append([
+                str(defect.get("index", "")),
+                allegation,
+                defect.get("our_position") or defects.POSTURE_LABEL.get(
+                    defect.get("posture"), ""),
+            ])
+        _grid(doc, ["Sl.", "Allegation in the notice", "Noticee's position"],
+              rows, widths=[0.4, 2.9, 3.1], bold_columns=(2,))
+
+    # ---- C. Issue-wise reply ---------------------------------------------
+    if defect_list:
+        _heading(doc, "C.  Issue-wise Detailed Reply", 1)
+        for defect in defect_list:
+            _defect_section(doc, defect, verified)
+
+    # ---- D. Consolidated statement of payments ---------------------------
+    payment_rows = _payment_rows(defect_list)
+    if payment_rows:
+        _heading(doc, "D.  Consolidated Statement of Payments", 1)
+        _para(doc, "The following amounts have been discharged through FORM "
+                   "GST DRC-03:")
+        _grid(doc,
+              ["Sl.", "Issue", "Amount (Rs.)", "Reference", "Remarks"],
+              payment_rows, widths=[0.4, 2.2, 1.2, 1.6, 1.0])
+        if any("protest" in (row[4] or "").lower() for row in payment_rows):
+            _para(doc,
+                  "The payments marked as made under protest are made without "
+                  "prejudice to the Noticee's position that the said input tax "
+                  "credit is eligible, and do not constitute any admission of "
+                  "liability. The Noticee expressly reserves its right to seek "
+                  "refund of the amounts so paid.")
+
+    # ---- E. Evidentiary index --------------------------------------------
+    annexures = _annexure_rows(defect_list)
+    if annexures:
+        _heading(doc, "E.  Evidentiary Index — Documents Enclosed", 1)
+        _grid(doc, ["Annexure", "Document", "Issue supported"], annexures,
+              widths=[0.9, 3.6, 1.9])
+
+    # ---- F. Prayer --------------------------------------------------------
+    _heading(doc, "F.  Prayer", 1)
+    _para(doc,
+          "In view of the foregoing submissions, the Noticee most respectfully "
+          "prays that the Honourable Proper Officer may be pleased to:")
+    prayer_rows = []
+    counter = 0
+    for defect in defect_list:
+        relief = defect.get("prayer_relief")
+        if not relief:
+            relief = _default_relief(defect)
+        counter += 1
+        prayer_rows.append([_roman(counter), relief])
+    counter += 1
+    prayer_rows.append([
+        _roman(counter),
+        "GRANT a personal hearing under Section 75(4) of the Central Goods and "
+        "Services Tax Act, 2017 at a mutually convenient date before any "
+        "adverse view is taken.",
+    ])
+    counter += 1
+    prayer_rows.append([
+        _roman(counter),
+        "PASS such further order or grant such other relief as this Honourable "
+        "Authority may deem fit and proper in the facts and circumstances of "
+        "the case.",
+    ])
+    _grid(doc, ["Sl.", "Relief prayed"], prayer_rows, widths=[0.6, 5.8])
+
+    _para(doc, "And for this act of justice, the Noticee as in duty bound "
+               "shall ever pray.", space_after=Pt(18))
+
+    # ---- Signature block --------------------------------------------------
+    #
+    # The chairman prompt used to forbid this block, on the reasoning that "the
+    # firm supplies those". The firm should not have to: a reply without an
+    # addressee, a place, a date and a signatory is not a reply, and every
+    # exported document arrived needing the same manual surgery.
+    _para(doc, "Yours faithfully,", space_after=Pt(2))
+    _para(doc, f"For {'Tvl.' if intake.get('state') == 'Tamil Nadu' else 'M/s.'} "
+               f"{client}", bold=True, space_after=Pt(30))
+    _para(doc, "Authorised Signatory", space_after=Pt(2))
+    _particulars(doc, [
+        ("Place", intake.get("place") or ""),
+        ("Date", ""),
+    ])
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def _forum_line(intake: Dict[str, Any]) -> List[str]:
+    office = intake.get("jurisdiction_office") or ""
+    officer = intake.get("issuing_officer") or ""
+    designation = ""
+    for candidate in ("Assistant Commissioner", "Deputy Commissioner",
+                      "Joint Commissioner", "Additional Commissioner",
+                      "Superintendent", "Commissioner"):
+        if candidate.lower() in officer.lower():
+            designation = candidate
+            break
+    state = intake.get("state") or ""
+    lines = [f"BEFORE THE {(designation or 'PROPER OFFICER').upper()}"
+             f"{' (ST)' if state and designation else ''}"]
+    if office:
+        lines.append(office.upper())
+    if state:
+        lines.append(f"COMMERCIAL TAXES DEPARTMENT, GOVERNMENT OF {state.upper()}")
+    return lines
+
+
+def _notice_line(intake: Dict[str, Any], pack) -> str:
+    notice = pack.NOTICE_TYPES.get(intake.get("notice_type"))
+    parts = []
+    if notice:
+        parts.append(f"FORM GST {notice.code} — {notice.name}")
+        parts.append(f"issued under {notice.statute}")
+    if intake.get("notice_date"):
+        parts.append(f"dated {_date(intake['notice_date'])}")
+    return ", ".join(parts)
+
+
+def _default_preliminary(intake: Dict[str, Any], client: str, pack) -> str:
+    notice = pack.NOTICE_TYPES.get(intake.get("notice_type"))
+    form = notice.code if notice else "the notice"
+    statute = notice.statute if notice else "the provisions cited therein"
+    return (
+        f"1.  M/s. {client}, holding GSTIN {intake.get('gstin', '')} "
+        f"(hereinafter referred to as 'the Noticee'), registered under the "
+        f"Central Goods and Services Tax Act, 2017 and the corresponding State "
+        f"Act, hereby submits this comprehensive written reply to the notice "
+        f"issued in FORM GST {form} under {statute}, in respect of the tax "
+        f"period {intake.get('tax_period', '')}.\n\n"
+        "2.  The Noticee has examined each discrepancy raised in the notice and "
+        "submits its response issue-wise hereunder. The Noticee has cooperated "
+        "fully with the proceedings and undertakes to produce such further "
+        "documentary evidence as may be called for."
+    )
+
+
+def _defect_section(doc: Document, defect: Dict[str, Any],
+                    verified: Dict[str, Dict[str, Any]]):
+    index = defect.get("index", "")
+    _heading(doc, f"Issue {_roman(int(index)) if str(index).isdigit() else index}: "
+                  f"{defect.get('heading', '')}", 2)
+
+    amount = defects.defect_total(defect)
+    if amount:
+        heads = defects.normalise_heads(defect.get("amount_by_head"))
+        allocated = any(heads.get(h) for h in defects.TAX_HEADS)
+        split = (f" ({defects.format_heads(heads)})" if allocated else "")
+        _para(doc,
+              f"Amount in issue: Rs. {defects.indian_number(amount)}{split}.",
+              bold=True, size=Pt(10))
+
+    contention = _clean_contention(defect.get("department_contention"))
+    if contention:
+        _para(doc, "Department's allegation", bold=True, size=Pt(10))
+        _para(doc, contention)
+
+    if defect.get("facts"):
+        _para(doc, "Factual position", bold=True, size=Pt(10))
+        _numbered_body(doc, defect["facts"])
+
+    framework = [
+        entry for entry in (defect.get("legal_framework") or [])
+        if isinstance(entry, dict) and entry.get("provision")
+    ]
+    if framework:
+        _para(doc, "Legal framework", bold=True, size=Pt(10))
+        _grid(doc, ["Provision", "Relevance"],
+              [[e.get("provision", ""), e.get("relevance", "")] for e in framework],
+              widths=[2.4, 4.0])
+
+    # Only VERIFIED authority reaches this document. Anything else is in the
+    # file note with a confirm-before-filing flag, which is where a caveat
+    # belongs — not in front of the officer.
+    filable = [
+        a for a in (defect.get("authorities") or [])
+        if isinstance(a, dict) and _is_filable(a.get("citation", ""), verified)
+    ]
+    if filable:
+        _para(doc, "Authorities relied upon", bold=True, size=Pt(10))
+        _grid(doc, ["Authority", "Proposition"],
+              [[a.get("citation", ""), a.get("proposition", "")] for a in filable],
+              widths=[2.8, 3.6])
+
+    splits = [s for s in (defect.get("splits") or []) if isinstance(s, dict)]
+    if splits:
+        _para(doc, "Position taken, item by item", bold=True, size=Pt(10))
+        _grid(doc, ["Particulars", "Amount (Rs.)", "Position taken"],
+              [[s.get("description", ""),
+                defects.indian_number(defects.total_of(s.get("amount_by_head"))),
+                defects.POSTURE_LABEL.get(s.get("posture"), s.get("posture", ""))]
+               for s in splits],
+              widths=[3.0, 1.4, 2.0])
+
+    submission = defect.get("submission")
+    if submission:
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        paragraph.paragraph_format.space_before = Pt(6)
+        paragraph.paragraph_format.space_after = Pt(12)
+        run = paragraph.add_run("SUBMISSION: ")
+        run.font.name = BODY_FONT
+        run.font.size = BODY_SIZE
+        run.bold = True
+        run.font.color.rgb = BLACK
+        body = paragraph.add_run(submission)
+        body.font.name = BODY_FONT
+        body.font.size = BODY_SIZE
+        body.bold = True
+        body.font.color.rgb = BLACK
+
+
+def _clean_contention(text: str) -> str:
+    """
+    Render the department's allegation as prose, never as a flattened table.
+
+    When the chairman supplies a contention it is already a sentence or two.
+    When it falls back to the raw notice extract — because the chairman omitted
+    it, or the run degraded — that extract can be an entire annexure with its
+    column rulers, and pasting it into a filed reply as a paragraph of loose
+    digits reads as though nobody looked at the document.
+
+    So sentences that are mostly numbers are dropped. What survives is the
+    department's own words; the figures are already stated, correctly and
+    head-wise, in the line above.
+    """
+    raw = re.sub(r"\s+", " ", str(text or "")).strip().lstrip("•‣▪ ")
+    if not raw:
+        return ""
+
+    kept = []
+    for sentence in re.split(r"(?<=[.:])\s+", raw):
+        sentence = sentence.strip()
+        if len(sentence) < 3:
+            continue
+        if _is_table_residue(sentence):
+            continue
+        kept.append(sentence)
+        if sum(len(s) for s in kept) > 700:
+            break
+
+    return " ".join(kept)
+
+
+# Four or more standalone numbers in a row. This is the signature of a table
+# flattened into text — a column ruler, or a row of head-wise figures — and it
+# does not occur in prose. A digit-ratio threshold was tried first and let a
+# whole annexure through, because the long column descriptions the department
+# writes ("ITC on inward supplies other than imports and inward supplies liable
+# to reverse charge…") dilute the ratio below any workable cut-off.
+_NUMBER_RUN_RE = re.compile(r"(?:(?<![\w.])[\d,]+(?:\.\d+)?(?![\w.])\s+){3,}"
+                            r"(?<![\w.])[\d,]+(?:\.\d+)?(?![\w.])")
+
+
+# Column headings the department prints above every annexure. They survive the
+# numeric filters because they carry no digits at all, and they read as
+# gibberish in a filed paragraph.
+_COLUMN_HEADER_RE = re.compile(
+    r"\b(?:S\.?\s?No\.?|Sl\.?\s?No\.?|Table\s+No\.?|Return\s*/\s*Statement"
+    r"|Taxable\s+value\s+SGST|SGST\s+CGST\s+IGST)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_table_residue(sentence: str) -> bool:
+    if _NUMBER_RUN_RE.search(sentence):
+        return True
+    if _COLUMN_HEADER_RE.search(sentence):
+        return True
+    digits = sum(c.isdigit() for c in sentence)
+    return digits > len(sentence) * 0.30
+
+
+def _payment_rows(defect_list: List[Dict[str, Any]]) -> List[List[str]]:
+    rows = []
+    counter = 0
+    for defect in defect_list:
+        payment = defect.get("payment") or {}
+        if not payment.get("reference"):
+            continue
+        counter += 1
+        under_protest = bool(payment.get("under_protest")) or \
+            defect.get("posture") == defects.PAID_UNDER_PROTEST
+        amount = defects.total_of(payment.get("tax_by_head")) or \
+            defects.defect_total(defect)
+        reference = payment.get("reference", "")
+        if payment.get("date"):
+            reference = f"{reference} dated {payment['date']}"
+        rows.append([
+            str(counter),
+            f"Issue {defect.get('index')} — {defect.get('heading', '')}",
+            defects.indian_number(amount),
+            reference,
+            "Paid under protest" if under_protest else "Agreed and paid",
+        ])
+    return rows
+
+
+def _annexure_rows(defect_list: List[Dict[str, Any]]) -> List[List[str]]:
+    rows = []
+    counter = 0
+    for defect in defect_list:
+        for annexure in defect.get("annexures") or []:
+            counter += 1
+            rows.append([
+                f"Annexure-{counter}",
+                str(annexure),
+                f"Issue {defect.get('index')} — {defect.get('heading', '')}",
+            ])
+    return rows
+
+
+def _default_relief(defect: Dict[str, Any]) -> str:
+    verb = defects.POSTURE_RELIEF_VERB.get(defect.get("posture"), "CONSIDER")
+    amount = defects.defect_total(defect)
+    tail = f" of Rs. {defects.indian_number(amount)}" if amount else ""
+    return (f"{verb} the allegation at Issue {defect.get('index')} — "
+            f"{defect.get('heading', '')}{tail}.")
+
+
+def _matter_amount(defect_list, intake) -> Optional[float]:
+    if defect_list:
+        return defects.matter_total(defect_list)
+    return intake.get("amount_disputed")
+
+
+# ---------------------------------------------------------------------------
+# 2. The internal file note
+# ---------------------------------------------------------------------------
+
+
+def build_file_note(matter: Dict[str, Any]) -> bytes:
+    """
+    The working paper. Never leaves the firm.
+
+    This is where every hedge, every exposure figure, every unverified citation
+    and every evidence gap belongs — stated bluntly, because the only reader is
+    a professional deciding whether to sign.
+    """
+    intake, determination, verification, metadata, defect_list = _unpack(matter)
+
+    doc = Document()
+    _configure_styles(doc)
+    _margins(doc)
+    _page_header(doc, "INTERNAL WORKING PAPER — NOT FOR SUBMISSION")
+    _page_footer(doc, f"Ref: {str(matter.get('id', ''))[:8].upper()}")
+
     if config.FIRM_NAME:
         _para(doc, config.FIRM_NAME, bold=True, size=Pt(13),
               align=WD_ALIGN_PARAGRAPH.CENTER, space_after=Pt(0))
@@ -243,22 +757,24 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
               align=WD_ALIGN_PARAGRAPH.CENTER, space_after=Pt(2))
         _rule(doc)
 
-    notice_type = intake.get("notice_type", "")
-    _para(doc, "REPLY TO NOTICE — ANALYSIS AND DRAFT SUBMISSION", bold=True,
-          size=Pt(13), align=WD_ALIGN_PARAGRAPH.CENTER, space_after=Pt(2))
-    _para(doc, f"Notice in Form {notice_type}" if notice_type else "",
-          size=Pt(10), align=WD_ALIGN_PARAGRAPH.CENTER)
+    _para(doc, "FILE NOTE — NOTICE REPLY", bold=True, size=Pt(13),
+          align=WD_ALIGN_PARAGRAPH.CENTER, space_after=Pt(2))
+    _para(doc,
+          "Internal working paper. This document must not be sent to the "
+          "client, annexed to the reply, or filed with the department. It "
+          "records the firm's own assessment, including weaknesses, exposure "
+          "and unresolved points.",
+          italic=True, size=Pt(9), align=WD_ALIGN_PARAGRAPH.CENTER)
     _rule(doc)
 
     _particulars(doc, [
         ("Client", intake.get("client_name")),
         ("GSTIN", intake.get("gstin")),
-        ("Notice", notice_type),
-        ("Provision invoked", intake.get("section_invoked")),
+        ("Notice", intake.get("notice_type")),
+        ("Reference", intake.get("notice_reference")),
         ("Jurisdiction", intake.get("state")),
         ("Tax period", intake.get("tax_period")),
-        ("Amount in dispute", _rupees(intake.get("amount_disputed"))),
-        ("Date of notice", _date(intake.get("notice_date"))),
+        ("Amount in dispute", _rupees(_matter_amount(defect_list, intake))),
         ("Reply due", _date(intake.get("due_date"))),
         ("Prepared on", datetime.now(timezone.utc).strftime("%d %B %Y")),
         ("Matter reference", str(matter.get("id", ""))[:8].upper()),
@@ -266,143 +782,144 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
 
     _para(doc, config.EXPORT_REVIEW_NOTE, italic=True, size=Pt(9))
 
-    # ---- 1. Position recommended ----------------------------------------
-    _heading(doc, "1.  Position Recommended", 1)
+    # ---- 1. Blockers ------------------------------------------------------
+    blockers = determination.get("filing_blockers") or []
+    _heading(doc, "1.  Before this reply can be filed", 1)
+    if blockers:
+        _para(doc, f"{len(blockers)} matter(s) must be resolved before filing.",
+              bold=True)
+        for index, blocker in enumerate(blockers, start=1):
+            _para(doc, f"{index}.  {blocker}", indent=Inches(0.3))
+    else:
+        _para(doc, "No structural blockers were identified. The substantive "
+                   "points below still require partner judgement.")
+
+    # ---- 2. Position and triage -------------------------------------------
+    _heading(doc, "2.  Position Recommended", 1)
     _para(doc, determination.get("recommended_position") or
           "No recommendation was settled on the material available.")
 
+    triage = determination.get("triage") or defects.triage(defect_list)
     rows = []
     if determination.get("confidence"):
-        rows.append(("Assessment of position",
-                     CONFIDENCE_LABEL.get(determination["confidence"],
-                                          determination["confidence"].title())))
+        rows.append(("Assessment", CONFIDENCE_LABEL.get(
+            determination["confidence"], determination["confidence"].title())))
     if determination.get("lead_argument"):
-        rows.append(("Submission taken first", determination["lead_argument"]))
+        rows.append(("Argument taken first", determination["lead_argument"]))
+    if triage.get("total_count"):
+        rows.append((
+            "Limbs",
+            f"{triage['total_count']} defects, Rs. "
+            f"{defects.indian_number(triage['total_amount'])}. "
+            f"{triage['argue_count']} argued (Rs. "
+            f"{defects.indian_number(triage['argued_amount'])}), "
+            f"{triage['settle_count']} settled on documents or payment (Rs. "
+            f"{defects.indian_number(triage['settled_amount'])})."
+        ))
     _particulars(doc, rows)
 
-    # ---- 2. Issues and position ------------------------------------------
-    issues = [i for i in (determination.get("issues") or []) if isinstance(i, dict)]
-    if issues:
-        _heading(doc, "2.  Issues Raised and Position Taken", 1)
-        for index, issue in enumerate(issues, start=1):
-            _heading(doc, f"2.{index}  {issue.get('issue', 'Issue')}", 2)
-            _particulars(doc, [
-                ("Contention in the notice", issue.get("department_view")),
-                ("Position taken", issue.get("our_position")),
-                ("Relied upon", issue.get("authority")),
-                ("Assessment", STRENGTH_LABEL.get(
-                    (issue.get("strength") or "").lower(), issue.get("strength"))),
-            ])
+    # ---- 3. Defect register ------------------------------------------------
+    if defect_list:
+        _heading(doc, "3.  Defect Register", 1)
+        _grid(doc,
+              ["Sl.", "Defect", "Amount (Rs.)", "Posture", "Strength"],
+              [[str(d.get("index", "")),
+                d.get("heading", ""),
+                defects.indian_number(defects.defect_total(d)),
+                defects.POSTURE_LABEL.get(d.get("posture"), d.get("posture", "")),
+                STRENGTH_LABEL.get((d.get("strength") or "").lower(),
+                                   d.get("strength") or "—")]
+               for d in defect_list],
+              widths=[0.4, 2.5, 1.1, 1.4, 1.0])
 
-    # ---- 3. Draft reply ---------------------------------------------------
-    if determination.get("draft_reply"):
-        doc.add_page_break()
-        _heading(doc, "3.  Draft Reply", 1)
-        _para(doc,
-              "To be settled by the engagement partner and issued on the firm's "
-              "letterhead over signature.", italic=True, size=Pt(9))
-        _rule(doc)
-        _numbered_body(doc, determination["draft_reply"])
+    # ---- 4. Evidence gaps — the most important section --------------------
+    gaps = [(d, list(d.get("evidence_gap") or [])) for d in defect_list]
+    gaps = [(d, g) for d, g in gaps if g]
+    _heading(doc, "4.  Evidence Gaps", 1)
+    _para(doc,
+          "Documents the officer will require which the engagement team has "
+          "not confirmed are available. A limb with a sound argument and a "
+          "missing document is a limb that will be lost — this is the section "
+          "to clear before the reply is filed, not after.",
+          italic=True, size=Pt(9))
+    if gaps:
+        _grid(doc, ["Defect", "Document not confirmed as held"],
+              [[f"{d.get('index')} — {d.get('heading', '')}", item]
+               for d, items in gaps for item in items],
+              widths=[2.4, 4.0])
+    else:
+        _para(doc, "No evidence gap was recorded. Confirm this positively "
+                   "against the evidence list for each defect rather than "
+                   "reading silence as sufficiency.")
 
-    # ---- 4. Schedule of authorities --------------------------------------
+    # ---- 5. Schedule of authorities ---------------------------------------
     authorities = verification.get("authorities") or []
-    _heading(doc, "4.  Schedule of Authorities", 1)
-
+    _heading(doc, "5.  Schedule of Authorities", 1)
     if authorities:
         summary = verification.get("summary") or {}
-        outstanding = sum(
-            summary.get(k, 0) or 0
-            for k in ("superseded", "unverified", "not_found")
-        )
+        outstanding = sum(summary.get(k, 0) or 0
+                          for k in ("superseded", "unverified", "not_found"))
         if outstanding:
             _para(doc,
                   f"{outstanding} of {summary.get('total', len(authorities))} "
-                  "authorities require confirmation before filing. These are "
-                  "identified below.", bold=True)
-
-        table = _plain_table(doc, 4)
-        table.columns[0].width = Inches(2.2)
-        table.columns[1].width = Inches(1.9)
-        table.columns[2].width = Inches(1.1)
-        table.columns[3].width = Inches(1.3)
-        header = table.add_row().cells
-        for cell, label in zip(header, ("Authority", "Cited for", "Status", "Remarks")):
-            _set_cell(cell, label, bold=True)
-
-        for authority in authorities:
-            cells = table.add_row().cells
-            _set_cell(cells[0], authority.get("citation", ""))
-            _set_cell(cells[1], authority.get("proposition", ""))
-            status = authority.get("status", UNVERIFIED)
-            _set_cell(cells[2], STATUS_LABEL.get(status, "To be confirmed"),
-                      bold=status != VERIFIED)
-            remark = authority.get("note", "")
-            if authority.get("correction"):
-                remark = f"{remark} Read as: {authority['correction']}"
-            _set_cell(cells[3], remark)
-        _para(doc, space_after=Pt(4))
+                  "authorities did not verify. These have been WITHHELD from "
+                  "the filing document. Confirm them against the reported text "
+                  "if any is to be relied upon.", bold=True)
+        _grid(doc, ["Authority", "Cited for", "Defect", "Status", "Remarks"],
+              [[a.get("citation", ""),
+                a.get("proposition", ""),
+                str(a.get("defect_index") or "—"),
+                STATUS_LABEL.get(a.get("status", UNVERIFIED), "To be confirmed"),
+                (a.get("note", "") +
+                 (f" Read as: {a['correction']}" if a.get("correction") else ""))]
+               for a in authorities],
+              widths=[1.8, 1.7, 0.5, 1.0, 1.4])
         _para(doc,
-              "'Verified' indicates the authority was traced, supports the "
-              "proposition for which it is cited, and appears to remain good "
-              "law. 'Superseded' indicates it has been amended, withdrawn, "
-              "overruled or stayed and must not be relied on as cited. 'To be "
-              "confirmed' and 'Not traced' are to be settled against the "
-              "reported text before filing.",
+              "Only authorities shown as 'Verified' appear in the filing "
+              "document. 'Superseded', 'To be confirmed' and 'Not traced' are "
+              "withheld from it by design.",
               italic=True, size=Pt(9))
     else:
         _para(doc,
-              "No authority has been cited in support of the position taken. "
-              "This is to be considered before the submission is settled.")
+              "No authority was cited, or verification did not run. The filing "
+              "document therefore carries no case law. Consider whether the "
+              "contested limbs can be sustained on the statute alone.")
 
-    # ---- 5. Points for reviewer attention --------------------------------
+    # ---- 6. Risk flags and open questions ---------------------------------
     risk_flags = determination.get("risk_flags") or []
     open_questions = determination.get("open_questions") or []
-    unresolved = [a for a in authorities if a.get("status") in ACTIONABLE]
-
-    if risk_flags or open_questions or unresolved:
-        _heading(doc, "5.  Points for Reviewer Attention", 1)
+    if risk_flags or open_questions:
+        _heading(doc, "6.  Points for Partner Attention", 1)
         counter = 0
         for flag in risk_flags:
             counter += 1
-            _para(doc, f"{counter}.  {flag}")
-        for authority in unresolved:
-            counter += 1
-            status = authority.get("status")
-            label = STATUS_LABEL.get(status, "to be confirmed")
-            detail = f" {authority.get('correction')}" if authority.get("correction") else ""
-            action = ("must not be relied on as cited"
-                      if status == SUPERSEDED else "to be confirmed before filing")
-            _para(doc, f"{counter}.  Authority {action}: "
-                       f"{authority.get('citation', '')} ({label}).{detail}")
+            _para(doc, f"{counter}.  {flag}", indent=Inches(0.3))
         for question in open_questions:
             counter += 1
-            _para(doc, f"{counter}.  {question}")
+            _para(doc, f"{counter}.  {question}", indent=Inches(0.3))
 
-    # ---- 6. Documents to be placed on record -----------------------------
+    # ---- 7. Documents to obtain -------------------------------------------
     documents = determination.get("documents_to_collect") or []
     if documents:
-        _heading(doc, "6.  Documents to be Placed on Record", 1)
+        _heading(doc, "7.  Documents to be Obtained", 1)
         for document in documents:
-            _para(doc, f"•  {document}")
+            _para(doc, f"•  {document}", indent=Inches(0.2))
 
-    # ---- 7. Note for the file --------------------------------------------
+    # ---- 8. Working note and disagreements --------------------------------
     if determination.get("working_note") or determination.get("panel_disagreements"):
         doc.add_page_break()
-        _heading(doc, "7.  Note for the File", 1)
+        _heading(doc, "8.  Basis on which the Position was Settled", 1)
         _para(doc,
-              "Record of the basis on which the position was settled, for the "
-              "purposes of review and of any subsequent proceedings.",
+              "The peer-review and litigation-defence record: what was argued, "
+              "what was rejected, and on what reasoning.",
               italic=True, size=Pt(9))
-
         if determination.get("working_note"):
             _numbered_body(doc, determination["working_note"])
 
-        alternatives = [
-            e for e in (determination.get("panel_disagreements") or [])
-            if isinstance(e, dict)
-        ]
+        alternatives = [e for e in (determination.get("panel_disagreements") or [])
+                        if isinstance(e, dict)]
         if alternatives:
-            _heading(doc, "Alternative positions considered and not adopted", 2)
+            _heading(doc, "Positions considered and not adopted", 2)
             for entry in alternatives:
                 _particulars(doc, [
                     ("Question", entry.get("question")),
@@ -410,17 +927,23 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
                     ("Basis on which settled", entry.get("resolution")),
                 ])
 
-    # ---- 8. Summary for the board ----------------------------------------
+    # ---- 9. Board summary --------------------------------------------------
     if determination.get("board_summary"):
-        _heading(doc, "8.  Summary for the Board", 1)
+        _heading(doc, "9.  Summary for the Board", 1)
         _para(doc, determination["board_summary"])
 
-    # ---- Internal annexure (off by default) ------------------------------
+    if determination.get("unstructured_output"):
+        doc.add_page_break()
+        _heading(doc, "Appendix — Unstructured Chairman Output", 1)
+        _para(doc, "The determination could not be parsed into the structured "
+                   "shape. The raw output is reproduced so nothing is lost.",
+              italic=True, size=Pt(9))
+        _numbered_body(doc, determination["unstructured_output"],
+                       indent_continuations=False)
+
     if config.EXPORT_PROVENANCE:
         doc.add_page_break()
-        _heading(doc, "Annexure — Internal Record", 1)
-        _para(doc, "For the firm's file. Not for circulation.",
-              italic=True, size=Pt(9))
+        _heading(doc, "Appendix — Panel Composition", 1)
         models = metadata.get("models") or {}
         _particulars(doc, [(k.title(), v) for k, v in models.items()] + [
             ("Client particulars withheld in preparation",
@@ -434,6 +957,23 @@ def build_reply_pack(matter: Dict[str, Any]) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# Backwards compatibility
+# ---------------------------------------------------------------------------
+
+
+def build_reply_pack(matter: Dict[str, Any]) -> bytes:
+    """
+    Deprecated. Returns the FILING document only.
+
+    Kept so existing callers do not silently break, but it no longer produces
+    the combined pack — that combination was the defect this module was
+    rewritten to remove. Callers wanting the analysis must ask for the file
+    note explicitly, which is the point.
+    """
+    return build_filing_reply(matter)
+
+
+# ---------------------------------------------------------------------------
 # Formatting helpers
 # ---------------------------------------------------------------------------
 
@@ -442,22 +982,9 @@ def _rupees(value) -> Optional[str]:
     if value in (None, ""):
         return None
     try:
-        amount = float(value)
+        return f"Rs. {defects.indian_number(float(value))}"
     except (TypeError, ValueError):
         return str(value)
-    # Indian digit grouping
-    whole = int(round(amount))
-    text = str(whole)
-    if len(text) > 3:
-        head, tail = text[:-3], text[-3:]
-        groups = []
-        while len(head) > 2:
-            groups.insert(0, head[-2:])
-            head = head[:-2]
-        if head:
-            groups.insert(0, head)
-        text = ",".join(groups + [tail])
-    return f"Rs. {text}"
 
 
 def _date(value) -> Optional[str]:
@@ -469,12 +996,21 @@ def _date(value) -> Optional[str]:
         return str(value)
 
 
-def suggested_filename(matter: Dict[str, Any]) -> str:
+def _base_filename(matter: Dict[str, Any]) -> str:
     intake = matter.get("intake", {})
     parts = [
         (intake.get("client_name") or "Matter").replace(" ", "_")[:40],
         (intake.get("notice_type") or "Notice").replace(" ", ""),
         (intake.get("tax_period") or "").replace(" ", "").replace("/", "-")[:20],
-        "Reply_Pack",
     ]
-    return "_".join(p for p in parts if p) + ".docx"
+    return "_".join(p for p in parts if p)
+
+
+def suggested_filename(matter: Dict[str, Any]) -> str:
+    """Filename for the filing document."""
+    return f"{_base_filename(matter)}_Reply.docx"
+
+
+def file_note_filename(matter: Dict[str, Any]) -> str:
+    """Filename for the internal working paper."""
+    return f"{_base_filename(matter)}_File_Note_INTERNAL.docx"

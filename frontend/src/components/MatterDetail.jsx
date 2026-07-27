@@ -19,9 +19,11 @@ export default function MatterDetail({ matterId, user, onBack, onAuthError }) {
     })();
   }, [matterId, onAuthError]);
 
-  const exportPack = async () => {
+  // Two documents, never one. The reply is filed with the department; the
+  // file note records the firm's own assessment and must not leave the office.
+  const download = async (document) => {
     try {
-      await api.downloadMatter(matterId);
+      await api.downloadMatter(matterId, null, document);
     } catch (err) {
       if (!onAuthError(err)) setError(err.message);
     }
@@ -55,9 +57,14 @@ export default function MatterDetail({ matterId, user, onBack, onAuthError }) {
           </div>
         </div>
         {canExport && (
-          <button className="btn btn-primary" onClick={exportPack}>
-            Export reply pack
-          </button>
+          <div className="row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => download('reply')}>
+              Download reply (for filing)
+            </button>
+            <button className="btn btn-secondary" onClick={() => download('file_note')}>
+              Download file note (internal)
+            </button>
+          </div>
         )}
       </div>
 

@@ -10,6 +10,8 @@ These prompts are the product. Everything else in this package is plumbing.
 
 from typing import Any, Dict, List, Optional
 
+from . import defects
+
 # --------------------------------------------------------------------------
 # Shared discipline applied to every counsel
 # --------------------------------------------------------------------------
@@ -34,6 +36,23 @@ HOUSE RULES (these override any instinct to be agreeable):
 5.  Be specific to THESE facts. Generic commentary about the law is worthless
     to the signing partner. Quantify wherever the facts allow.
 6.  State what you do NOT know and what document or fact would settle it.
+7.  ANSWER THE NOTICE LIMB BY LIMB. The department raises defects separately
+    and disposes of them separately — it drops one and confirms the next in
+    the same order. Address each defect on its own footing, with its own
+    figures. A submission that meets the notice as a single number concedes
+    ground it did not need to concede.
+8.  THE EVIDENCE GAP. For EVERY defect, name the specific document the officer
+    must physically see before that limb can be dropped, and say whether the
+    client has it. Not a category — the artefact. "The IRP portal report for
+    August 2023", not "e-invoicing records".
+
+    This rule exists because of a real matter. Seven limbs of an eight-limb
+    notice were dropped. The eighth survived to a show cause notice, and the
+    officer's findings gave the reason: the taxpayer's legal position was
+    right, but it "had not provided first e-invoice for the month of august
+    2023 for verification". A correct argument lost a limb because one report
+    was not attached. Finding that gap BEFORE filing is the most valuable
+    thing you do here — more valuable than the argument itself.
 """
 
 # --------------------------------------------------------------------------
@@ -73,8 +92,11 @@ Do this ruthlessly:
   could, on these facts?
 - Attack the taxpayer's likely defence. Where is the documentation thin?
   Where does the commercial story strain credibility?
-- Identify what the department will demand in the way of proof, and what
-  happens if the taxpayer cannot produce it.
+- Identify, DEFECT BY DEFECT, exactly what the officer will demand in the way
+  of proof before dropping that limb, and what happens if the taxpayer cannot
+  produce it. You own the evidence gap: you are the one in the room thinking
+  like the officer, so you are the one who will spot the document whose
+  absence loses an otherwise winning limb.
 - If the facts support an allegation of suppression or wilful misstatement
   (and thus the longer limitation and higher penalty), say so plainly and
   explain how the department would establish it.
@@ -177,7 +199,13 @@ Address:
   reporting)? Group taxpayers get caught precisely here.
 - SETTLEMENT AND AMNESTY. Is there a route — voluntary payment, amnesty,
   partial concession — that is commercially better than fighting? Do the
-  arithmetic rather than assuming litigation is correct.
+  arithmetic rather than assuming litigation is correct. CONCEDING A LIMB IS
+  A POSITIVE RECOMMENDATION, not a failure: say plainly which defects should
+  be paid in full through DRC-03 with interest, and which small ones should
+  be paid UNDER PROTEST with the right to refund reserved. Paying a minor
+  limb buys the credibility that carries the large one, and an officer who
+  sees a taxpayer concede what is genuinely due reads the contested limbs
+  differently.
 - FINANCIAL REPORTING. Does this require a contingent liability disclosure or
   a provision? Flag it for the audit committee.
 - DOCUMENTATION FOR THE FILE. What must be recorded now so that this position
@@ -225,7 +253,12 @@ def format_matter(matter: Dict[str, Any], pack) -> str:
         f"Statutory basis of the notice: {notice.statute}",
     ]
     optional = [
+        ("Notice reference", matter.get("notice_reference")),
+        ("ARN", matter.get("notice_arn")),
+        ("DIN", matter.get("din")),
         ("State / jurisdiction", matter.get("state")),
+        ("Issuing officer", matter.get("issuing_officer")),
+        ("Jurisdictional office", matter.get("jurisdiction_office")),
         ("Tax period", matter.get("tax_period")),
         ("Section invoked", matter.get("section_invoked")),
         ("Amount in dispute (INR)", matter.get("amount_disputed")),
@@ -244,13 +277,99 @@ def format_matter(matter: Dict[str, Any], pack) -> str:
     docs = (matter.get("documents_available") or "").strip()
 
     out = f"THE MATTER\n{body}\n"
+    out += format_defects(matter, pack)
     if issues:
-        out += f"\nISSUES RAISED IN THE NOTICE:\n{issues}\n"
+        out += f"\nADDITIONAL ISSUES NOTED BY THE ENGAGEMENT TEAM:\n{issues}\n"
     if facts:
         out += f"\nFACTS AND BACKGROUND:\n{facts}\n"
     if docs:
         out += f"\nDOCUMENTS AVAILABLE:\n{docs}\n"
     return out
+
+
+def format_defects(matter: Dict[str, Any], pack) -> str:
+    """
+    Render the notice limb by limb, with its arithmetic.
+
+    This block is what makes the panel answer the notice the department
+    actually issued rather than a summary of it. Each limb arrives with the
+    department's own head-wise figures, the provisions it engages, and the
+    provisional posture from triage — so counsel spend their effort on the
+    limbs that turn on law and do not write essays about a late fee.
+    """
+    entries = matter.get("defects") or []
+    if not entries:
+        return ""
+
+    summary = defects.triage(entries)
+    out = [
+        "",
+        "THE NOTICE, LIMB BY LIMB",
+        "",
+        f"This notice raises {summary['total_count']} separate defects "
+        f"totalling Rs. {defects.indian_number(summary['total_amount'])}. The "
+        "department will dispose of them ONE AT A TIME, and so must the reply. "
+        "Never answer them in aggregate.",
+        "",
+        f"Of these, {summary['argue_count']} "
+        f"(Rs. {defects.indian_number(summary['argued_amount'])}) turn on law "
+        f"and are where your effort belongs. The remaining "
+        f"{summary['settle_count']} "
+        f"(Rs. {defects.indian_number(summary['settled_amount'])}) are answered "
+        "by arithmetic, documents or a payment — confirm the provisional "
+        "posture is right and move on. Do not argue them at length.",
+        "",
+    ]
+
+    for defect in entries:
+        amount = defects.defect_total(defect)
+        heads = defects.format_heads(defect.get("amount_by_head"))
+        marker = "*** ARGUE ***" if defects.needs_panel(defect) else "settle"
+        out.append(
+            f"[{marker}] DEFECT {defect.get('index')}: {defect.get('heading')}"
+        )
+        if defect.get("amount_unread"):
+            out.append(
+                "    Amount: NOT READ from the notice. Do not invent a figure; "
+                "flag that it must be taken from the annexure."
+            )
+        else:
+            out.append(f"    Amount: Rs. {defects.indian_number(amount)}  ({heads})")
+        out.append(
+            f"    Provisional posture: {defect.get('posture')} "
+            f"— {defects.POSTURE_LABEL.get(defect.get('posture'), '')}"
+        )
+        if defect.get("sections"):
+            out.append("    Sections engaged: "
+                       + ", ".join(defect["sections"][:10]))
+        if defect.get("rules"):
+            out.append("    Rules engaged: " + ", ".join(defect["rules"][:8]))
+        contention = (defect.get("department_contention") or "").strip()
+        if contention:
+            out.append(f"    Department says: {contention[:600]}")
+        if defect.get("evidence_required"):
+            out.append("    Evidence this limb is normally disposed of on:")
+            for item in defect["evidence_required"]:
+                out.append(f"      - {item}")
+        drafting = pack.defect_type(defect.get("type")).drafting_note
+        if drafting:
+            out.append(f"    Drafting note: {drafting}")
+        out.append("")
+
+    return "\n".join(out)
+
+
+def authorities_block(matter: Dict[str, Any], pack) -> str:
+    """The firm's held authorities for the limbs actually in argument."""
+    entries = [d for d in (matter.get("defects") or []) if defects.needs_panel(d)]
+    if not entries:
+        entries = matter.get("defects") or []
+    tags = set()
+    for defect in entries:
+        definition = pack.defect_type(defect.get("type"))
+        tags.update(definition.authority_tags)
+        tags.add(definition.key)
+    return pack.authorities_brief(pack.authorities_for_tags(tags))
 
 
 def build_role_prompt(role: Role, matter: Dict[str, Any], pack,
@@ -273,6 +392,7 @@ reply is signed.
 
 {pack.PROCEDURAL_GROUNDS if role.key == 'procedural' else ''}
 
+{authorities_block(matter, pack)}
 {format_matter(matter, pack)}
 
 {role.output_shape}
@@ -312,7 +432,10 @@ Your cross-examination must do four things, and nothing else:
     may be misdescribed, superseded, or non-existent. It is far better to
     flag a doubt that turns out to be unfounded than to let a bad citation
     reach the signing partner.
-3.  GAPS. What has every one of them missed, seen from your brief?
+3.  GAPS. What has every one of them missed, seen from your brief? Include any
+    DEFECT that has been passed over, and any EVIDENCE GAP nobody has named —
+    a limb whose argument is sound but whose supporting document has not been
+    identified is a limb that will be lost.
 4.  CONCESSIONS. State honestly where another counsel has defeated a point
     you made in your opening analysis. A panel that never concedes is a panel
     that is not thinking.
@@ -377,49 +500,70 @@ judgement:
   present a doubtful authority as settled.
 - If the panel's material is too thin to reach a view, say so and list what is
   needed. An honest "insufficient information" is a valid determination.
-- WHERE A RECONCILIATION IS SUPPLIED, the draft reply must meet the difference
-  category by category with the figures, never as a single number. State what
-  falls away at the threshold, what is answered on documents, what is
-  genuinely in issue, and what is being reversed — each with its amount. A
-  reply that argues the aggregate concedes ground it did not need to concede.
-  Treat any unreconciled portion as unsupported and say so to the partner.
+- WHERE A RECONCILIATION IS SUPPLIED, meet the difference category by category
+  with the figures, never as a single number. State what falls away at the
+  threshold, what is answered on documents, what is genuinely in issue, and
+  what is being reversed — each with its amount. Treat any unreconciled
+  portion as unsupported and say so to the partner.
+
+YOU DECIDE EVERY DEFECT SEPARATELY
+
+Return one entry for EVERY defect in the notice, in the department's own
+numbering. This is not a formality: the officer disposes of them one at a time
+and will write "this defect is dropped" against each. Your entries are what the
+reply is assembled from, so a defect you omit is a defect the reply does not
+answer.
+
+For each, choose a posture and commit to it:
+
+  "explained"           the arithmetic or the documents answer it and no
+                        liability arises. Lead with the reconciliation.
+  "contested"           the department's LAW is wrong. Lead with the statute
+                        and the authority.
+  "agreed_paid"         it is correctly raised. Concede it, compute the
+                        interest, and discharge it through DRC-03. Conceding
+                        a limb that is genuinely due is a professional
+                        judgement, not a defeat — it costs little and it makes
+                        the contested limbs credible.
+  "paid_under_protest"  small, arguable, not worth the fight. Pay it without
+                        prejudice and expressly reserve the right to refund.
+  "partial"             the limb splits. Supply `splits`, each with its own
+                        posture and its own amount, and make them add back to
+                        what the notice alleges.
+
+Where a defect's amount was not read from the notice, say so in
+`amount_note` and do NOT invent a figure.
 
 DRAFTING REGISTER
 
-The draft reply goes out over the firm's letterhead and over a member's
-signature. It must read as though a senior professional with twenty years at
-the Bar of the Tribunal wrote it. Hold to the following:
+Your `submission` for each defect and your `preliminary_submissions` go out
+over the CLIENT's letterhead, over the signature of its authorised signatory,
+and are filed with the department. They must read as though a senior
+professional with twenty years before the Tribunal wrote them:
 
 - Formal Indian professional English. "It is respectfully submitted that...",
   "At the outset...", "Without prejudice to the above...", "In view of the
   foregoing...". Never "humbly prayed", which is archaic, and never casual
   register.
-- Refer to the client in the third person throughout — "the Assessee", "the
-  registered person", "our client" — never by pronoun and never as "you".
-- Number every paragraph (1., 2., 3.) and sub-paragraphs where an argument has
-  limbs (2.1, 2.2). A reply the officer cannot navigate is a reply that does
-  not get read.
-- Open by identifying the notice: its form, reference number and date, and the
-  period to which it relates.
-- Take preliminary and jurisdictional objections FIRST and in their own
-  section, then merits, each expressly "without prejudice" to the objections.
-- Every proposition carries its provision. Write "Section 16(2)(c) of the
-  Central Goods and Services Tax Act, 2017" in full on first use, then
-  "section 16(2)(c)".
-- Quantify. Where a figure is in issue, state it, and state the reconciled
-  position. Vague submissions invite adverse inference.
-- Assert; do not hedge. Write "the demand is barred by limitation", not "it
-  may be argued that the demand could be barred".
-- Close with a prayer specifying the relief sought — that the proceedings be
-  dropped, the notice discharged, or a personal hearing be granted.
-- Do NOT include a letterhead, a salutation block, a signature block, a place
-  or a date. The firm supplies those.
-- Do NOT refer, anywhere in the draft, to how it was prepared, to any
-  analytical process behind it, or to any deliberation. It is the firm's
-  submission and reads as such.
+- Refer to the client as "the Noticee" throughout — third person, never by
+  pronoun and never as "you". Refer to the officer as "the Honourable Proper
+  Officer".
+- Every proposition carries its provision, in full on first use: "Section
+  17(5)(c) of the Central Goods and Services Tax Act, 2017", then
+  "Section 17(5)(c)".
+- Quantify everything. State the department's figure and state the answer to
+  it. A submission without numbers invites the officer to keep his own.
+- Assert; do not hedge. "The proposed penalty is not leviable", never "it may
+  be argued that the penalty might not apply". Hedging belongs in the file
+  note, which nobody outside the firm will read.
+- Do NOT write a letterhead, salutation, signature block, place or date — the
+  export supplies those, and supplies them correctly.
+- Do NOT refer anywhere to how this was prepared, to any panel, deliberation
+  or analysis. It is the Noticee's submission and reads as such.
 
-Apply the same register to the working note and the board summary: measured,
-specific, and written for a professional reader.
+The `working_note`, `risk_flags`, `open_questions` and `board_summary` are the
+OPPOSITE: they are internal, they never leave the firm, and they must be
+blunt. Say what is weak, what is unverified, and what the worst case costs.
 
 Return your determination as a SINGLE JSON OBJECT and nothing else — no
 commentary before or after, no markdown fence. Use exactly this shape:
@@ -428,35 +572,42 @@ commentary before or after, no markdown fence. Use exactly this shape:
   "recommended_position": "2-4 sentences: what the firm should do and why.",
   "confidence": "strong" | "defensible" | "weak" | "insufficient_information",
   "lead_argument": "The single argument the reply leads with, and why it leads.",
-  "issues": [
+  "preliminary_submissions": "The opening section of the reply, to be filed in {reply_form}: identification of the Noticee and the notice, and any preliminary or jurisdictional objection taken before the merits. Numbered paragraphs. Use \\n\\n between paragraphs.",
+  "defects": [
     {{
-      "issue": "as framed in the notice",
-      "department_view": "what the department says",
-      "our_position": "the position we adopt",
-      "authority": "sections, rules and cases relied on",
-      "strength": "strong" | "defensible" | "weak"
+      "index": 1,
+      "heading": "the defect as the notice heads it",
+      "posture": "explained" | "contested" | "agreed_paid" | "paid_under_protest" | "partial",
+      "strength": "strong" | "defensible" | "weak",
+      "department_contention": "what the department alleges on this limb, in one or two sentences, with its figure",
+      "our_position": "one sentence for the 'Disputes at a Glance' table — the answer, stated as a conclusion",
+      "facts": "the factual answer to this limb, numbered where it has parts. This is filed text: formal register, third person, quantified.",
+      "legal_framework": [
+        {{"provision": "Section / Rule / Circular / Notification, with its number and date", "relevance": "what it establishes for THIS limb"}}
+      ],
+      "authorities": [
+        {{"citation": "exactly as it should appear in the reply", "proposition": "what it is cited for", "certainty": "asserted" | "to_verify"}}
+      ],
+      "submission": "the bold SUBMISSION paragraph that closes this limb — definitive, quantified, and stating the relief sought on it",
+      "evidence_required": ["the specific documents the officer must see to drop this limb — artefacts, not categories"],
+      "evidence_gap": ["documents in the list above that the engagement team has NOT confirmed are available. Empty if all are held. This is the most important field you will fill."],
+      "annexures": ["what is enclosed for this limb, described as it will appear in the Evidentiary Index"],
+      "amount_note": "only if the amount could not be read from the notice — say what must be taken from the annexure",
+      "payment": {{"reference": "DRC-03 ARN if discharged, else empty", "date": "", "under_protest": false}},
+      "splits": [
+        {{"description": "which part", "amount_by_head": {{"cgst": 0, "sgst": 0, "igst": 0, "cess": 0}}, "posture": "contested" | "paid_under_protest" | "agreed_paid"}}
+      ],
+      "prayer_relief": "the relief sought on this limb, opening with a verb in capitals: DROP / ACKNOWLEDGE / HOLD / TAKE ON RECORD"
     }}
   ],
   "panel_disagreements": [
-    {{
-      "question": "what the panel split on",
-      "positions": "who argued what",
-      "resolution": "your ruling and your reason for it"
-    }}
+    {{"question": "what the panel split on", "positions": "who argued what", "resolution": "your ruling and your reason for it"}}
   ],
-  "draft_reply": "The full body of the reply, to be filed in {reply_form}, drafted to the register set out above. Numbered paragraphs. Sequence: identification of the notice; preliminary and jurisdictional objections; submissions on merits, each without prejudice; prayer. Use \\n for line breaks and \\n\\n between paragraphs. No letterhead, salutation, signature block, place or date.",
-  "authorities": [
-    {{
-      "citation": "the citation exactly as it should appear in the reply",
-      "proposition": "what it is cited for",
-      "certainty": "asserted" | "to_verify"
-    }}
-  ],
-  "risk_flags": ["specific exposures the signing partner must see before signing"],
-  "documents_to_collect": ["documents required to sustain the reply"],
-  "board_summary": "3-5 sentences suitable for an audit committee: exposure, position taken, and whether a provision or contingent-liability disclosure is indicated.",
-  "working_note": "The file note recording how this position was reached: what was argued, what was rejected and on what reasoning. This is the peer-review and litigation-defence record. Use \\n for line breaks.",
-  "open_questions": ["anything unresolved that the engagement team must settle"]
+  "risk_flags": ["INTERNAL. Specific exposures the signing partner must see before signing."],
+  "documents_to_collect": ["INTERNAL. Documents the engagement team must obtain."],
+  "board_summary": "INTERNAL. 3-5 sentences for an audit committee: exposure, position taken, and whether a provision or contingent-liability disclosure is indicated.",
+  "working_note": "INTERNAL. The file note recording how this position was reached: what was argued, what was rejected and on what reasoning. The peer-review and litigation-defence record. Use \\n for line breaks.",
+  "open_questions": ["INTERNAL. Anything unresolved that the engagement team must settle."]
 }}
 
 Return only that JSON object."""

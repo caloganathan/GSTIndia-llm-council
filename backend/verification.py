@@ -58,15 +58,22 @@ def collect_authorities(determination: Dict[str, Any], pack) -> List[Dict[str, s
     """
     Gather everything that needs checking.
 
-    Primary source is the chairman's structured `authorities` list. Anything
-    cited in the draft reply or in issue analysis but missing from that list
-    is also picked up — a citation that reaches the client's reply without
-    appearing in the authorities table is exactly the one that gets missed.
+    Primary source is each defect's structured `authorities` list. Anything
+    cited in filed text — the submissions, the factual answers, the legal
+    framework tables — but missing from those lists is also picked up. A
+    citation that reaches the officer's desk without appearing in any
+    authorities list is exactly the one that gets missed, and it is the one
+    that matters.
+
+    Every authority carries the defect it belongs to, so the export can put
+    verified authority into the filing document and route the rest to the
+    internal file note rather than caveating the filed reply.
     """
     authorities: List[Dict[str, str]] = []
     seen = set()
 
-    def add(citation: str, proposition: str, source: str, certainty: str = ""):
+    def add(citation: str, proposition: str, source: str, certainty: str = "",
+            defect_index=None, defect_heading: str = ""):
         citation = (citation or "").strip()
         if not citation:
             return
@@ -79,6 +86,8 @@ def collect_authorities(determination: Dict[str, Any], pack) -> List[Dict[str, s
             "proposition": (proposition or "").strip(),
             "source": source,
             "certainty": certainty or "asserted",
+            "defect_index": defect_index,
+            "defect_heading": defect_heading,
         })
 
     for item in determination.get("authorities") or []:
@@ -88,15 +97,33 @@ def collect_authorities(determination: Dict[str, Any], pack) -> List[Dict[str, s
         elif isinstance(item, str):
             add(item, "", "authorities_table")
 
-    scan_targets = [determination.get("draft_reply", "")]
-    for issue in determination.get("issues") or []:
-        if isinstance(issue, dict):
-            scan_targets.append(issue.get("authority", ""))
-    scan_targets.append(determination.get("lead_argument", ""))
+    for defect in determination.get("defects") or []:
+        if not isinstance(defect, dict):
+            continue
+        index = defect.get("index")
+        heading = defect.get("heading", "")
 
-    for text in scan_targets:
-        for citation in extract_citations(text or "", pack):
-            add(citation, "", "draft_body")
+        for item in defect.get("authorities") or []:
+            if isinstance(item, dict):
+                add(item.get("citation", ""), item.get("proposition", ""),
+                    "defect", item.get("certainty", "asserted"), index, heading)
+            elif isinstance(item, str):
+                add(item, "", "defect", "asserted", index, heading)
+
+        for entry in defect.get("legal_framework") or []:
+            if isinstance(entry, dict):
+                add(entry.get("provision", ""), entry.get("relevance", ""),
+                    "legal_framework", "asserted", index, heading)
+
+        # Filed text, scanned for anything cited but not listed.
+        for field in ("submission", "facts", "our_position"):
+            for citation in extract_citations(defect.get(field) or "", pack):
+                add(citation, "", "filed_text", "asserted", index, heading)
+
+    for field in ("preliminary_submissions", "lead_argument",
+                  "unstructured_output"):
+        for citation in extract_citations(determination.get(field) or "", pack):
+            add(citation, "", "filed_text")
 
     return authorities[:MAX_AUTHORITIES]
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import DefectList from './DefectList';
 import { ConfidenceBadge, StatusBadge } from './shared';
 import { ROLE_COLOUR, formatCost } from '../format';
 
@@ -220,48 +221,46 @@ export default function Deliberation({ result, metadata, user, onExport }) {
         </div>
       )}
 
-      {/* Issues */}
-      {determination.issues?.length > 0 && (
-        <div className="card" style={{ marginBottom: 'var(--sp-5)' }}>
-          <div className="card-pad" style={{ paddingBottom: 0 }}>
-            <div className="section-title">Issue-wise analysis</div>
+      {/* Filing blockers — what must be resolved before this can be filed */}
+      {determination.filing_blockers?.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+          <div className="section-title">Before this reply can be filed</div>
+          <div className="alert alert-warning">
+            <ul style={{ margin: 0, paddingLeft: 'var(--sp-5)' }}>
+              {determination.filing_blockers.map((item, i) => (
+                <li key={i} style={{ marginBottom: 6 }}>{item}</li>
+              ))}
+            </ul>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Issue</th>
-                  <th>Department's contention</th>
-                  <th>Our position</th>
-                  <th>Authority</th>
-                  <th>Strength</th>
-                </tr>
-              </thead>
-              <tbody>
-                {determination.issues.map((issue, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{issue.issue}</td>
-                    <td className="muted">{issue.department_view}</td>
-                    <td>{issue.our_position}</td>
-                    <td className="muted" style={{ fontSize: 'var(--text-sm)' }}>
-                      {issue.authority}
-                    </td>
-                    <td><ConfidenceBadge value={issue.strength} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        </div>
+      )}
+
+      {/* Defects — the reply is assembled from these, one limb at a time */}
+      {determination.defects?.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+          <div className="section-title">Determination, defect by defect</div>
+          <DefectList defects={determination.defects} readOnly />
+        </div>
+      )}
+
+      {/* Preliminary submissions */}
+      {determination.preliminary_submissions && (
+        <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+          <div className="section-title">Preliminary submissions</div>
+          <div className="draft-body">{determination.preliminary_submissions}</div>
         </div>
       )}
 
       <Authorities verification={result.verification} />
 
-      {/* Draft reply */}
-      {determination.draft_reply && (
+      {determination.unstructured_output && (
         <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
-          <div className="section-title">Draft reply</div>
-          <div className="draft-body">{determination.draft_reply}</div>
+          <div className="section-title">Unstructured output</div>
+          <div className="field-help" style={{ marginBottom: 'var(--sp-2)' }}>
+            The determination could not be parsed into defects. Nothing is
+            lost, but this matter must not be exported until it is re-run.
+          </div>
+          <div className="draft-body">{determination.unstructured_output}</div>
         </div>
       )}
 

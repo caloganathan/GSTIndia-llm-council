@@ -7,6 +7,8 @@ worthless.
 
 from evals.scoring import (
     aggregate,
+    score_defects,
+    score_evidence_gaps,
     infer_position,
     score_citation_integrity,
     score_determination_integrity,
@@ -43,8 +45,12 @@ class TestCitationIntegrity:
 class TestIssueCoverage:
     DETERMINATION = {
         "recommended_position": "Contest the ITC mismatch.",
-        "issues": [{"issue": "ITC mismatch", "our_position": "s.16(2) satisfied"}],
-        "draft_reply": "Interest under section 50 is payable on the net liability.",
+        "defects": [
+            {"index": 1, "heading": "ITC mismatch",
+             "our_position": "s.16(2) satisfied"},
+            {"index": 2, "heading": "Interest",
+             "submission": "Interest under section 50 is payable on the net liability."},
+        ],
     }
 
     def test_all_issues_found(self):
@@ -147,21 +153,22 @@ class TestPosition:
 class TestDeterminationIntegrity:
     def test_complete_determination_passes(self):
         result = score_determination_integrity({
-            "recommended_position": "x", "draft_reply": "y",
-            "issues": [{"issue": "z"}], "working_note": "w",
+            "recommended_position": "x", "preliminary_submissions": "y",
+            "defects": [{"index": 1, "heading": "z"}], "working_note": "w",
         })
         assert result["passed"] is True
 
     def test_degraded_output_fails(self):
         result = score_determination_integrity({
-            "recommended_position": "x", "draft_reply": "y",
-            "issues": [{"issue": "z"}], "working_note": "w", "_degraded": True,
+            "recommended_position": "x", "preliminary_submissions": "y",
+            "defects": [{"index": 1, "heading": "z"}], "working_note": "w",
+            "_degraded": True,
         })
         assert result["passed"] is False
 
     def test_missing_fields_reported(self):
         result = score_determination_integrity({"recommended_position": "x"})
-        assert "draft_reply" in result["missing"]
+        assert "preliminary_submissions" in result["missing"]
         assert result["passed"] is False
 
 
@@ -180,8 +187,8 @@ class TestScoreMatter:
             "determination": {
                 "recommended_position": "Contest on limitation.",
                 "lead_argument": "Time-barred.",
-                "draft_reply": "The ITC mismatch is explained.",
-                "issues": [{"issue": "ITC mismatch"}],
+                "preliminary_submissions": "The ITC mismatch is explained.",
+                "defects": [{"index": 1, "heading": "ITC mismatch"}],
                 "working_note": "Reasoning.",
             },
             "analyses": [{"key": "procedural", "analysis": "limitation expired"}],
@@ -212,7 +219,7 @@ class TestAggregate:
             score_matter(
                 {"id": "a", "expected": {"issues_expected": ["x"]}},
                 {"determination": {"recommended_position": "x is contested",
-                                   "draft_reply": "d", "issues": [{"issue": "x"}],
+                                   "preliminary_submissions": "d", "defects": [{"index": 1, "heading": "x"}],
                                    "working_note": "w"},
                  "analyses": [], "cross_exams": [],
                  "verification": {"summary": {"verified": 1, "unverified": 0,
@@ -223,7 +230,7 @@ class TestAggregate:
             score_matter(
                 {"id": "b", "expected": {"issues_expected": ["y"]}},
                 {"determination": {"recommended_position": "unrelated",
-                                   "draft_reply": "d", "issues": [], "working_note": "w"},
+                                   "preliminary_submissions": "d", "defects": [], "working_note": "w"},
                  "analyses": [], "cross_exams": [],
                  "verification": {"summary": {"verified": 0, "unverified": 0,
                                               "not_found": 1, "total": 1},
@@ -270,7 +277,7 @@ class TestSupersededFailsAMatter:
         golden = {"id": "g1", "expected": {"issues_expected": ["x"]}}
         result = {
             "determination": {"recommended_position": "contest x",
-                              "draft_reply": "d", "issues": [{"issue": "x"}],
+                              "preliminary_submissions": "d", "defects": [{"index": 1, "heading": "x"}],
                               "working_note": "w"},
             "analyses": [], "cross_exams": [],
             "verification": {
@@ -284,8 +291,9 @@ class TestSupersededFailsAMatter:
     def test_aggregate_surfaces_stale_citations(self):
         golden = {"id": "g1", "expected": {}}
         result = {
-            "determination": {"recommended_position": "x", "draft_reply": "d",
-                              "issues": [{"issue": "y"}], "working_note": "w"},
+            "determination": {"recommended_position": "x", "preliminary_submissions": "d",
+                              "defects": [{"index": 1, "heading": "y"}],
+                              "working_note": "w"},
             "analyses": [], "cross_exams": [],
             "verification": {
                 "summary": {"verified": 0, "superseded": 1, "unverified": 0,
@@ -295,3 +303,104 @@ class TestSupersededFailsAMatter:
         }
         summary = aggregate([score_matter(golden, result, {"usage": {}})])
         assert summary["superseded_citations"] == [("g1", "Circular 183")]
+
+
+class TestDefectScoring:
+    """
+    Scored against the department's own disposal of each limb — the only
+    ground truth this work has.
+    """
+
+    EXPECTED = [
+        {"index": 1, "heading_contains": "Short payment", "posture": "explained"},
+        {"index": 2, "heading_contains": "Ineligible ITC", "posture": "partial"},
+        {"index": 3, "heading_contains": "late fee", "posture": "agreed_paid"},
+    ]
+
+    def test_all_limbs_found_and_postured(self):
+        result = score_defects({"defects": [
+            {"index": 1, "heading": "Short payment of tax", "posture": "explained"},
+            {"index": 2, "heading": "Ineligible ITC", "posture": "partial"},
+            {"index": 3, "heading": "GSTR-1 late fee", "posture": "agreed_paid"},
+        ]}, self.EXPECTED)
+        assert result["found"] == 3
+        assert result["posture_matches"] == 3
+        assert result["passed"] is True
+
+    def test_a_missing_limb_fails_the_matter(self):
+        """An unanswered limb is confirmed unopposed. That is not a near miss."""
+        result = score_defects({"defects": [
+            {"index": 1, "heading": "Short payment of tax", "posture": "explained"},
+        ]}, self.EXPECTED)
+        assert result["passed"] is False
+        assert len(result["missed"]) == 2
+
+    def test_wrong_posture_is_reported_but_does_not_fail(self):
+        """A reviewer can correct a posture; they cannot correct an absence."""
+        result = score_defects({"defects": [
+            {"index": 1, "heading": "Short payment", "posture": "contested"},
+            {"index": 2, "heading": "Ineligible ITC", "posture": "partial"},
+            {"index": 3, "heading": "late fee", "posture": "agreed_paid"},
+        ]}, self.EXPECTED)
+        assert result["passed"] is True
+        assert result["posture_errors"][0]["expected"] == "explained"
+        assert result["posture_errors"][0]["got"] == "contested"
+
+    def test_matches_on_heading_when_numbering_differs(self):
+        result = score_defects({"defects": [
+            {"index": 99, "heading": "Short payment of tax on outward supplies",
+             "posture": "explained"},
+        ]}, [self.EXPECTED[0]])
+        assert result["found"] == 1
+
+    def test_no_golden_defects_is_not_a_failure(self):
+        assert score_defects({"defects": []}, [])["passed"] is None
+
+
+class TestEvidenceGapScoring:
+    """
+    The sharpest signal on the scorecard. It is measured against a limb that
+    was actually lost — argued correctly, and lost anyway because one system
+    report was not attached.
+    """
+
+    EXPECTED = [{
+        "index": 7,
+        "heading_contains": "E-invoicing",
+        "required_evidence_that_was_missing": [
+            "IRP portal data report for tax period 08/2023 — the first month "
+            "of mandatory applicability — listing every B2B invoice with its "
+            "IRN and status"
+        ],
+    }]
+
+    def test_caught_when_demanded_in_the_evidence_list(self):
+        result = score_evidence_gaps({"defects": [{
+            "index": 7,
+            "evidence_required": [
+                "IRP portal data report for 08/2023 showing IRN status for "
+                "every B2B invoice"
+            ],
+        }]}, self.EXPECTED)
+        assert result["found"] == 1
+        assert result["passed"] is True
+
+    def test_caught_when_flagged_as_a_gap(self):
+        result = score_evidence_gaps({"defects": [{
+            "index": 7,
+            "evidence_gap": ["IRP portal report, 08/2023, IRN per B2B invoice"],
+        }]}, self.EXPECTED)
+        assert result["passed"] is True
+
+    def test_a_good_argument_without_the_document_fails(self):
+        """This is exactly what happened in the golden matter."""
+        result = score_evidence_gaps({"defects": [{
+            "index": 7,
+            "evidence_required": ["GSTR-9C for FY 2022-23 showing turnover"],
+            "submission": "The mandate applied only from 01.08.2023.",
+        }]}, self.EXPECTED)
+        assert result["passed"] is False
+        assert "IRP portal" in result["missed"][0]["document"]
+
+    def test_nothing_to_score_when_the_golden_case_records_no_loss(self):
+        assert score_evidence_gaps({"defects": []}, [{"index": 1}])["passed"] is None

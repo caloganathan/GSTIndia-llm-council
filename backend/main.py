@@ -285,9 +285,18 @@ async def delete_matter(
 @router.get("/matters/{matter_id}/export")
 async def export_matter(
     matter_id: str,
+    document: str = "reply",
     user: Dict[str, Any] = Depends(require_permission("export")),
 ):
-    """Download the notice reply pack as DOCX."""
+    """
+    Download one of the two documents a completed matter produces.
+
+    `document=reply` is the filing document — signed and sent to the
+    department. `document=file_note` is the internal working paper and must
+    never be filed. They are separate downloads because they are separate
+    documents with separate audiences, and combining them was the defect this
+    endpoint was rewritten to remove.
+    """
     matter = storage.get_matter(matter_id)
     if matter is None:
         raise HTTPException(status_code=404, detail="Matter not found")
@@ -298,12 +307,29 @@ async def export_matter(
     if not tier["allow_export"]:
         raise HTTPException(
             status_code=403,
-            detail="Free-tier output is research grade and cannot be exported as a "
-                   "reply pack. Re-run this matter on the Pro tier to export.",
+            detail=f"{tier['label']} output cannot be exported. Re-run this "
+                   "matter on the Pro tier to export.",
         )
 
-    payload = export.build_reply_pack(matter)
-    filename = export.suggested_filename(matter)
+    if document not in ("reply", "file_note"):
+        raise HTTPException(
+            status_code=400,
+            detail="document must be 'reply' or 'file_note'.",
+        )
+
+    # The tier's watermark reaches the filing document through the matter
+    # metadata, so a draft-tier reply is stamped on every page.
+    if tier.get("watermark"):
+        matter.setdefault("metadata", {}).setdefault(
+            "watermark", tier["watermark"])
+
+    if document == "file_note":
+        payload = export.build_file_note(matter)
+        filename = export.file_note_filename(matter)
+    else:
+        payload = export.build_filing_reply(matter)
+        filename = export.suggested_filename(matter)
+
     return Response(
         content=payload,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -313,30 +339,49 @@ async def export_matter(
 
 @router.post("/panel/extract")
 async def extract_notice(
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(default=None),
+    file: UploadFile = File(default=None),
     domain: str = "gst",
     tier: str = config.DEFAULT_TIER,
     user: Dict[str, Any] = Depends(require_auth),
 ):
     """
-    Read an uploaded notice and propose intake fields.
+    Read one or more uploaded documents and propose a matter.
 
-    Nothing returned here is authoritative — every field is a proposal the
-    user confirms before the panel runs. The uploaded file is parsed in
-    memory and never written to disk.
+    A scrutiny notice arrives as at least two files: the one-page portal form
+    carrying the reference, the provision and the reply date, and a separate
+    attachment carrying the defects and their annexures. Both are accepted in
+    one request, and the singular `file` field is still honoured so older
+    clients keep working.
+
+    Nothing returned here is authoritative — every field, and every defect, is
+    a proposal the user confirms before the panel runs. Uploaded files are
+    parsed in memory and never written to disk.
     """
     try:
         pack = get_pack(domain)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    uploads = [u for u in (files or []) if u is not None]
+    if file is not None:
+        uploads.append(file)
+    if not uploads:
+        raise HTTPException(status_code=400, detail="No file was uploaded.")
+
+    documents = []
+    for upload in uploads:
+        content = await upload.read()
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{upload.filename or 'The uploaded file'} is empty.",
+            )
+        documents.append((upload.filename or "", content))
 
     try:
-        return await intake.read_notice(
-            file.filename or "", content, pack, config.get_tier(tier)
+        return await intake.read_notice_set(
+            documents, pack, config.get_tier(tier)
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

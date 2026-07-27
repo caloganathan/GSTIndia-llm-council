@@ -68,15 +68,40 @@ class TestCollectAuthorities:
         assert collected[0]["citation"] == "Section 16(4) CGST Act"
         assert collected[0]["source"] == "authorities_table"
 
-    def test_catches_citations_only_in_the_draft_body(self):
+    def test_catches_citations_only_in_filed_text(self):
         """A citation reaching the reply but not the table is the dangerous one."""
         determination = {
             "authorities": [],
-            "draft_reply": "As held in (2022) 40 GSTL 500, the demand fails.",
+            "defects": [{
+                "index": 1,
+                "heading": "Blocked credit",
+                "authorities": [],
+                "submission": "As held in (2022) 40 GSTL 500, the demand fails.",
+            }],
         }
         collected = verification.collect_authorities(determination, gst)
         assert any("GSTL" in a["citation"] for a in collected)
-        assert collected[0]["source"] == "draft_body"
+        assert collected[0]["source"] == "filed_text"
+
+    def test_authorities_carry_the_defect_they_belong_to(self):
+        """
+        The export puts verified authority into the filing document and routes
+        the rest to the file note. It can only do that per limb.
+        """
+        determination = {
+            "defects": [{
+                "index": 5,
+                "heading": "Blocked credit under Section 17(5)",
+                "authorities": [
+                    {"citation": "Safari Retreats, C.A. 2948 of 2023",
+                     "proposition": "Functional test governs 17(5)(d)"},
+                ],
+            }],
+        }
+        collected = verification.collect_authorities(determination, gst)
+        entry = next(a for a in collected if "Safari" in a["citation"])
+        assert entry["defect_index"] == 5
+        assert entry["defect_heading"] == "Blocked credit under Section 17(5)"
 
     def test_no_duplicates_across_sources(self):
         determination = {

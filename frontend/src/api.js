@@ -99,10 +99,16 @@ export const api = {
   // ---- panel ----
   panelConfig: () => json('/api/panel/config'),
 
-  /** Upload a notice and get proposed intake fields back. */
-  async extractNotice(file, { domain = 'gst', tier } = {}) {
+  /**
+   * Upload one or more notice documents and get a proposed matter back.
+   *
+   * A scrutiny notice arrives as at least two files — the one-page portal form
+   * carrying the reference and the reply date, and the attachment carrying the
+   * defects. Both go up in one request.
+   */
+  async extractNotice(files, { domain = 'gst', tier } = {}) {
     const body = new FormData();
-    body.append('file', file);
+    for (const file of [].concat(files)) body.append('files', file);
     const params = new URLSearchParams({ domain, ...(tier ? { tier } : {}) });
     const response = await fetch(apiUrl(`/api/panel/extract?${params}`), {
       method: 'POST',
@@ -145,16 +151,25 @@ export const api = {
   getMatter: (id) => json(`/api/matters/${id}`),
   deleteMatter: (id) => json(`/api/matters/${id}`, { method: 'DELETE' }),
 
-  exportUrl: (id) => apiUrl(`/api/matters/${id}/export`),
+  exportUrl: (id, document = 'reply') =>
+    apiUrl(`/api/matters/${id}/export?document=${document}`),
 
-  async downloadMatter(id, filename) {
-    const response = await request(`/api/matters/${id}/export`);
+  /**
+   * Download one of the two documents a matter produces.
+   *
+   * `reply` is filed with the department. `file_note` is the internal working
+   * paper and must never be. They are separate downloads because they are
+   * separate documents with separate audiences.
+   */
+  async downloadMatter(id, filename, document = 'reply') {
+    const response = await request(`/api/matters/${id}/export?document=${document}`);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = window.document.createElement('a');
     link.href = url;
-    link.download = filename || 'Reply_Pack.docx';
-    document.body.appendChild(link);
+    link.download = filename ||
+      (document === 'file_note' ? 'File_Note_INTERNAL.docx' : 'Reply.docx');
+    window.document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);

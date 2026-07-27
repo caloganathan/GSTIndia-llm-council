@@ -83,8 +83,10 @@ class TestRoles:
     def test_chairman_prompt_requests_the_json_contract(self):
         matter = {"notice_type": "DRC-01", "state": "Gujarat"}
         prompt = roles.build_chairman_prompt(matter, gst, [], [])
-        for field in ("recommended_position", "draft_reply", "authorities",
-                      "working_note", "board_summary", "panel_disagreements"):
+        for field in ("recommended_position", "preliminary_submissions",
+                      "defects", "posture", "submission", "evidence_gap",
+                      "prayer_relief", "authorities", "working_note",
+                      "board_summary", "panel_disagreements"):
             assert field in prompt
 
     def test_matter_formatting_omits_blank_fields(self):
@@ -197,3 +199,79 @@ class TestRoleRedaction:
 
         payload = {"result": {"analyses": [{"analysis": "internal"}], "cross_exams": []}}
         assert redact_for_role(payload, {"role": "partner"})["result"]["analyses"]
+
+
+class TestMergeDetermination:
+    """
+    The notice is authoritative on what was alleged. The chairman is
+    authoritative on what we say about it. Keeping that boundary stops a
+    drafting model from restating the department's own arithmetic wrongly in
+    a document filed against that arithmetic.
+    """
+
+    INTAKE = [
+        {"index": 1, "heading": "Excess ITC against GSTR-2B",
+         "type": "itc_excess_2b", "posture": "undecided",
+         "amount_by_head": {"cgst": 58366.0, "sgst": 58366.0},
+         "sections": ["16(2)(aa)"], "annexures": [], "splits": [],
+         "evidence_required": ["Month-wise GSTR-2B"], "evidence_gap": [],
+         "authorities": [], "legal_framework": [], "payment": {}},
+        {"index": 2, "heading": "GSTR-1 late fee", "type": "late_fee",
+         "posture": "agreed_paid", "amount_by_head": {"cgst": 1150.0, "sgst": 1150.0},
+         "sections": ["47(1)"], "annexures": [], "splits": [],
+         "evidence_required": [], "evidence_gap": [], "authorities": [],
+         "legal_framework": [], "payment": {}},
+    ]
+
+    def test_chairman_position_is_applied(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "posture": "contested", "submission": "Not sustainable."},
+        ]})
+        assert merged[0]["posture"] == "contested"
+        assert merged[0]["submission"] == "Not sustainable."
+
+    def test_department_figures_are_not_overwritten(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "posture": "contested",
+             "amount_by_head": {"cgst": 999.0},
+             "heading": "Something the model renamed it"},
+        ]})
+        assert merged[0]["amount_by_head"] == {"cgst": 58366.0, "sgst": 58366.0}
+        assert merged[0]["heading"] == "Excess ITC against GSTR-2B"
+
+    def test_an_unanswered_limb_is_flagged_not_dropped(self):
+        """A limb missing from the reply is a limb the officer confirms."""
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "posture": "contested"},
+        ]})
+        assert len(merged) == 2
+        assert merged[1]["unanswered"] is True
+        assert "unanswered" not in merged[0]
+
+    def test_a_limb_the_panel_adds_is_kept(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "posture": "contested"},
+            {"index": 2, "posture": "agreed_paid"},
+            {"index": 3, "heading": "Reverse charge short paid",
+             "posture": "contested"},
+        ]})
+        assert len(merged) == 3
+        assert merged[2]["source"] == "panel"
+
+    def test_an_unknown_posture_falls_back_to_undecided(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "posture": "definitely_fine"},
+        ]})
+        assert merged[0]["posture"] == "undecided"
+
+    def test_empty_determination_leaves_the_notice_intact(self):
+        merged = panel.merge_determination(self.INTAKE, {})
+        assert len(merged) == 2
+        assert all(d.get("unanswered") for d in merged)
+
+    def test_result_is_ordered_by_the_departments_numbering(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 2, "posture": "agreed_paid"},
+            {"index": 1, "posture": "contested"},
+        ]})
+        assert [d["index"] for d in merged] == [1, 2]

@@ -18,7 +18,7 @@ import json
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from . import config, grounding, sanitizer
+from . import config, defects, grounding, sanitizer
 from .domains import get_pack
 from .openrouter import query_model
 from .roles import (
@@ -93,9 +93,10 @@ def _fallback_determination(raw_text: str, error: str = "") -> Dict[str, Any]:
         ),
         "confidence": "insufficient_information",
         "lead_argument": "",
-        "issues": [],
+        "preliminary_submissions": "",
+        "defects": [],
         "panel_disagreements": [],
-        "draft_reply": raw_text or "",
+        "unstructured_output": raw_text or "",
         "authorities": [],
         "risk_flags": [
             "Chairman synthesis failed — this output has NOT been through "
@@ -107,6 +108,74 @@ def _fallback_determination(raw_text: str, error: str = "") -> Dict[str, Any]:
         "open_questions": ["Re-run the panel; chairman output was unparseable."],
         "_degraded": True,
     }
+
+
+# Keys the chairman may return for a defect that overwrite what intake read.
+# Deliberately narrow: the department's own heading, numbering and head-wise
+# figures come off the notice and are NOT the chairman's to revise. A model
+# that rounds "Rs. 1,16,732" to "Rs. 1.17 lakh" in the reply has introduced an
+# error into a document that will be read against the department's annexure.
+_CHAIRMAN_DEFECT_KEYS = (
+    "posture", "strength", "our_position", "facts", "submission",
+    "department_contention", "legal_framework", "authorities",
+    "evidence_required", "evidence_gap", "annexures", "payment", "splits",
+    "prayer_relief", "amount_note",
+)
+
+
+def merge_determination(
+    intake_defects: List[Dict[str, Any]],
+    determination: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Fold the chairman's per-defect determination onto the defects read from
+    the notice.
+
+    The notice is authoritative on WHAT was alleged — the heading, the
+    department's numbering, and the head-wise figures. The chairman is
+    authoritative on WHAT WE SAY ABOUT IT. Keeping that boundary is what stops
+    a drafting model from quietly restating the department's own arithmetic
+    wrongly in a document filed against that arithmetic.
+
+    A defect the chairman did not answer is left with its triage posture and
+    flagged, rather than dropped: a limb missing from the reply is a limb the
+    officer confirms unopposed.
+    """
+    merged = [dict(d) for d in (intake_defects or [])]
+    by_index = {d.get("index"): d for d in merged}
+
+    answered = set()
+    for entry in determination.get("defects") or []:
+        if not isinstance(entry, dict):
+            continue
+        target = by_index.get(entry.get("index"))
+        if target is None:
+            # The chairman raised a limb intake did not find. Keep it — an
+            # extra defect is a reviewable proposal; a lost one is a hole in
+            # the reply.
+            target = defects.new_defect(
+                index=entry.get("index") or (len(merged) + 1),
+                heading=entry.get("heading") or "Additional defect",
+                defect_type="other",
+                source="panel",
+            )
+            merged.append(target)
+            by_index[target["index"]] = target
+
+        for key in _CHAIRMAN_DEFECT_KEYS:
+            if entry.get(key) not in (None, "", [], {}):
+                target[key] = entry[key]
+
+        if target.get("posture") not in defects.POSTURES:
+            target["posture"] = defects.UNDECIDED
+        answered.add(target["index"])
+
+    for defect in merged:
+        if defect["index"] not in answered:
+            defect["unanswered"] = True
+
+    merged.sort(key=lambda d: (d.get("index") or 0))
+    return merged
 
 
 def _usage_of(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -324,6 +393,27 @@ async def run_panel_stream(
         )
 
     determination["_chairman_model"] = models["chairman"]
+
+    # Fold the determination back onto the defects read from the notice, so
+    # everything downstream — export, validation, the eval harness — works from
+    # one reconciled list rather than two half-lists that disagree.
+    determination["defects"] = merge_determination(
+        working_matter.get("defects") or [], determination,
+    )
+    determination["triage"] = defects.triage(determination["defects"])
+    determination["filing_blockers"] = defects.validate_all(
+        determination["defects"]
+    )
+    unanswered = [d for d in determination["defects"] if d.get("unanswered")]
+    if unanswered:
+        determination.setdefault("risk_flags", []).insert(0, (
+            f"{len(unanswered)} defect(s) raised in the notice were not "
+            "answered by the panel: "
+            + "; ".join(str(d.get("heading")) for d in unanswered)
+            + ". A limb left unanswered is a limb the officer confirms "
+              "unopposed. Settle these before filing."
+        ))
+
     yield {"type": "stage3_complete", "data": determination}
 
     # ---- Stage 4: citation verification ----------------------------------

@@ -109,10 +109,23 @@ PORT = int(os.getenv("PORT", "8001"))
 # Compliance Panel (GST / IT adversarial panel)
 # ---------------------------------------------------------------------------
 # Two tiers. The tier is a RISK tier as much as a price tier:
-#   free -> free/low-cost endpoints, client identifiers stripped by force
-#   pro  -> frontier models, full facts, zero-data-retention routing
+#   draft -> cheap paid endpoints, client identifiers stripped by force
+#   pro   -> frontier models, full facts, zero-data-retention routing
 #
 # Role keys: revenue, assessee, procedural, risk, chairman
+#
+# WHY THERE IS NO FREE TIER ANY MORE
+# ----------------------------------
+# There was one, on OpenRouter's `:free` endpoints. Every model ID in it went
+# stale and the whole tier failed silently in production — including notice
+# reading, because the intake reader borrows the tier's grounding model. Free
+# endpoints churn faster than a professional tool can track, they cannot carry
+# the web plugin the grounding stage needs (the plugin is billed even on a free
+# model), and their rate limits make a five-stage panel unreliable.
+#
+# The replacement is a cheap PAID tier. A full panel run on it costs cents, the
+# IDs are stable, and it keeps the property that actually mattered: client
+# identifiers are stripped before anything leaves this machine.
 
 PRO_ROLE_MODELS = {
     "revenue": os.getenv("PRO_MODEL_REVENUE", "x-ai/grok-4.3"),
@@ -122,36 +135,41 @@ PRO_ROLE_MODELS = {
     "chairman": os.getenv("PRO_MODEL_CHAIRMAN", "anthropic/claude-opus-4.8"),
 }
 
-FREE_ROLE_MODELS = {
-    "revenue": os.getenv("FREE_MODEL_REVENUE", "deepseek/deepseek-r1:free"),
-    "assessee": os.getenv("FREE_MODEL_ASSESSEE", "z-ai/glm-4.5-air:free"),
-    "procedural": os.getenv("FREE_MODEL_PROCEDURAL", "qwen/qwen3-235b-a22b:free"),
-    "risk": os.getenv("FREE_MODEL_RISK", "moonshotai/kimi-k2:free"),
-    "chairman": os.getenv("FREE_MODEL_CHAIRMAN", "deepseek/deepseek-r1:free"),
+DRAFT_ROLE_MODELS = {
+    "revenue": os.getenv("DRAFT_MODEL_REVENUE", "x-ai/grok-4.3"),
+    "assessee": os.getenv("DRAFT_MODEL_ASSESSEE", "google/gemini-3.5-flash"),
+    "procedural": os.getenv("DRAFT_MODEL_PROCEDURAL", "google/gemini-3.6-flash"),
+    "risk": os.getenv("DRAFT_MODEL_RISK", "x-ai/grok-4.3"),
+    "chairman": os.getenv("DRAFT_MODEL_CHAIRMAN", "google/gemini-3.6-flash"),
 }
 
 # Model used to check citations against live sources (needs web search)
 VERIFIER_MODEL = os.getenv("VERIFIER_MODEL", "google/gemini-3.1-pro-preview")
-FREE_VERIFIER_MODEL = os.getenv("FREE_VERIFIER_MODEL", "deepseek/deepseek-r1:free")
+DRAFT_VERIFIER_MODEL = os.getenv("DRAFT_VERIFIER_MODEL", "google/gemini-3.5-flash")
 
 # Model that produces the opening current-law briefing (needs web search)
 GROUNDING_MODEL = os.getenv("GROUNDING_MODEL", "google/gemini-3.1-pro-preview")
-FREE_GROUNDING_MODEL = os.getenv("FREE_GROUNDING_MODEL", "deepseek/deepseek-r1:free")
+DRAFT_GROUNDING_MODEL = os.getenv("DRAFT_GROUNDING_MODEL", "google/gemini-3.5-flash")
 
 TIERS = {
-    "free": {
-        "key": "free",
-        "label": "Free Council",
-        "models": FREE_ROLE_MODELS,
-        "verifier": FREE_VERIFIER_MODEL,
-        "grounding": FREE_GROUNDING_MODEL,
+    "draft": {
+        "key": "draft",
+        "label": "Draft Council",
+        "models": DRAFT_ROLE_MODELS,
+        "verifier": DRAFT_VERIFIER_MODEL,
+        "grounding": DRAFT_GROUNDING_MODEL,
         # Enforced, not advisory: identifiers are stripped before any call.
         "anonymise": True,
-        "allow_export": False,
-        "watermark": "RESEARCH GRADE — NOT FOR FILING",
-        "description": "Free endpoints. Client identifiers are stripped before "
-                       "any request leaves this machine. Research and second "
-                       "opinions only.",
+        # Export is permitted so the draft can be read as it will actually
+        # appear, but every page of the filing document carries the watermark
+        # below. Blocking export outright only pushed people into copying text
+        # out of the browser, which loses the warning with it.
+        "allow_export": True,
+        "watermark": "DRAFT — PREPARED ON ANONYMISED FACTS — NOT FOR FILING",
+        "description": "Low-cost models, cents per run. Client identifiers are "
+                       "stripped before any request leaves this machine and "
+                       "restored locally afterwards. Drafting and second "
+                       "opinions; every exported page is watermarked.",
     },
     "pro": {
         "key": "pro",
@@ -276,6 +294,14 @@ EXPORT_PROVENANCE = os.getenv("EXPORT_PROVENANCE", "false").lower() in (
 )
 
 
+# Matters created before the free tier was retired carry tier="free". They must
+# resolve to the anonymising tier, NOT to the default — falling through to
+# "pro" would send a matter's real identifiers to a model on a re-run of work
+# the user chose to anonymise.
+TIER_ALIASES = {"free": "draft"}
+
+
 def get_tier(name: str) -> dict:
     """Resolve a tier profile, falling back to the default."""
-    return TIERS.get(name or DEFAULT_TIER, TIERS[DEFAULT_TIER])
+    key = TIER_ALIASES.get(name or "", name)
+    return TIERS.get(key or DEFAULT_TIER, TIERS[DEFAULT_TIER])
