@@ -194,12 +194,28 @@ ROLE_EFFORT = {
 
 # Completion caps. These stop padding, not reasoning — a counsel that runs to
 # 4,000 tokens where 1,500 would do is repeating itself.
+# Output ceilings, per role.
+#
+# READ THIS BEFORE LOWERING ANY OF THEM. On a reasoning model the ceiling
+# bounds the WHOLE completion and the thinking is charged against it first. Set
+# it to the length of the answer you want and the model will think until it
+# runs out of room, then return nothing at all — a silent empty completion that
+# reads like provider flakiness and is not.
+#
+# These are ceilings, not targets. Billing is per token generated, so headroom
+# is close to free; the ceiling exists to stop a runaway, not to shave cost.
+# The genuine cost control is the effort setting above, which governs how much
+# thinking actually happens.
 ROLE_MAX_TOKENS = {
-    "opening": int(os.getenv("MAX_TOKENS_OPENING", "2200")),
-    "cross_exam": int(os.getenv("MAX_TOKENS_CROSS_EXAM", "1400")),
-    "chairman": int(os.getenv("MAX_TOKENS_CHAIRMAN", "4500")),
-    "briefing": int(os.getenv("MAX_TOKENS_BRIEFING", "1200")),
-    "verifier": int(os.getenv("MAX_TOKENS_VERIFIER", "1800")),
+    "opening": int(os.getenv("MAX_TOKENS_OPENING", "8000")),
+    "cross_exam": int(os.getenv("MAX_TOKENS_CROSS_EXAM", "6000")),
+    # Highest effort and the longest deliverable — the determination carries a
+    # draft reply, an authorities table and a working note.
+    "chairman": int(os.getenv("MAX_TOKENS_CHAIRMAN", "16000")),
+    # Both of these run at low effort, so little of the ceiling goes on
+    # thinking, but a floor of headroom still beats a blank result.
+    "briefing": int(os.getenv("MAX_TOKENS_BRIEFING", "4000")),
+    "verifier": int(os.getenv("MAX_TOKENS_VERIFIER", "5000")),
 }
 
 

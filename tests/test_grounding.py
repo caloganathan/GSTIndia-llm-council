@@ -212,3 +212,91 @@ class TestPayloadWiring:
         # The cost figure shown to the user is only truthful if every call
         # asks for it.
         assert self._body()["usage"] == {"include": True}
+
+
+class TestEmptyCompletionDiagnosis:
+    """
+    A reasoning model under a tight ceiling thinks until it runs out of room
+    and returns nothing. That is a configuration fault wearing the costume of
+    provider flakiness, and telling them apart is the difference between a
+    fixable error and an afternoon lost.
+    """
+
+    @staticmethod
+    def _response(payload, status=200):
+        import httpx
+        return httpx.Response(
+            status_code=status,
+            json=payload,
+            request=httpx.Request("POST", "https://openrouter.ai/x"),
+        )
+
+    def _read(self, payload):
+        from backend.openrouter import _read_completion
+        return _read_completion("m", self._response(payload))
+
+    def test_truncated_while_reasoning_is_named_not_guessed(self):
+        outcome = self._read({
+            "choices": [{"finish_reason": "length",
+                         "message": {"content": ""}}],
+            "usage": {"completion_tokens": 2200},
+        })
+        assert outcome["ok"] is False
+        assert outcome["_starved"] is True
+        assert "entire output allowance" in outcome["error"]
+        # The message has to say what to change, not merely that it broke.
+        assert "token ceiling" in outcome["error"]
+        assert "2200 tokens spent" in outcome["error"]
+
+    def test_native_finish_reason_also_counts(self):
+        # Some providers only populate the native field.
+        outcome = self._read({
+            "choices": [{"native_finish_reason": "MAX_TOKENS",
+                         "message": {"content": "   "}}],
+        })
+        assert outcome.get("_starved") is True
+
+    def test_plain_empty_is_marked_retryable_not_starved(self):
+        outcome = self._read({
+            "choices": [{"finish_reason": "stop", "message": {"content": ""}}],
+        })
+        assert outcome["ok"] is False
+        assert outcome.get("_empty") is True
+        assert outcome.get("_starved") is not True
+
+    def test_real_content_still_succeeds_at_the_ceiling(self):
+        # Truncated but non-empty is a usable answer, not a failure.
+        outcome = self._read({
+            "choices": [{"finish_reason": "length",
+                         "message": {"content": "a partial answer"}}],
+            "usage": {"total_tokens": 10, "cost": 0.1},
+        })
+        assert outcome["ok"] is True
+        assert outcome["content"] == "a partial answer"
+
+    def test_refusal_is_distinguished_from_emptiness(self):
+        outcome = self._read({"error": {"message": "flagged"}})
+        assert outcome["ok"] is False
+        assert "provider refused" in outcome["error"]
+        assert outcome.get("_starved") is not True
+
+
+class TestCeilingsLeaveRoomToReason:
+    """
+    Guards the regression that produced empty counsel opinions in production:
+    ceilings sized for the answer alone, on models that must think first.
+    """
+
+    def test_every_ceiling_clears_a_reasoning_budget(self):
+        from backend import config
+        # A high-effort frontier model routinely spends a couple of thousand
+        # tokens thinking before it writes anything.
+        for role, ceiling in config.ROLE_MAX_TOKENS.items():
+            assert ceiling >= 4000, (
+                f"{role} ceiling {ceiling} leaves no room to reason and answer"
+            )
+
+    def test_the_highest_effort_seats_have_the_most_room(self):
+        from backend import config
+        assert config.ROLE_MAX_TOKENS["chairman"] > config.ROLE_MAX_TOKENS["opening"]
+        assert config.ROLE_MAX_TOKENS["opening"] > config.ROLE_MAX_TOKENS["briefing"]
