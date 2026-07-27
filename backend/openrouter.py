@@ -33,6 +33,15 @@ TRANSIENT_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504})
 # front of a user watching a progress indicator.
 BACKOFF_SCHEDULE = (2, 4, 8)
 
+# Finish reasons that mean the model ran out of room rather than finished.
+TRUNCATION_REASONS = frozenset({"length", "max_tokens", "MAX_TOKENS"})
+
+# When a reasoning model spends its entire allowance thinking and has nothing
+# left to answer with, retry once with this much more room. A ceiling costs
+# nothing until it is used — billing is per token generated, not per token
+# permitted — so the headroom is close to free.
+STARVED_RETRY_MULTIPLIER = 3
+
 
 def _failed(model: str, reason: str) -> Dict[str, Any]:
     return {"ok": False, "model": model, "error": reason}
@@ -101,10 +110,19 @@ def _read_completion(model: str, response: httpx.Response) -> Dict[str, Any]:
     Turn a 200 into a result.
 
     A 200 is not success. OpenRouter returns 200 with an error object for
-    moderation refusals, and 200 with an empty string when a provider gives up
-    mid-generation. Both are failures and are reported as such — a blank
-    counsel opinion silently joining a deliberation is worse than a visible
-    error.
+    moderation refusals, and 200 with an empty string in two quite different
+    situations that must not be conflated:
+
+      * the provider simply gave up — transient, worth another attempt;
+      * the model exhausted its token allowance while reasoning and had
+        nothing left to answer with.
+
+    The second is the dangerous one, because it looks like flakiness and is in
+    fact a configuration fault: `max_tokens` bounds the WHOLE completion, and
+    on a reasoning model the thinking is charged against it first. A high
+    effort setting under a tight ceiling produces a model that thinks until it
+    runs out of room and returns nothing at all. Retrying that identically
+    fails identically, so it is detected here and named.
     """
     try:
         body = response.json()
@@ -121,14 +139,31 @@ def _read_completion(model: str, response: httpx.Response) -> Dict[str, Any]:
         return _failed(model, f"provider refused: {detail}")
 
     try:
-        message = body["choices"][0]["message"]
+        choice = body["choices"][0]
+        message = choice["message"]
     except (KeyError, IndexError, TypeError):
         return _failed(model, "response carried no completion")
 
-    if not (message.get("content") or "").strip():
-        return _failed(model, "provider returned an empty completion")
+    if (message.get("content") or "").strip():
+        return _succeeded(model, message, body)
 
-    return _succeeded(model, message, body)
+    # Empty. Work out which kind.
+    finish = choice.get("finish_reason") or choice.get("native_finish_reason")
+    spent = (body.get("usage") or {}).get("completion_tokens")
+
+    if finish in TRUNCATION_REASONS:
+        outcome = _failed(model, (
+            "the model used its entire output allowance while reasoning and "
+            f"produced no answer (finish_reason={finish}"
+            f"{f', {spent} tokens spent' if spent else ''}). Raise the token "
+            "ceiling for this role, or lower its reasoning effort."
+        ))
+        outcome["_starved"] = True
+        return outcome
+
+    outcome = _failed(model, "provider returned an empty completion")
+    outcome["_empty"] = True
+    return outcome
 
 
 async def query_model(
@@ -170,6 +205,7 @@ async def query_model(
 
     setback = "no attempt completed"
     attempts_spent = 0
+    headroom_granted = False
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         while attempts_spent <= MAX_RETRIES:
@@ -181,19 +217,42 @@ async def query_model(
                 setback = f"network error: {type(exc).__name__}: {exc}"
             else:
                 if response.status_code == 200:
-                    return _read_completion(model, response)
+                    outcome = _read_completion(model, response)
+                    if outcome["ok"]:
+                        return outcome
+
+                    # The model thought until it ran out of room. Grant it
+                    # more and let it answer — once. This is a correction, not
+                    # a retry, so it does not spend the allowance either.
+                    if (outcome.get("_starved") and not headroom_granted
+                            and body.get("max_tokens")):
+                        headroom_granted = True
+                        body["max_tokens"] *= STARVED_RETRY_MULTIPLIER
+                        print(f"Model {model} exhausted its allowance while "
+                              f"reasoning; retrying with "
+                              f"{body['max_tokens']} tokens")
+                        continue
+
+                    # A bare empty completion is usually the provider
+                    # stumbling, so it is worth one more attempt on the
+                    # ordinary schedule.
+                    if outcome.get("_empty"):
+                        setback = outcome["error"]
+                    else:
+                        return outcome
 
                 # Not every model accepts a reasoning budget. Shed the
                 # parameter and go again — this is a negotiation, not a
                 # failure, so it does not spend the retry allowance.
-                if response.status_code == 400 and "reasoning" in body:
+                elif response.status_code == 400 and "reasoning" in body:
                     body.pop("reasoning")
                     continue
 
-                setback = (f"HTTP {response.status_code}: "
-                           f"{response.text[:300]}")
-                if response.status_code not in TRANSIENT_STATUSES:
-                    break
+                else:
+                    setback = (f"HTTP {response.status_code}: "
+                               f"{response.text[:300]}")
+                    if response.status_code not in TRANSIENT_STATUSES:
+                        break
 
             if attempts_spent < len(BACKOFF_SCHEDULE) and attempts_spent < MAX_RETRIES:
                 await asyncio.sleep(BACKOFF_SCHEDULE[attempts_spent])
