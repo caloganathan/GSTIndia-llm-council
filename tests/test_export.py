@@ -481,6 +481,44 @@ class TestIndianConventions:
             "_File_Note_INTERNAL.docx")
 
 
+class TestFilenameSanitization:
+    """
+    A client name lifted from a scanned notice can carry stray control
+    characters — most often an embedded newline from OCR line-wrapping. Left
+    in the Content-Disposition header, a raw newline splits it into two
+    header lines: uvicorn aborts the connection mid-response and the browser
+    reports "Failed to fetch", for a document that otherwise built cleanly.
+    """
+
+    def test_embedded_newline_in_client_name_does_not_break_the_filename(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["intake"]["client_name"] = "Acme Industries\nPrivate Limited"
+        for name in (export.suggested_filename(matter),
+                     export.file_note_filename(matter)):
+            assert "\n" not in name
+            assert "\r" not in name
+
+    def test_quote_and_backslash_are_stripped(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["intake"]["client_name"] = 'Acme "Steel" Ind\\ustries'
+        name = export.suggested_filename(matter)
+        assert '"' not in name
+        assert "\\" not in name
+
+    def test_no_control_characters_survive_at_all(self):
+        """
+        Any control character (not just \\n) can break header framing the
+        same way. Sweep the whole range, not just the one that was seen.
+        """
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["intake"]["client_name"] = "Acme\x00Industries\x1fLtd\x7f"
+        name = export.suggested_filename(matter)
+        assert not any(ord(c) < 0x20 or ord(c) == 0x7f for c in name)
+
+
 class TestDegradedInput:
     def test_empty_determination_still_produces_both_documents(self):
         matter = {**MATTER, "result": {"determination": {}, "verification": {}}}

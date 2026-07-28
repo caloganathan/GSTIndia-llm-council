@@ -996,12 +996,29 @@ def _date(value) -> Optional[str]:
         return str(value)
 
 
+# Control characters (notably a bare \n or \r) and quote/backslash, which
+# terminate or escape a quoted Content-Disposition header value early. A
+# client name read off a scanned notice can carry an embedded newline from
+# OCR line-wrapping; left in the filename it turns one header into two lines
+# and the ASGI server aborts the connection outright — the browser reports
+# "Failed to fetch" and the download never starts, for a document that
+# otherwise built cleanly.
+_FILENAME_UNSAFE_RE = re.compile(r'[\x00-\x1f\x7f"\\]+')
+
+
+def _clean_filename_part(text: str) -> str:
+    return re.sub(r"\s+", " ", _FILENAME_UNSAFE_RE.sub(" ", text)).strip()
+
+
 def _base_filename(matter: Dict[str, Any]) -> str:
     intake = matter.get("intake", {})
     parts = [
-        (intake.get("client_name") or "Matter").replace(" ", "_")[:40],
-        (intake.get("notice_type") or "Notice").replace(" ", ""),
-        (intake.get("tax_period") or "").replace(" ", "").replace("/", "-")[:20],
+        _clean_filename_part(intake.get("client_name") or "Matter")
+            .replace(" ", "_")[:40],
+        _clean_filename_part(intake.get("notice_type") or "Notice")
+            .replace(" ", ""),
+        _clean_filename_part(intake.get("tax_period") or "")
+            .replace(" ", "").replace("/", "-")[:20],
     ]
     return "_".join(p for p in parts if p)
 
