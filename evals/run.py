@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from backend import config
 from backend.panel import run_panel_stream
 
 from .scoring import aggregate, score_matter
@@ -85,6 +86,15 @@ def write_scorecard(path: Path, summary: Dict[str, Any],
         "|---|---|---|",
         f"| Matters passed | {summary.get('passed', 0)} / {summary.get('matters', 0)}"
         f" ({pct(summary.get('pass_rate'))}) | — |",
+        # Defect coverage and evidence-gap catch lead, because they are the two
+        # numbers this product is judged on. A limb the panel never finds
+        # cannot be answered, and an unanswered limb is confirmed unopposed;
+        # the gap number is scored against a limb that was argued correctly
+        # and lost anyway, on a document nobody attached. Both were computed
+        # and then left out of the scorecard, which made them easy to ship past.
+        f"| **Defect coverage** | {pct(summary.get('defect_coverage'))} | 100% |",
+        f"| **Evidence gap catch** | {pct(summary.get('evidence_gap_catch'))} | 100% |",
+        f"| Posture accuracy | {pct(summary.get('posture_accuracy'))} | ≥ 70% |",
         f"| Citation integrity | {pct(summary.get('citation_verified_rate'))} verified | "
         "no fabrications |",
         f"| Issue coverage | {pct(summary.get('issue_coverage'))} | ≥ 90% |",
@@ -94,6 +104,20 @@ def write_scorecard(path: Path, summary: Dict[str, Any],
         f"| Cost per matter | ${summary.get('cost_per_matter', 0):.4f} | your call |",
         "",
     ]
+
+    missed_evidence = summary.get("missed_critical_evidence") or []
+    if missed_evidence:
+        lines += [
+            "> ## ⚠ CRITICAL EVIDENCE NOT DEMANDED",
+            ">",
+            "> Each of these is a document whose absence lost the limb in the",
+            "> real matter, on an argument that was otherwise right. The panel",
+            "> did not ask for it. This is the failure that loses a winnable",
+            "> limb, and it does not show up as a bad argument.",
+            ">",
+        ]
+        lines += [f"> - `{mid}` — {document}" for mid, document in missed_evidence]
+        lines.append("")
 
     stale = summary.get("superseded_citations") or []
     if stale:
@@ -135,6 +159,35 @@ def write_scorecard(path: Path, summary: Dict[str, Any],
             "",
             f"{entry.get('description', '')}",
             "",
+        ]
+
+        defect_score = s.get("defects") or {}
+        if defect_score.get("expected"):
+            lines.append(
+                f"- **Defects**: {defect_score['found']}/{defect_score['expected']} found, "
+                f"{defect_score.get('posture_matches', 0)} posture(s) correct"
+                + (f" — MISSED: {', '.join(str(x) for x in defect_score['missed'])}"
+                   if defect_score.get("missed") else "")
+            )
+            for error in defect_score.get("posture_errors") or []:
+                lines.append(
+                    f"  - posture on `{error['defect']}`: expected "
+                    f"`{error['expected']}`, got `{error['got']}`"
+                )
+
+        evidence_score = s.get("evidence") or {}
+        if evidence_score.get("expected"):
+            lines.append(
+                f"- **Critical evidence**: {evidence_score['found']}/"
+                f"{evidence_score['expected']} demanded"
+            )
+            for entry_missed in evidence_score.get("missed") or []:
+                lines.append(
+                    f"  - ⚠ not asked for on `{entry_missed['defect']}`: "
+                    f"{entry_missed['document']}"
+                )
+
+        lines += [
             f"- **Citations**: {s['citations']['verified']} verified, "
             f"{s['citations'].get('superseded', 0)} superseded, "
             f"{s['citations']['unverified']} unverified, "
@@ -191,7 +244,13 @@ def write_scorecard(path: Path, summary: Dict[str, Any],
 
 async def main():
     parser = argparse.ArgumentParser(description="Score the panel against a golden set")
-    parser.add_argument("--tier", default="pro", choices=["free", "pro"])
+    # Derived from the configured tiers rather than hardcoded, which is how
+    # this drifted: the free tier was retired and replaced by `draft`, and
+    # `--tier draft` — the name in the UI, the config and the docs — was
+    # rejected by the only entry point that runs the benchmark. The retired
+    # alias still resolves, so older invocations keep working.
+    parser.add_argument("--tier", default=config.DEFAULT_TIER,
+                        choices=sorted(set(config.TIERS) | set(config.TIER_ALIASES)))
     parser.add_argument("--only", help="Run a single matter by id")
     parser.add_argument("--dry-run", action="store_true",
                         help="Validate the golden set without calling any model")
@@ -253,6 +312,9 @@ async def main():
 
     print(f"\n{'=' * 62}")
     print(f"  Passed:              {summary.get('passed', 0)}/{summary.get('matters', 0)}")
+    print(f"  Defect coverage:     {pct(summary.get('defect_coverage'))}")
+    print(f"  Evidence gap catch:  {pct(summary.get('evidence_gap_catch'))}")
+    print(f"  Posture accuracy:    {pct(summary.get('posture_accuracy'))}")
     print(f"  Citation integrity:  {pct(summary.get('citation_verified_rate'))} verified")
     print(f"  Issue coverage:      {pct(summary.get('issue_coverage'))}")
     print(f"  Procedural catch:    {pct(summary.get('procedural_catch'))}")
@@ -260,6 +322,9 @@ async def main():
     if summary.get("fabricated_citations"):
         print(f"\n  ⚠ {len(summary['fabricated_citations'])} FABRICATED CITATION(S) "
               "— see the scorecard")
+    if summary.get("missed_critical_evidence"):
+        print(f"  ⚠ {len(summary['missed_critical_evidence'])} CRITICAL DOCUMENT(S) "
+              "NOT DEMANDED — see the scorecard")
     print(f"{'=' * 62}")
     print(f"\nScorecard: {out_dir / 'scorecard.md'}")
     return 0

@@ -239,6 +239,43 @@ class TestMergeDetermination:
         assert merged[0]["amount_by_head"] == {"cgst": 58366.0, "sgst": 58366.0}
         assert merged[0]["heading"] == "Excess ITC against GSTR-2B"
 
+    def test_a_structured_key_of_the_wrong_shape_is_dropped(self):
+        """
+        A model asked for an object routinely answers with a sentence. Carried
+        forward verbatim, that string reached code indexing a mapping and the
+        filing reply raised mid-response — the download died as "Failed to
+        fetch". The limb keeps what intake read instead.
+        """
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 2, "posture": "agreed_paid",
+             "payment": "Rs. 2,300 paid vide DRC-03 dated 26/06/2026"},
+        ]})
+        assert merged[1]["payment"] == {}
+
+    def test_a_wrongly_shaped_value_does_not_block_the_rest_of_the_limb(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "posture": "contested", "payment": "paid",
+             "submission": "Not sustainable."},
+        ]})
+        assert merged[0]["submission"] == "Not sustainable."
+        assert merged[0]["posture"] == "contested"
+
+    def test_a_list_key_returned_as_prose_is_dropped(self):
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 1, "authorities": "Section 16(2) of the CGST Act",
+             "evidence_gap": "the August e-invoice"},
+        ]})
+        assert merged[0]["authorities"] == []
+        assert merged[0]["evidence_gap"] == []
+
+    def test_a_correctly_shaped_value_still_applies(self):
+        """The guard must not swallow well-formed output."""
+        merged = panel.merge_determination(self.INTAKE, {"defects": [
+            {"index": 2, "posture": "agreed_paid",
+             "payment": {"reference": "AD290626001122B", "date": "26/06/2026"}},
+        ]})
+        assert merged[1]["payment"]["reference"] == "AD290626001122B"
+
     def test_an_unanswered_limb_is_flagged_not_dropped(self):
         """A limb missing from the reply is a limb the officer confirms."""
         merged = panel.merge_determination(self.INTAKE, {"defects": [

@@ -20,7 +20,7 @@ free, it is deterministic, it cannot hallucinate a GSTIN, and — the point that
 decides it — nothing has to leave the machine.
 
 A model is used for exactly the two fields regex cannot do: what the issues
-are, and a summary of the facts. On the free tier even that text is
+are, and a summary of the facts. On the draft tier even that text is
 anonymised first, so an uploaded notice is no less private than a typed one.
 
 Scanned notices with no text layer are detected and reported honestly rather
@@ -187,7 +187,7 @@ CIRCLE_RE = re.compile(
 #
 # This is extracted locally for two reasons, and the second matters more: it
 # fills the client name field, AND it gives the sanitiser something to scrub.
-# Without it the free tier strips the GSTIN and PAN but leaves the company
+# Without it the draft tier strips the GSTIN and PAN but leaves the company
 # name standing in the notice text — which is exactly the leak the test suite
 # caught.
 # The suffix group is case-insensitive but the name itself is not. Notices

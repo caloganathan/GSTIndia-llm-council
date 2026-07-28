@@ -45,10 +45,12 @@ Arial, monochrome, bold headings, nothing that reads as machine-generated —
 containing the draft reply, an issue-wise analysis, a schedule of
 authorities, risk flags for a reviewing partner, and a note for the file.
 
-**Two tiers, and why.** *Free* strips the client's name, GSTIN and PAN before
-anything leaves the machine — good for a first read, export is disabled.
-*Pro* sends full facts through zero-retention routing and enables export —
-use this for anything actually going to the department.
+**Two tiers, and why.** *Draft* strips the client's name, GSTIN and PAN before
+anything leaves the machine, and restores them locally afterwards — good for a
+first read or a second opinion. It exports, but every page is watermarked
+**not for filing**, so a draft cannot be mistaken for the real thing.
+*Pro* sends full facts through zero-retention routing and exports unwatermarked
+— use this for anything actually going to the department.
 
 **Instructions to hand to your team:**
 
@@ -57,7 +59,7 @@ use this for anything actually going to the department.
    one).
 3. Check the auto-extracted facts (GSTIN, dates, amounts, section) — correct
    anything wrong before running the panel.
-4. Choose Free (quick check) or Pro (real work) and run it.
+4. Choose Draft (quick check) or Pro (real work) and run it.
 5. Read all four counsel opinions and the chairman's determination. **This is
    a draft for professional review, not a filing.** Any citation marked "to be
    confirmed" or "not traced" must be checked against the reported text before
@@ -106,7 +108,7 @@ pattern, and the State is derived from the first two digits of the GSTIN,
 which is what drives the jurisdiction weighting.
 
 A model reads only the two fields a pattern cannot: what the issues are and a
-summary of the facts. On the free tier the notice text is scrubbed first, so
+summary of the facts. On the draft tier the notice text is scrubbed first, so
 an uploaded notice is no less private than a typed one. The uploaded file is
 parsed in memory and never written to disk.
 
@@ -172,17 +174,28 @@ reply pack both say so.
 
 ### Two tiers — a risk tier, not just a price tier
 
-| | Free Council | Pro Council |
+| | Draft Council | Pro Council |
 |---|---|---|
-| Models | DeepSeek R1, GLM, Qwen, Kimi (free endpoints) | GPT-5.5, Claude Opus 4.8, Gemini 3.1 Pro, Grok 4.3 |
+| Models | Fast, low-cost models — cents per run | Frontier models with zero-data-retention routing |
 | Client identifiers | **Stripped before any request leaves the machine** | Full facts, zero-data-retention routing |
-| Output | Research grade, watermarked, export blocked | Signing-ready pack with DOCX export |
+| Output | Watermarked **not for filing** on every page | Signing-ready pack with DOCX export |
 
-Free endpoints are frequently free because the provider may retain or train on
-prompts. Sending a client's PAN, GSTIN and dispute particulars there is a
-confidentiality breach, so on the free tier anonymisation is enforced in code
-and the run aborts if any identifier survives. Identifiers are restored
-locally, so the partner still reads real names while the model never saw them.
+Sending a client's PAN, GSTIN and dispute particulars to a model endpoint that
+may retain or train on prompts is a confidentiality breach, so on the draft
+tier anonymisation is enforced in code and the run aborts if any identifier
+survives. Identifiers are restored locally, so the partner still reads real
+names while the model never saw them.
+
+Export is allowed on both tiers, and that is deliberate: blocking it on the
+cheap tier only pushed people into copying text out of the browser, which
+loses the watermark along with it. The draft tier stamps every page instead.
+
+**There was a free tier**, on OpenRouter's `:free` endpoints. Every model ID in
+it went stale and the tier failed silently in production — including notice
+reading, because the intake reader borrows the tier's grounding model. It was
+replaced by the cheap paid tier above. Matters stored as `tier="free"` still
+resolve to Draft, never to Pro, so a re-run of work someone chose to anonymise
+cannot quietly send real identifiers.
 
 ### Users and roles
 
@@ -407,7 +420,7 @@ that starts and reports the problem.
 uv run pytest
 ```
 
-308 tests. The suites that matter most: the sanitizer (identifier leaks —
+475 tests. The suites that matter most: the sanitizer (identifier leaks —
 a failure there is a confidentiality breach, not a bug), citation verification
 and its never-upgrade rule, reply-pack formatting (Arial-only, monochrome-only,
 no machine vocabulary in the deliverable), reconciliation ingestion (proof

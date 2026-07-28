@@ -122,6 +122,24 @@ _CHAIRMAN_DEFECT_KEYS = (
     "prayer_relief", "amount_note",
 )
 
+# The shape each structured key must arrive in. A model asked for an object
+# routinely answers with a sentence — "Rs. 2,300 paid vide DRC-03 dated
+# 26/06/2026" instead of {"reference": ..., "date": ...} — and the cheap
+# models on the draft tier do it more often. Accepting that verbatim put a
+# string where the export indexes a mapping, and the filing reply then raised
+# mid-response: the download died as "Failed to fetch" with nothing in the UI
+# to say why. A value of the wrong shape is dropped here rather than carried
+# forward, so the limb keeps what intake read and the reply still builds.
+_CHAIRMAN_DEFECT_SHAPES = {
+    "payment": dict,
+    "legal_framework": list,
+    "authorities": list,
+    "evidence_required": list,
+    "evidence_gap": list,
+    "annexures": list,
+    "splits": list,
+}
+
 
 def merge_determination(
     intake_defects: List[Dict[str, Any]],
@@ -163,8 +181,12 @@ def merge_determination(
             by_index[target["index"]] = target
 
         for key in _CHAIRMAN_DEFECT_KEYS:
-            if entry.get(key) not in (None, "", [], {}):
-                target[key] = entry[key]
+            if entry.get(key) in (None, "", [], {}):
+                continue
+            shape = _CHAIRMAN_DEFECT_SHAPES.get(key)
+            if shape is not None and not isinstance(entry[key], shape):
+                continue
+            target[key] = entry[key]
 
         if target.get("posture") not in defects.POSTURES:
             target["posture"] = defects.UNDECIDED
@@ -213,7 +235,7 @@ async def run_panel_stream(
     zdr = config.ENFORCE_ZDR and not tier["anonymise"]
 
     # ---- Privacy gate -----------------------------------------------------
-    # On the free tier this is not optional and not skippable.
+    # On the anonymising tier this is not optional and not skippable.
     replacements: Dict[str, str] = {}
     working_matter = matter
     if tier["anonymise"]:
@@ -427,7 +449,7 @@ async def run_panel_stream(
         )
         yield {"type": "verification_complete", "data": verification}
 
-    # ---- Restore identifiers locally (free tier only) --------------------
+    # ---- Restore identifiers locally (anonymising tier only) -------------
     if replacements:
         analyses = sanitizer.restore_structure(analyses, replacements)
         cross_exams = sanitizer.restore_structure(cross_exams, replacements)

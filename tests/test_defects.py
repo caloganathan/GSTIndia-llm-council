@@ -289,6 +289,17 @@ class TestValidation:
             1, "Late fee", posture=defects.AGREED_PAID, annexures=["challan"]))
         assert any("DRC-03" in p for p in problems)
 
+    def test_a_payment_written_as_prose_reads_as_no_reference(self):
+        """
+        A payment the panel wrote as a sentence carries no reference this can
+        read. Treating it as absent raises the blocker a reviewer can act on;
+        indexing it as a mapping raised AttributeError inside the panel run.
+        """
+        defect = defects.new_defect(1, "Late fee", posture=defects.AGREED_PAID,
+                                    annexures=["challan"])
+        defect["payment"] = "Rs. 2,300 paid vide DRC-03 dated 26/06/2026"
+        assert any("DRC-03" in p for p in defects.validate(defect))
+
     def test_a_split_that_does_not_reconcile_is_reported(self):
         problems = defects.validate(defects.new_defect(
             1, "Blocked credit", posture=defects.PARTIAL,
