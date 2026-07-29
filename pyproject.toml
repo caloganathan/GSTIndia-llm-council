@@ -28,6 +28,11 @@ dependencies = [
 ocr = [
     "pypdfium2>=4.30.0",
     "rapidocr-onnxruntime>=1.3.24",
+    # onnxruntime dropped CPython 3.10 wheels from 1.20 onwards, and this
+    # project supports 3.10. Without the marker `uv sync --extra ocr` fails
+    # outright on a 3.10 interpreter with a resolver error rather than
+    # anything a user could act on.
+    "onnxruntime<1.20; python_version < '3.11'",
 ]
 
 [dependency-groups]

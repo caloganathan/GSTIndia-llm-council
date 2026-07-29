@@ -24,13 +24,32 @@ needs_engine = pytest.mark.skipif(
     not ENGINE_READY, reason="OCR extra not installed (uv sync --extra ocr)")
 
 
+def _textless_pdf() -> bytes:
+    """
+    A PDF with a page and no text layer.
+
+    Built with pypdf, which is a core dependency, so the degradation tests
+    below run on a BASE install — the install most firms will have on day one,
+    and therefore the behaviour it is least acceptable to leave untested. A
+    fixture needing the imaging stack would have skipped exactly there.
+    """
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
 def _scanned_pdf(lines, width=1240, height=1754) -> bytes:
     """
-    A PDF with no text layer — text drawn as pixels, exactly like a scan.
+    A PDF whose text is drawn as pixels — a scan, with words in it.
 
     Built rather than committed as a fixture so the test states what it is
     testing. A committed binary would hide whether the page has a text layer,
-    which is the entire premise of the test.
+    which is the entire premise of the test. Needs the imaging stack, which
+    arrives with the OCR extra, so only the end-to-end tests use it.
     """
     pytest.importorskip("PIL")
     from PIL import Image, ImageDraw
@@ -187,7 +206,7 @@ class TestDegradationWithoutTheEngine:
             ocr, "available",
             lambda: (False, "The OCR engine is not installed. "
                             "Install the OCR extra: uv sync --extra ocr"))
-        document = intake.extract_document("scan.pdf", _scanned_pdf(NOTICE_LINES))
+        document = intake.extract_document("scan.pdf", _textless_pdf())
 
         assert document["source"] != "ocr"
         assert document["ocr"] is None
@@ -197,7 +216,7 @@ class TestDegradationWithoutTheEngine:
 
     def test_no_fields_are_invented_from_an_unread_scan(self, monkeypatch):
         monkeypatch.setattr(ocr, "available", lambda: (False, "not installed"))
-        document = intake.extract_document("scan.pdf", _scanned_pdf(NOTICE_LINES))
+        document = intake.extract_document("scan.pdf", _textless_pdf())
         assert len(document["text"]) < intake.MIN_USEFUL_TEXT
 
     def test_an_engine_that_raises_is_reported_not_swallowed(self, monkeypatch):
@@ -207,7 +226,7 @@ class TestDegradationWithoutTheEngine:
             raise RuntimeError("model file corrupt")
 
         monkeypatch.setattr(ocr, "ocr_pdf", explode)
-        document = intake.extract_document("scan.pdf", _scanned_pdf(NOTICE_LINES))
+        document = intake.extract_document("scan.pdf", _textless_pdf())
         assert any("OCR failed" in w for w in document["warnings"])
         assert any("model file corrupt" in w for w in document["warnings"])
 
