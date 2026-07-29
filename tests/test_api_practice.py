@@ -241,3 +241,62 @@ class TestExtractionProvenance:
         ).json()
         assert len(data["fields"]["defects"]) == 8
         assert data["fields"]["amount_disputed"] == 317450
+
+
+class TestFeatureGating:
+    """
+    The generic council is opt-in.
+
+    It still works and its engine still powers the panel — this only governs
+    whether the generic chat surface is offered, because a compliance product
+    that ships with a chatbot tab invites the wrong question about what it is.
+    """
+
+    def test_off_by_default(self, client):
+        result = client.get("/api/auth/check", headers=HEADERS).json()
+        assert result["features"]["general_council"] is False
+
+    def test_can_be_switched_on(self, client, monkeypatch):
+        monkeypatch.setattr(config, "ENABLE_GENERAL_COUNCIL", True)
+        result = client.get("/api/auth/check", headers=HEADERS).json()
+        assert result["features"]["general_council"] is True
+
+    def test_capabilities_travel_on_the_session_check(self, client):
+        # Carried here so the navigation renders once, correctly, rather than
+        # growing a tab after the page has settled.
+        result = client.get("/api/auth/check", headers=HEADERS).json()
+        assert "ocr" in result["features"]
+
+    def test_the_council_endpoints_are_not_removed(self, client):
+        # Disabling the surface must not break a deployment that still has
+        # conversations stored, or a user who has the URL open.
+        assert client.get("/api/conversations", headers=HEADERS).status_code == 200
+
+
+class TestLegacyTokenIsAnnounced:
+    def test_using_the_shared_token_warns_once_when_named_users_exist(
+        self, client, monkeypatch, capsys
+    ):
+        from backend import auth, users
+
+        monkeypatch.setattr(auth, "_legacy_warned", False)
+        monkeypatch.setattr(users, "user_count", lambda: 3)
+
+        client.get("/api/matters", headers=HEADERS)
+        first = capsys.readouterr().out
+        assert "shared APP_ACCESS_TOKEN was used" in first
+
+        # Once per process. A line per request would bury the log.
+        client.get("/api/matters", headers=HEADERS)
+        assert "shared APP_ACCESS_TOKEN was used" not in capsys.readouterr().out
+
+    def test_no_warning_when_the_shared_token_is_the_only_credential(
+        self, client, monkeypatch, capsys
+    ):
+        from backend import auth, users
+
+        monkeypatch.setattr(auth, "_legacy_warned", False)
+        monkeypatch.setattr(users, "user_count", lambda: 0)
+
+        client.get("/api/matters", headers=HEADERS)
+        assert "shared APP_ACCESS_TOKEN" not in capsys.readouterr().out

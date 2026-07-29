@@ -148,13 +148,35 @@ async def readyz():
             "state_dir": config.STATE_DIR, "data_dir": config.DATA_DIR}
 
 
+@router.get("/features")
+async def features():
+    """
+    What this deployment offers, for the UI to render against.
+
+    Read on the auth check rather than fetched separately so navigation never
+    flickers a tab into existence after the page has settled.
+    """
+    ocr_ready, ocr_reason = ocr.available()
+    return {
+        "general_council": config.ENABLE_GENERAL_COUNCIL,
+        "ocr": {"available": ocr_ready, "reason": ocr_reason},
+    }
+
+
 @router.get("/auth/check")
 async def auth_check(user: Dict[str, Any] = Depends(require_auth)):
     """Returns 200 when the presented credential is valid (or auth is disabled)."""
+    ocr_ready, ocr_reason = ocr.available()
     return {
         "status": "ok",
         "auth_enabled": bool(config.APP_ACCESS_TOKEN) or users.user_count() > 0,
         "user": user,
+        # Carried on the session check so navigation renders once, correctly,
+        # rather than growing a tab after the page has settled.
+        "features": {
+            "general_council": config.ENABLE_GENERAL_COUNCIL,
+            "ocr": {"available": ocr_ready, "reason": ocr_reason},
+        },
     }
 
 
@@ -214,6 +236,7 @@ async def health():
         # tier is remembered for.
         "ocr": {"available": ocr_ready, "reason": ocr_reason},
         "usd_inr_rate": pricing.USD_INR,
+        "general_council_enabled": config.ENABLE_GENERAL_COUNCIL,
         "panel_tiers": {
             key: {
                 "label": tier["label"],

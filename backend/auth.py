@@ -67,9 +67,44 @@ def resolve_user(authorization: str = "") -> Optional[Dict[str, Any]]:
     if config.APP_ACCESS_TOKEN and secrets.compare_digest(
         token, config.APP_ACCESS_TOKEN
     ):
+        _warn_legacy_token_use()
         return dict(LEGACY_USER)
 
     return users.resolve_session(token)
+
+
+_legacy_warned = False
+
+
+def _warn_legacy_token_use():
+    """
+    Say, once, that the shared token was used.
+
+    The shared secret grants partner rights to whoever holds it, attributes
+    every action to "Shared Access Token", and cannot be revoked for one
+    person. It stays supported because deployments depend on it, but a firm
+    that has moved to named users should know when something is still using
+    it — silence is how a breakglass credential becomes the normal way in.
+
+    Once per process: this runs on every authenticated request, and a line per
+    request would bury everything else in the log.
+    """
+    global _legacy_warned
+    if _legacy_warned:
+        return
+    _legacy_warned = True
+    try:
+        named_users = users.user_count()
+    except Exception:
+        named_users = 0
+    if named_users:
+        print(
+            "WARNING: the shared APP_ACCESS_TOKEN was used to authenticate "
+            f"while {named_users} named user account(s) exist. Actions taken "
+            "with it are attributed to 'Shared Access Token' and cannot be "
+            "traced to a person. Prefer named logins and keep the shared "
+            "token for recovery only."
+        )
 
 
 async def require_auth(authorization: str = Header(default="")) -> Dict[str, Any]:

@@ -32,7 +32,11 @@ category, and why `evidence_gap_catch` is the number to watch in the evals.
 
 - **`defects.py`** — the defect record, the five postures, triage and validation. Postures are not a severity scale; they are the five different things a reply can say about a limb, each producing different drafting. `explained` / `contested` / `agreed_paid` / `paid_under_protest` / `partial`, with `undecided` as the honest default. Only `contested`, `partial` and `undecided` convene counsel.
 - **`notice_tables.py`** — reads head-wise figures off the department's annexure using the checksum the table carries for free: four component amounts that sum to their own printed total. A run that fails its own arithmetic is discarded. **Returns None rather than a guess** — a blank the reviewer can see is safe, a wrong figure they cannot see is not.
-- **`domains/gst_defects.py`** — the defect catalogue: heading patterns, provisions engaged, default posture, and the evidence list. **The evidence lists are the product.** Each entry names the artefact an officer asks for before dropping that limb.
+- **`domains/gst_defects.py`** — the defect catalogue: heading patterns, provisions engaged, default posture, the evidence list, and the questions an officer puts on that limb at the hearing. **The evidence lists are the product.** Each entry names the artefact an officer asks for before dropping that limb. On the patterns, see "Catalogue patterns are load-bearing" below.
+- **`ocr.py`** — optional local OCR for scanned notices, behind `available()`. Cloud OCR is refused on principle: a page image cannot be anonymised before upload, so it would break the draft tier's guarantee. Provenance travels with the text — an OCR-read field carries an `-ocr` source and is shown in the must-confirm state.
+- **`calculators.py`** — s.50 interest, the 73/74 penalty stages with their concession deadlines, s.107/112 pre-deposit, appeal limitation, s.128A eligibility. **Python, never a prompt**, for the same reason the reconciliation buckets are: it is arithmetic with a statutory rule attached, and every figure carries its own working so it can be checked line by line. Internal document only — a penalty computation shown to the officer volunteers an admission nobody asked for.
+- **`deadlines.py`** — days remaining, urgency bands, worst-first sort, iCalendar export. A missed reply date is the single largest source of avoidable loss in SME practice: it turns a reply into an appeal with a 10% pre-deposit.
+- **`pricing.py`** — run cost in rupees, estimated from the firm's OWN completed matters rather than a model price table. A table keyed to model IDs goes stale silently, which is the failure this codebase has already been through once.
 - **`domains/gst_authorities.py`** — curated authorities indexed by defect type. See "On case citations" below.
 - **`roles.py`** — the four adversarial counsel + chairman. Organised by ROLE IN THE ARGUMENT (Revenue's Advocate / Assessee's Advocate / Procedural / Risk & Ethics), NOT by statute. This is deliberate: a notice concerns one law, so law-specialist panels emit three empty opinions. **These prompts are the product**; everything else is plumbing.
 - **`domains/gst.py`** — domain pack. Stable anchors: sections, the full notice-form registry, procedural doctrines, State→High Court map.
@@ -123,6 +127,35 @@ New file in `domains/` with the same interface (including `DEFECT_TYPES` and
 the authorities helpers), registered in `domains/__init__.py`. No change to
 `panel.py`, `roles.py`, `verification.py`, `export.py` or the UI.
 
+### Catalogue patterns are load-bearing, and they fail in both directions
+
+A limb that does not segment is never answered, and an unanswered limb is
+confirmed unopposed. A pattern that matches too much invents a limb and hands
+it a neighbour's figures. Both have happened, and the golden set exists mainly
+to catch them:
+
+- `e[\s-]?invoic` with no leading `\b` matched the ordinary phrase **"the
+  invoice"**, so nearly every notice grew a phantom e-invoicing limb.
+- A bare `refund` matched the s.73 boilerplate *"tax not paid or short paid or
+  erroneously refunded"*, so every s.73 demand grew a refund limb.
+- A bare `interest under section 50` matched the demand boilerplate carried by
+  almost every notice. **Do not add it back.**
+- Conversely, `excess ITC availed` required those words adjacent, so the
+  department's own standard wording — *"Input tax credit availed in excess of
+  that appearing in GSTR-2B"*, the most common defect in Indian GST practice —
+  matched nothing at all.
+
+Rule of thumb: a pattern must match **heading language**, not statutory prose
+that appears in every notice. Add one, then run
+`uv run pytest tests/test_golden_set.py`.
+
+Heading detection has three signals in priority order — the department's own
+`Defect -N` numbering, bulleted parameter headings, then plain numbered
+headings (`1.`, `2.`) where the heading text ALSO matches the catalogue. The
+last resort is a loose catalogue scan that can only ever produce **one limb per
+defect type**, which is why the numbered signal matters: an RFD-08 objecting to
+a refund on two grounds came back as one limb with both figures.
+
 ### Gotchas
 1. `_extract_json` handles fenced/prose-wrapped chairman output; failure produces `_fallback_determination` with a "must not be filed" risk flag — never a silent empty result.
 2. Matters live in `data/matters/`, conversations in `data/conversations/`. Both atomic-write.
@@ -135,10 +168,24 @@ the authorities helpers), registered in `domains/__init__.py`. No change to
 ### Frontend
 Design tokens in `theme.css` (light/dark via `data-theme` on `<html>`); components never hardcode colours. `format.js` holds helpers/constants separately from `shared.jsx` so React Fast Refresh works — `POSTURES` and friends live there for the same reason. Views: Dashboard, PanelWorkspace (multi-file intake + defect review + live deliberation), DefectList, MatterList, MatterDetail (two separate downloads), AdminPanel, GeneralCouncil.
 
-### Evals
-`evals/golden/gst-gram-envosolution-fy2324.json` is the reference case: eight
-defects, the department's disposal of each recorded verbatim from the
-adjudication order, and the document whose absence lost the eighth. The two
+### Evals — two harnesses, and the free one runs on every push
+
+`evals/golden/` holds nine committed cases across ASMT-10, DRC-01 (s.73 and
+s.74), DRC-01B, DRC-01C, ADT-02, RFD-08, REG-17 and MOV-07. Every case is
+**synthetic** and carries a provenance note; a test enforces both, because
+these ship in a public repository and a golden case built from a client matter
+must never be committed. `gst-asmt10-multilimb-fy2324` mirrors the reference
+matter: eight limbs, and an e-invoicing limb that is lost on a missing IRP
+acknowledgement despite a correct legal position.
+
+**`tests/test_golden_set.py` — free, runs on every push.** Segmentation and
+figure reading are decided in Python, so they are scored without a single model
+call: every limb must be found, every head-wise amount must match the annexure,
+and the limbs must reconcile to the notice's own printed total. This is where
+six silent extraction bugs were caught, none of which the paid harness would
+have found, because nobody runs the paid harness on every change.
+
+**`evals/run.py` — costs money, run before shipping a prompt change.** The two
 numbers that matter are `defect_coverage` (a limb the panel never finds cannot
 be answered, and an unanswered limb is confirmed unopposed) and
 `evidence_gap_catch` (scored against a limb that was argued correctly and lost
