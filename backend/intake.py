@@ -23,10 +23,12 @@ A model is used for exactly the two fields regex cannot do: what the issues
 are, and a summary of the facts. On the free tier even that text is
 anonymised first, so an uploaded notice is no less private than a typed one.
 
-Scanned notices with no text layer are detected and reported honestly rather
-than guessed at. OCR is deliberately out of scope: adding it would pull in a
-heavy dependency to serve the minority of notices that are not already
-digital, and a wrong OCR read is worse than an empty field.
+Scanned notices with no text layer are read by OCR where the optional engine
+is installed (see `ocr.py`), and reported honestly where it is not. The
+premise that a wrong OCR read is worse than an empty field still holds and is
+enforced rather than avoided: OCR-derived text is marked as such, every field
+read from it carries an `-ocr` source, and the review UI puts those fields in
+the same must-confirm state as an unread amount.
 """
 
 import io
@@ -34,7 +36,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import config, defects, notice_tables, sanitizer
+from . import config, defects, notice_tables, ocr, sanitizer
 from .openrouter import query_model
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
@@ -230,6 +232,26 @@ def extract_text(filename: str, content: bytes) -> Tuple[str, List[str]]:
 
     Returns (text, warnings). Warnings are shown to the user rather than
     swallowed: an empty field they can see is safe, one they cannot is not.
+
+    Thin wrapper over `extract_document`, kept because most callers want only
+    the text and the warnings.
+    """
+    document = extract_document(filename, content)
+    return document["text"], document["warnings"]
+
+
+def extract_document(filename: str, content: bytes) -> Dict[str, Any]:
+    """
+    Read an uploaded notice and report HOW it was read.
+
+    The provenance is not bookkeeping. Text lifted from a PDF's text layer is
+    the document; text recovered by OCR from an image of the document is a
+    machine's reading of it, and every figure in it is a proposal rather than
+    a fact. Callers propagate that distinction all the way to the review UI,
+    so nothing that came out of a scanner is ever presented as confirmed.
+
+    Returns {text, warnings, source, ocr}, where `source` is one of
+    "text-layer", "ocr" or "none".
     """
     warnings: List[str] = []
     name = (filename or "").lower()
@@ -288,17 +310,55 @@ def extract_text(filename: str, content: bytes) -> Tuple[str, List[str]]:
             except UnicodeDecodeError:
                 continue
 
-    text = re.sub(r"[ \t]+", " ", text or "")
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = _tidy(text)
+    source = "text-layer" if text else "none"
+    ocr_result = None
 
-    if len(text) < MIN_USEFUL_TEXT:
+    # A PDF that yields almost nothing is a scan. Try to read the image before
+    # giving up on it — but only for PDFs, and only when the text layer has
+    # genuinely failed. A notice that already has text is never re-read by
+    # OCR: the text layer is the document, and OCR is a reading of a picture
+    # of it.
+    if len(text) < MIN_USEFUL_TEXT and name.endswith(".pdf"):
+        engine_ready, reason = ocr.available()
+        if engine_ready:
+            try:
+                ocr_result = ocr.ocr_pdf(content)
+            except Exception as e:
+                warnings.append(
+                    f"This notice appears to be scanned and OCR failed on it "
+                    f"({e}). Paste the text of the notice manually."
+                )
+            else:
+                recovered = _tidy(ocr_result.get("text", ""))
+                if len(recovered) > len(text):
+                    text = recovered
+                    source = "ocr"
+                warnings.extend(ocr.describe_quality(ocr_result))
+        else:
+            warnings.append(
+                "This notice appears to be a scan with no text layer. "
+                f"{reason} Until then, paste the text of the notice manually."
+            )
+
+    if len(text) < MIN_USEFUL_TEXT and source != "ocr":
         warnings.append(
             "Very little text could be read. This is usually a scanned notice "
             "with no text layer — paste the text of the notice manually, or "
             "upload a digitally generated copy."
         )
 
-    return text, warnings
+    return {
+        "text": text,
+        "warnings": warnings,
+        "source": source,
+        "ocr": ocr_result,
+    }
+
+
+def _tidy(text: str) -> str:
+    text = re.sub(r"[ \t]+", " ", text or "")
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +394,7 @@ def find_dates(text: str) -> List[str]:
     return ordered
 
 
-def find_notice_type(text: str, pack) -> Optional[str]:
+def find_notice_type(text: str, pack, with_offset: bool = False):
     """
     Identify the form code. Longest codes are matched first so that DRC-01A is
     never mistaken for DRC-01.
@@ -348,9 +408,10 @@ def find_notice_type(text: str, pack) -> Optional[str]:
         # Tolerate ASMT-10, ASMT 10, ASMT10 and "GST ASMT - 10", which is how
         # the portal actually prints the form header.
         pattern = code.replace("-", r"[\s\-]*")
-        if re.search(rf"\b{pattern}\b", upper):
-            return code
-    return None
+        match = re.search(rf"\b{pattern}\b", upper)
+        if match:
+            return (code, match.start()) if with_offset else code
+    return (None, None) if with_offset else None
 
 
 def find_sections(text: str) -> List[str]:
@@ -378,7 +439,7 @@ def _collect(pattern: re.Pattern, text: str) -> List[str]:
     return ordered
 
 
-def find_entity_name(text: str) -> Optional[str]:
+def find_entity_name(text: str, with_offset: bool = False):
     """
     The taxpayer's name.
 
@@ -387,13 +448,18 @@ def find_entity_name(text: str) -> Optional[str]:
     "Acme Steel Industries Private Limited" is not truncated to "Acme Steel
     Industries".
     """
-    prefixed = [m.group(1).strip(" .,") for m in PREFIXED_ENTITY_RE.finditer(text or "")]
+    prefixed = [(m.group(1).strip(" .,"), m.start())
+                for m in PREFIXED_ENTITY_RE.finditer(text or "")]
     if prefixed:
-        return max(prefixed, key=len)
-    candidates = [m.group(1).strip() for m in ENTITY_RE.finditer(text or "")]
+        name, at = max(prefixed, key=lambda pair: len(pair[0]))
+        return (name, at) if with_offset else name
+
+    candidates = [(m.group(1).strip(), m.start())
+                  for m in ENTITY_RE.finditer(text or "")]
     if not candidates:
-        return None
-    return max(candidates, key=len)
+        return (None, None) if with_offset else None
+    name, at = max(candidates, key=lambda pair: len(pair[0]))
+    return (name, at) if with_offset else name
 
 
 def find_amounts(text: str) -> List[float]:
@@ -406,16 +472,17 @@ def find_amounts(text: str) -> List[float]:
     return amounts
 
 
-def find_tax_period(text: str) -> Optional[str]:
+def find_tax_period(text: str, with_offset: bool = False):
     match = FY_RE.search(text)
     if not match:
         match = BARE_FY_RE.search(text)
     if not match:
-        return None
+        return (None, None) if with_offset else None
     start, end = match.group(1), match.group(2)
     if len(end) == 4:
         end = end[2:]
-    return f"FY {start}-{end}"
+    period = f"FY {start}-{end}"
+    return (period, match.start()) if with_offset else period
 
 
 def _iso_from_numeric(raw: str) -> Optional[str]:
@@ -443,45 +510,54 @@ def extract_fields_local(text: str, pack) -> Dict[str, Any]:
     """
     fields: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
+    snippets: Dict[str, Dict[str, Any]] = {}
 
-    def put(key: str, value: Any, source: str):
+    def put(key: str, value: Any, source: str, at: Any = None):
         if value not in (None, "", []):
             fields[key] = value
             sources[key] = source
+            offset = _offset_of(at)
+            if offset is not None:
+                snippets[key] = snippet_at(text, offset)
 
     gstin_match = GSTIN_RE.search(text)
     if gstin_match:
-        put("gstin", gstin_match.group(0), "notice")
-        put("state", GSTIN_STATE_CODES.get(gstin_match.group(1)), "gstin")
+        put("gstin", gstin_match.group(0), "notice", gstin_match)
+        put("state", GSTIN_STATE_CODES.get(gstin_match.group(1)), "gstin",
+            gstin_match)
 
-    put("client_name", find_entity_name(text), "notice")
-    put("notice_type", find_notice_type(text, pack), "notice")
-    put("tax_period", find_tax_period(text), "notice")
+    name, name_at = find_entity_name(text, with_offset=True)
+    put("client_name", name, "notice", name_at)
+    notice_type, type_at = find_notice_type(text, pack, with_offset=True)
+    put("notice_type", notice_type, "notice", type_at)
+    period, period_at = find_tax_period(text, with_offset=True)
+    put("tax_period", period, "notice", period_at)
 
     # --- Identifiers ------------------------------------------------------
     reference = REFERENCE_RE.search(text)
     if reference:
-        put("notice_reference", reference.group(1).strip(), "notice")
+        put("notice_reference", reference.group(1).strip(), "notice", reference)
     else:
         loose = PORTAL_ID_RE.search(text)
         if loose:
-            put("notice_reference", loose.group(1), "notice")
+            put("notice_reference", loose.group(1), "notice", loose)
 
     arn = ARN_RE.search(text)
     if arn:
-        put("notice_arn", arn.group(1), "notice")
+        put("notice_arn", arn.group(1), "notice", arn)
 
     din = DIN_RE.search(text)
     if din:
-        put("din", din.group(1), "notice")
+        put("din", din.group(1), "notice", din)
 
     # --- Provision invoked ------------------------------------------------
     labelled_section = LABELLED_SECTION_RE.search(text)
     sections = find_sections(text)
     if labelled_section:
-        put("section_invoked", labelled_section.group(1), "notice-labelled")
+        put("section_invoked", labelled_section.group(1), "notice-labelled",
+            labelled_section)
     elif sections:
-        put("section_invoked", sections[0], "notice")
+        put("section_invoked", sections[0], "notice", SECTION_RE.search(text))
     put("sections_cited", sections, "notice")
     put("rules_cited", find_rules(text), "notice")
 
@@ -489,17 +565,18 @@ def extract_fields_local(text: str, pack) -> Dict[str, Any]:
     labelled_notice_date = LABELLED_NOTICE_DATE_RE.search(text)
     if labelled_notice_date:
         put("notice_date", _iso_from_numeric(labelled_notice_date.group(1)),
-            "notice-labelled")
+            "notice-labelled", labelled_notice_date)
 
     labelled_due = LABELLED_DUE_DATE_RE.search(text)
     if labelled_due:
         put("due_date", _iso_from_numeric(labelled_due.group(1)),
-            "notice-labelled")
+            "notice-labelled", labelled_due)
 
     if not fields.get("notice_date"):
         dates = find_dates(text)
         if dates:
-            put("notice_date", dates[0], "notice-inferred")
+            put("notice_date", dates[0], "notice-inferred",
+                _first_date_offset(text, dates[0]))
 
     # --- Issuing officer --------------------------------------------------
     officer_name = OFFICER_NAME_RE.search(text)
@@ -508,19 +585,89 @@ def extract_fields_local(text: str, pack) -> Dict[str, Any]:
         officer_name.group(1).strip() if officer_name else "",
         designation.group(1).strip() if designation else "",
     ]
-    put("issuing_officer", ", ".join(p for p in parts if p), "notice")
+    put("issuing_officer", ", ".join(p for p in parts if p), "notice",
+        officer_name or designation)
 
     jurisdiction = JURISDICTION_RE.search(text)
     if jurisdiction:
         office = re.sub(r"\s*\n\s*", "", jurisdiction.group(1))
         office = re.sub(r"\s*,\s*", ", ", office).strip(" ,")
-        put("jurisdiction_office", office, "notice")
+        put("jurisdiction_office", office, "notice", jurisdiction)
     else:
         circle = CIRCLE_RE.search(text)
         if circle:
-            put("jurisdiction_office", circle.group(1).strip(" ,"), "notice")
+            put("jurisdiction_office", circle.group(1).strip(" ,"), "notice",
+                circle)
 
-    return {"fields": fields, "sources": sources}
+    return {"fields": fields, "sources": sources, "snippets": snippets}
+
+
+# ---------------------------------------------------------------------------
+# Provenance snippets — the reviewer's shortcut back to the notice
+# ---------------------------------------------------------------------------
+# Checking extraction is the slowest step in using this product, and it is the
+# step that decides whether a firm trusts it. Reading a field off a form and
+# then hunting through twenty pages of PDF for the sentence it came from is
+# what makes that step slow. So every locally extracted field carries the text
+# around it: the reviewer confirms or corrects in place, without opening the
+# notice at all.
+#
+# Only local extraction produces snippets. A model-proposed field has no
+# offset in the document because it was not read off a position — it was
+# summarised from the whole — and inventing one would be a lie about
+# provenance in a product whose whole argument is that it does not do that.
+
+SNIPPET_BEFORE = 90
+SNIPPET_AFTER = 110
+
+
+def snippet_at(text: str, offset: int) -> Dict[str, Any]:
+    """The text around an offset, snapped to word boundaries."""
+    if offset is None or offset < 0 or not text:
+        return {}
+    start = max(0, offset - SNIPPET_BEFORE)
+    end = min(len(text), offset + SNIPPET_AFTER)
+
+    # Snap outward to whitespace so the excerpt does not begin or end
+    # mid-word, which reads as corruption rather than as an extract.
+    if start > 0:
+        space = text.find(" ", start, offset)
+        if space != -1:
+            start = space + 1
+    if end < len(text):
+        space = text.rfind(" ", offset, end)
+        if space != -1:
+            end = space
+
+    excerpt = re.sub(r"\s+", " ", text[start:end]).strip()
+    return {
+        "text": excerpt,
+        "offset": offset,
+        "truncated_start": start > 0,
+        "truncated_end": end < len(text),
+    }
+
+
+def _offset_of(at: Any) -> Optional[int]:
+    if at is None:
+        return None
+    if isinstance(at, int):
+        return at
+    start = getattr(at, "start", None)
+    return start() if callable(start) else None
+
+
+def _first_date_offset(text: str, iso: str) -> Optional[int]:
+    """Where the date that produced this ISO string actually sits."""
+    for match in NUMERIC_DATE_RE.finditer(text):
+        day, month, year = (int(g) for g in match.groups())
+        if _iso_date(day, month, year) == iso:
+            return match.start()
+    for match in TEXT_DATE_RE.finditer(text):
+        day, month_name, year = match.groups()
+        if _iso_date(int(day), MONTHS[month_name.lower()], int(year)) == iso:
+            return match.start()
+    return None
 
 
 def extract_defects(text: str, pack) -> List[Dict[str, Any]]:
@@ -744,25 +891,43 @@ async def read_notice_set(
     warnings: List[str] = []
     fields: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
+    snippets: Dict[str, Dict[str, Any]] = {}
     read_documents: List[Dict[str, Any]] = []
     combined: List[str] = []
     found_defects: List[Dict[str, Any]] = []
     usage = None
+    any_scanned = False
 
     for filename, content in documents:
-        text, file_warnings = extract_text(filename, content)
-        warnings.extend(f"{filename}: {w}" for w in file_warnings)
+        document = extract_document(filename, content)
+        text = document["text"]
+        warnings.extend(f"{filename}: {w}" for w in document["warnings"])
         combined.append(text)
+        scanned = document["source"] == "ocr"
+        if scanned:
+            any_scanned = True
 
         local = extract_fields_local(text, pack)
         for key, value in local["fields"].items():
             if key not in fields:
                 fields[key] = value
-                sources[key] = local["sources"].get(key, "notice")
+                source = local["sources"].get(key, "notice")
+                # An OCR-read field is a machine's reading of a picture of the
+                # notice, and the review UI treats it accordingly. The suffix
+                # is what carries that through — losing it here would make a
+                # scanned figure indistinguishable from a printed one.
+                sources[key] = f"{source}-ocr" if scanned else source
+                snippet = local.get("snippets", {}).get(key)
+                if snippet:
+                    snippets[key] = {**snippet, "filename": filename,
+                                     "scanned": scanned}
 
         # The document with the most defects is the attachment; a portal form
         # or a covering letter contributes none and must not displace it.
         document_defects = extract_defects(text, pack)
+        if scanned:
+            for defect in document_defects:
+                defect["from_scan"] = True
         if len(document_defects) > len(found_defects):
             found_defects = document_defects
 
@@ -770,6 +935,8 @@ async def read_notice_set(
             "filename": filename,
             "text_length": len(text),
             "defects_found": len(document_defects),
+            "source": document["source"],
+            "ocr": document["ocr"],
         })
 
     text = "\n\n".join(t for t in combined if t)
@@ -785,7 +952,7 @@ async def read_notice_set(
 
     if found_defects:
         fields["defects"] = found_defects
-        sources["defects"] = "notice"
+        sources["defects"] = "notice-ocr" if any_scanned else "notice"
         summary = defects.triage(found_defects)
         fields["amount_disputed"] = summary["total_amount"]
         sources["amount_disputed"] = "defects"
@@ -798,6 +965,15 @@ async def read_notice_set(
                 f"({'; '.join(unread[:4])}"
                 f"{'…' if len(unread) > 4 else ''}). Enter these from the "
                 "notice annexure before running the panel."
+            )
+
+        scanned_with_figures = [d for d in found_defects
+                                if d.get("from_scan") and not d.get("amount_unread")]
+        if scanned_with_figures:
+            warnings.append(
+                f"{len(scanned_with_figures)} defect amount(s) were read by OCR "
+                "from a scanned image. Check each against the notice annexure — "
+                "these are the figures the reply will quote back to the officer."
             )
     else:
         warnings.append(
@@ -817,9 +993,13 @@ async def read_notice_set(
     return {
         "fields": fields,
         "sources": sources,
+        # Where each locally extracted field came from, so the reviewer can
+        # confirm it without opening the PDF.
+        "snippets": snippets,
         "warnings": warnings,
         "documents": read_documents,
         "text_length": len(text),
+        "scanned": any_scanned,
         "usage": usage,
         # The extracted text is returned so the user can see what was read and
         # copy from it. The uploaded files themselves are never persisted.

@@ -30,8 +30,10 @@ from .gst_authorities import (  # noqa: F401  (re-exported as pack interface)
 from .gst_defects import (  # noqa: F401  (re-exported as pack interface)
     DEFECT_TYPES,
     DEFECT_TYPES_BY_KEY,
+    HEARING_QUESTIONS,
     defect_type,
     evidence_for,
+    hearing_questions_for,
 )
 
 NAME = "Goods and Services Tax"

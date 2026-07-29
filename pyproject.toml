@@ -16,6 +16,20 @@ dependencies = [
     "openpyxl>=3.1.5",
 ]
 
+[project.optional-dependencies]
+# Reading scanned notices. Optional because the base install stays light for
+# firms whose notices all arrive as digital PDFs, and because a missing engine
+# degrades cleanly — `backend/ocr.py` reports the scan honestly rather than
+# guessing at it, exactly as the product did before OCR existed.
+#
+# Both are ordinary Python wheels with no system binary to install, which is
+# why this engine was chosen over Tesseract: `uv sync --extra ocr` is the
+# whole instruction on Windows, macOS and Linux alike.
+ocr = [
+    "pypdfium2>=4.30.0",
+    "rapidocr-onnxruntime>=1.3.24",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",

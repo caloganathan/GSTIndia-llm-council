@@ -16,7 +16,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, export, intake, reconciliation, storage, users
+from . import (calculators, config, deadlines, export, intake, ocr, pricing,
+               reconciliation, storage, users)
 from .auth import redact_for_role, require_auth, require_permission, resolve_user
 from .council import (
     generate_conversation_title,
@@ -200,6 +201,7 @@ async def change_password(
 @router.get("/health")
 async def health():
     """Config summary + model ID validation results."""
+    ocr_ready, ocr_reason = ocr.available()
     return {
         "status": "ok",
         "council_models": config.COUNCIL_MODELS,
@@ -207,6 +209,11 @@ async def health():
         "reasoning_effort": config.REASONING_EFFORT,
         "auth_enabled": bool(config.APP_ACCESS_TOKEN) or users.user_count() > 0,
         "model_validation": MODEL_VALIDATION,
+        # Surfaced so the UI can warn before a user discovers it by uploading a
+        # scan. A silent capability gap is the failure mode the retired free
+        # tier is remembered for.
+        "ocr": {"available": ocr_ready, "reason": ocr_reason},
+        "usd_inr_rate": pricing.USD_INR,
         "panel_tiers": {
             key: {
                 "label": tier["label"],
@@ -254,12 +261,44 @@ async def panel_config():
 
 @router.get("/matters")
 async def list_matters(user: Dict[str, Any] = Depends(require_auth)):
-    """Dashboard listing of all matters."""
+    """
+    Dashboard listing of all matters, worst deadline first.
+
+    The ordering is the feature. A list sorted by creation date buries the
+    matter that is overdue behind the three created after it.
+    """
     matters = storage.list_matters()
+    for matter in matters:
+        deadlines.annotate(matter)
+    matters.sort(key=deadlines.sort_key)
     if not users.can(user, "view_costs"):
         for matter in matters:
             matter.pop("usage", None)
     return matters
+
+
+# Registered BEFORE /matters/{matter_id}. FastAPI resolves routes in
+# declaration order, so the parameterised route would otherwise swallow this
+# one and look for a matter whose id is "calendar.ics".
+@router.get("/matters/calendar.ics")
+async def matters_calendar(user: Dict[str, Any] = Depends(require_auth)):
+    """
+    Every reply deadline on file, as a calendar the firm can open.
+
+    Served as a download rather than a subscribable feed: a live feed URL has
+    to carry its own credential, and minting a long-lived token that exposes
+    the client list is not a trade worth making for a self-hosted deployment.
+    Re-download after adding matters.
+    """
+    matters = storage.list_matters()
+    return Response(
+        content=deadlines.build_ics(matters),
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                'attachment; filename="compliance-panel-deadlines.ics"'
+        },
+    )
 
 
 @router.get("/matters/{matter_id}")
@@ -434,6 +473,64 @@ async def upload_reconciliation(
         )
 
 
+@router.post("/panel/estimate")
+async def estimate_panel_cost(
+    request: PanelRunRequest,
+    user: Dict[str, Any] = Depends(require_auth),
+):
+    """
+    What this run will cost, in rupees, before it is run.
+
+    Estimated on the limbs that will actually convene counsel rather than on
+    the total, because triage means most limbs do not — quoting the total
+    would overstate a typical eight-limb notice roughly fourfold.
+    """
+    from . import defects as defects_module
+
+    payload = request.intake or {}
+    limbs = payload.get("defects") or []
+    triaged = defects_module.triage(limbs) if limbs else {}
+    panel_count = len(triaged.get("panel") or []) if triaged else 0
+
+    # A matter with no limbs still runs a single-issue panel rather than
+    # nothing, so it is never estimated at zero.
+    if limbs and panel_count == 0:
+        panel_count = 0
+    elif not limbs:
+        panel_count = 1
+
+    estimate = pricing.estimate_run(
+        defect_count=len(limbs),
+        panel_count=panel_count,
+        tier=request.tier,
+        history=storage.list_matters(),
+    )
+    estimate["triage"] = {
+        "total": len(limbs),
+        "convening_counsel": panel_count,
+        "answered_without_panel": max(len(limbs) - panel_count, 0),
+    }
+    return estimate
+
+
+@router.get("/matters/{matter_id}/computations")
+async def matter_computations(
+    matter_id: str,
+    user: Dict[str, Any] = Depends(require_auth),
+):
+    """
+    Interest, penalty stages, pre-deposit and amnesty position for a matter.
+
+    Computed in Python from the matter's own figures — never by a model — and
+    each figure carries the working behind it so it can be checked line by
+    line before it is offered to the department.
+    """
+    matter = storage.get_matter(matter_id)
+    if matter is None:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    return calculators.matter_computations(matter)
+
+
 @router.post("/panel/run")
 async def run_panel_endpoint(
     request: PanelRunRequest,
@@ -488,6 +585,13 @@ async def dashboard(user: Dict[str, Any] = Depends(require_auth)):
     matters = storage.list_matters()
     show_costs = users.can(user, "view_costs")
 
+    # Deadlines lead the dashboard. A missed reply date costs more than every
+    # other number here put together — it turns a reply into an appeal with a
+    # pre-deposit attached.
+    for matter in matters:
+        deadlines.annotate(matter)
+    deadline_summary = deadlines.summarise(matters)
+
     total_cost = 0.0
     total_tokens = 0
     verified = unverified = not_found = 0
@@ -518,6 +622,7 @@ async def dashboard(user: Dict[str, Any] = Depends(require_auth)):
         "matter_count": len(matters),
         "completed": sum(1 for m in matters if m.get("status") == "complete"),
         "risk_flags": risk_flags,
+        "deadlines": deadline_summary,
         "verification": {
             "verified": verified,
             "unverified": unverified,
@@ -529,9 +634,13 @@ async def dashboard(user: Dict[str, Any] = Depends(require_auth)):
         "usage": {
             "total_cost": round(total_cost, 4),
             "total_tokens": total_tokens,
+            "total_inr": pricing.to_inr(total_cost),
+            "label": pricing.format_inr(pricing.to_inr(total_cost)),
         } if show_costs else None,
         "recent": matters[:8],
     }
+
+
 
 
 @router.get("/admin/users")

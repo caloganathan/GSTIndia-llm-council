@@ -927,9 +927,15 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
                     ("Basis on which settled", entry.get("resolution")),
                 ])
 
-    # ---- 9. Board summary --------------------------------------------------
+    # ---- 9. Statutory computations -----------------------------------------
+    _computations_section(doc, matter)
+
+    # ---- 10. Hearing brief -------------------------------------------------
+    _hearing_brief_section(doc, matter, defect_list)
+
+    # ---- 11. Board summary -------------------------------------------------
     if determination.get("board_summary"):
-        _heading(doc, "9.  Summary for the Board", 1)
+        _heading(doc, "11.  Summary for the Board", 1)
         _para(doc, determination["board_summary"])
 
     if determination.get("unstructured_output"):
@@ -954,6 +960,162 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# File-note sections that are computed rather than argued
+# ---------------------------------------------------------------------------
+# Both of these belong to the INTERNAL document and to no other. Interest and
+# penalty stages are the firm's own workings and quantify what the matter costs
+# if it goes badly; putting a penalty computation in front of the officer
+# volunteers an admission nobody asked for. The hearing brief is a script for
+# the firm's own representative.
+
+
+def _computations_section(doc: Document, matter: Dict[str, Any]):
+    """Interest, penalty stages, pre-deposit and amnesty — with their working."""
+    from . import calculators
+
+    try:
+        computed = calculators.matter_computations(matter)
+    except Exception:
+        # A working note is worth having without this section; it is not worth
+        # losing the whole document to an arithmetic edge case.
+        return
+
+    blocks = computed.get("computations") or {}
+    penalty = blocks.get("penalty") or {}
+    amnesty = blocks.get("amnesty_128a") or {}
+    limitation = blocks.get("appeal_limitation") or {}
+    deposit = blocks.get("predeposit_107") or {}
+
+    if not any([penalty.get("computed"), amnesty.get("reasons"),
+                limitation.get("computed"), deposit.get("computed")]):
+        return
+
+    _heading(doc, "9.  Statutory Computations", 1)
+    _para(doc,
+          "Computed locally under the provisions named — not by a model. Each "
+          "figure carries its own working and is to be checked against the "
+          "electronic liability register before it is offered to the "
+          "department.",
+          italic=True, size=Pt(9))
+
+    if penalty.get("computed"):
+        _heading(doc, f"Penalty exposure — Section {penalty['section']}", 2)
+        _para(doc, f"Computed on tax of {_rupees(penalty.get('tax'))}.",
+              size=Pt(9), italic=True)
+        rows = []
+        for stage in penalty.get("stages") or []:
+            when = {
+                "before_notice": "If paid before the notice",
+                "within_30_days": "If paid within 30 days of the notice",
+                "on_order": "On determination by order",
+            }.get(stage["stage"], stage["stage"])
+            if stage.get("deadline"):
+                when += f" (by {_date(stage['deadline'])})"
+            rows.append([when, f"{stage['rate']:g}%",
+                         _rupees(stage["amount"]) or "Nil"])
+        _grid(doc, ["Stage", "Rate", "Penalty"], rows,
+              widths=[3.4, 0.9, 1.8], bold_columns=(2,))
+        for caveat in penalty.get("caveats") or []:
+            _para(doc, f"•  {caveat}", size=Pt(9), indent=Inches(0.2))
+
+    if amnesty.get("reasons"):
+        _heading(doc, "Section 128A — waiver of interest and penalty", 2)
+        _para(doc,
+              "AVAILABLE on these facts, subject to the conditions below."
+              if amnesty.get("eligible") else
+              "NOT available on these facts.",
+              bold=True)
+        for reason in amnesty["reasons"]:
+            _para(doc, f"•  {reason}", size=Pt(9), indent=Inches(0.2))
+        for caveat in amnesty.get("caveats") or []:
+            _para(doc, f"•  {caveat}", size=Pt(9), indent=Inches(0.2))
+
+    if limitation.get("computed"):
+        _heading(doc, "Limitation for appeal — Section 107", 2)
+        _para(doc, limitation.get("message", ""),
+              bold=limitation.get("status") in ("condonable", "time_barred"))
+        _particulars(doc, [
+            ("Order communicated", _date(limitation.get("order_date"))),
+            ("Ordinary deadline", _date(limitation.get("ordinary_deadline"))),
+            ("Condonable until", _date(limitation.get("condonable_deadline"))),
+        ])
+        for caveat in limitation.get("caveats") or []:
+            _para(doc, f"•  {caveat}", size=Pt(9), indent=Inches(0.2))
+
+    if deposit.get("computed"):
+        _heading(doc, "Pre-deposit to maintain an appeal", 2)
+        _para(doc, f"{_rupees(deposit.get('amount'))} — "
+                   f"{deposit.get('working', '')}")
+        _para(doc, deposit.get("basis", ""), size=Pt(9), italic=True)
+        for caveat in deposit.get("caveats") or []:
+            _para(doc, f"•  {caveat}", size=Pt(9), indent=Inches(0.2))
+
+
+def _hearing_brief_section(doc: Document, matter: Dict[str, Any],
+                           defect_list: List[Dict[str, Any]]):
+    """
+    What to expect across the table, limb by limb.
+
+    The written reply is half the proceeding. Section 75(4) gives a right of
+    hearing wherever an adverse decision is contemplated, and the hearing is
+    where a limb answered perfectly on paper gets conceded by an unprepared
+    answer. For each limb: the position in one line, the artefact to carry,
+    and the questions the officer actually asks on that defect type.
+    """
+    if not defect_list:
+        return
+
+    from .domains import get_pack
+
+    try:
+        pack = get_pack(matter.get("domain") or "gst")
+    except Exception:
+        return
+    if not hasattr(pack, "hearing_questions_for"):
+        return
+
+    doc.add_page_break()
+    _heading(doc, "10.  Personal Hearing — Brief for the Representative", 1)
+    _para(doc,
+          "For the firm's representative. Take the evidence column with you: "
+          "on the reference matter behind this product, a limb was lost not on "
+          "law but because one system report was not produced for "
+          "verification.",
+          italic=True, size=Pt(9))
+
+    for defect in defect_list:
+        index = defect.get("index", "")
+        heading = defect.get("heading") or "Unheaded limb"
+        _heading(doc, f"Limb {index} — {heading}", 2)
+
+        posture = defect.get("posture") or "undecided"
+        _particulars(doc, [
+            ("Our position", defects.POSTURE_LABEL.get(posture, posture)),
+            ("Amount", _rupees(defects.defect_total(defect))),
+            ("In one line", (defect.get("our_position") or "").strip()[:400]),
+        ])
+
+        carry = list(defect.get("annexures") or []) or \
+            list(defect.get("evidence_required") or [])
+        if carry:
+            _para(doc, "Carry to the hearing:", bold=True, size=Pt(9))
+            for item in carry[:6]:
+                _para(doc, f"•  {item}", size=Pt(9), indent=Inches(0.2))
+
+        gaps = defect.get("evidence_gap") or []
+        if gaps:
+            _para(doc, "NOT ON RECORD — do not assert these without the "
+                       "document:", bold=True, size=Pt(9))
+            for gap in gaps[:6]:
+                _para(doc, f"•  {gap}", size=Pt(9), indent=Inches(0.2))
+
+        questions = pack.hearing_questions_for(defect.get("type") or "other")
+        _para(doc, "Expect to be asked:", bold=True, size=Pt(9))
+        for question in questions:
+            _para(doc, f"—  {question}", size=Pt(9), indent=Inches(0.2))
 
 
 # ---------------------------------------------------------------------------
