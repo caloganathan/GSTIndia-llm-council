@@ -198,19 +198,33 @@ CIRCLE_RE = re.compile(
 # them, leaving the sanitiser with no company name to scrub. Making the WHOLE
 # pattern case-insensitive is not the fix either: it then matches ordinary
 # prose such as "the limited relief sought".
+#
+# Separators inside a name are [ \t]+, never \s+. A notice prints the taxpayer
+# and its address on consecutive lines:
+#
+#     M/s. MALABAR MARINE FOODS PRIVATE LIMITED
+#     WILLINGDON ISLAND, KOCHI - 682003
+#
+# and \s+ crosses the newline, so the name came out as "MALABAR MARINE FOODS
+# PRIVATE LIMITED\nWILLINGDON ISLAND". That reached the letterhead of the
+# filing document, and it is what the sanitiser is given to scrub — so the
+# scrub was also being aimed at the wrong string. An entity name never spans
+# a line break on these forms.
 ENTITY_RE = re.compile(
-    r"\b((?:[A-Z][\w&.'\-]*\s+){1,6}"
-    r"(?i:PRIVATE\s+LIMITED|PVT\.?\s*LTD\.?|PUBLIC\s+LIMITED|LIMITED|LTD\.?"
-    r"|LLP|LIMITED\s+LIABILITY\s+PARTNERSHIP|&\s*CO\.?|AND\s+COMPANY"
-    r"|&\s*SONS|ENTERPRISES|INDUSTRIES|ASSOCIATES|TRADERS|AGENCIES"
-    r"|ELECTRICALS|HOTELS))\b"
+    r"\b((?:[A-Z][\w&.'\-]*[ \t]+){1,6}"
+    r"(?i:PRIVATE[ \t]+LIMITED|PVT\.?[ \t]*LTD\.?|PUBLIC[ \t]+LIMITED|LIMITED"
+    r"|LTD\.?|LLP|LIMITED[ \t]+LIABILITY[ \t]+PARTNERSHIP|&[ \t]*CO\.?"
+    r"|AND[ \t]+COMPANY|&[ \t]*SONS|ENTERPRISES|INDUSTRIES|ASSOCIATES"
+    r"|TRADERS|AGENCIES|ELECTRICALS|HOTELS))\b"
 )
 
 # "Tvl." (Tamil Nadu), "M/s." and "Messrs." introduce the taxpayer by name and
-# are the most reliable signal of all where present.
+# are the most reliable signal of all where present. The prefix may sit at the
+# end of its own line, so one newline is allowed between prefix and name — but
+# none inside the name itself.
 PREFIXED_ENTITY_RE = re.compile(
-    r"(?:M/s\.?|Tvl\.?|Messrs\.?)\s+"
-    r"([A-Z][\w&.'\-]*(?:\s+[A-Z][\w&.'\-]*){0,7})"
+    r"(?:M/s\.?|Tvl\.?|Messrs\.?)[ \t]*\n?[ \t]*"
+    r"([A-Z][\w&.'\-]*(?:[ \t]+[A-Z][\w&.'\-]*){0,7})"
 )
 
 DUE_DATE_HINT_RE = re.compile(

@@ -260,3 +260,52 @@ class TestNoticeFieldExtraction:
             if result["fields"].get(key):
                 assert key in result["snippets"], \
                     f"{name}: {key} has no source snippet for the reviewer"
+
+
+class TestEntityNameDoesNotSpanLines:
+    """
+    A notice prints the taxpayer and its address on consecutive lines. An
+    entity pattern using `\\s+` crosses that newline and glues the first words
+    of the address onto the client name.
+
+    This is not cosmetic. The client name is printed on the letterhead of the
+    filing document, and it is the string handed to the sanitiser to scrub on
+    the anonymising tier — so a wrong name means the scrub is aimed at the
+    wrong text. It also produced exactly the embedded control character that
+    once broke the export download.
+    """
+
+    @pytest.mark.parametrize("name,case", WITH_TEXT,
+                             ids=[n for n, _ in WITH_TEXT])
+    def test_no_newline_survives_into_the_client_name(self, name, case):
+        extracted = intake.find_entity_name(case["notice_text"])
+        assert extracted, f"{name}: no client name found at all"
+        assert "\n" not in extracted, f"{name}: name spans a line break: {extracted!r}"
+        assert "\r" not in extracted
+
+    @pytest.mark.parametrize("name,case", WITH_TEXT,
+                             ids=[n for n, _ in WITH_TEXT])
+    def test_the_name_matches_the_expected_client(self, name, case):
+        extracted = intake.find_entity_name(case["notice_text"])
+        expected = case["intake"]["client_name"]
+        assert extracted.upper() == expected.upper(), (
+            f"{name}: read {extracted!r}, expected {expected!r}"
+        )
+
+    def test_an_address_line_beginning_with_a_capital_is_not_absorbed(self):
+        # The failing shape: every word of the address line is capitalised, so
+        # a newline-crossing pattern reads straight on into it.
+        text = ("M/s. KAVERI AUTOCOMP PRIVATE LIMITED\n"
+                "PLOT 42, PEENYA INDUSTRIAL AREA, BENGALURU - 560058\n")
+        assert intake.find_entity_name(text) == "KAVERI AUTOCOMP PRIVATE LIMITED"
+
+    def test_a_prefix_at_the_end_of_its_own_line_still_resolves(self):
+        # The converse case: the form wraps after "M/s." and the name follows
+        # on the next line. One newline between prefix and name is allowed.
+        text = "M/s.\nPRAGATI POLYFABS PRIVATE LIMITED\nGIDC ESTATE, VATVA\n"
+        assert intake.find_entity_name(text) == "PRAGATI POLYFABS PRIVATE LIMITED"
+
+    def test_an_unprefixed_name_is_still_found_without_its_address(self):
+        text = ("SHAKTI ENGINEERING WORKS PRIVATE LIMITED\n"
+                "SITE IV INDUSTRIAL AREA, SAHIBABAD\n")
+        assert intake.find_entity_name(text) == "SHAKTI ENGINEERING WORKS PRIVATE LIMITED"
