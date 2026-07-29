@@ -51,6 +51,24 @@ export function formatCost(value) {
   return `$${Number(value).toFixed(value < 0.01 ? 4 : 2)}`;
 }
 
+// Reply-deadline urgency. Bands rather than a continuous scale, because
+// "14 days" and "11 days" call for the same behaviour and "2 days" does not.
+// The backend decides the band (backend/deadlines.py); this only names and
+// colours it, so the two can never disagree about where a threshold sits.
+export const URGENCY_META = {
+  overdue: { label: 'Overdue', cls: 'badge-danger' },
+  critical: { label: 'Due now', cls: 'badge-danger' },
+  urgent: { label: 'This week', cls: 'badge-warning' },
+  due: { label: 'Scheduled', cls: '' },
+  none: { label: 'No date', cls: 'badge-warning' },
+};
+
+// A missed reply date is how a reply becomes an appeal with a pre-deposit
+// attached, so a matter with no date on file is a warning, not a blank.
+export function urgencyMeta(urgency) {
+  return URGENCY_META[urgency] || URGENCY_META.none;
+}
+
 // Defect postures. Held here rather than beside the component so React Fast
 // Refresh keeps working — a module that exports both a component and a
 // constant loses hot reloading for the whole file.

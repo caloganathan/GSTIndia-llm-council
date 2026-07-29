@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { BarChart, ConfidenceBadge, EmptyState, Loading, Stat } from './shared';
+import {
+  BarChart, CapabilityWarning, ConfidenceBadge, DeadlineBadge, EmptyState,
+  Loading, Stat,
+} from './shared';
 import { formatCost, formatCurrency, formatDate } from '../format';
 
 export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError }) {
   const [data, setData] = useState(null);
+  const [health, setHealth] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -13,6 +17,13 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
         setData(await api.dashboard());
       } catch (err) {
         if (!onAuthError(err)) setError(err.message);
+      }
+      // Health is advisory. A failure here must never blank the dashboard,
+      // so it is fetched separately and its errors are swallowed.
+      try {
+        setHealth(await api.health());
+      } catch {
+        /* the dashboard is still useful without it */
       }
     })();
   }, [onAuthError]);
@@ -23,6 +34,9 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
   const { verification } = data;
   const checked =
     verification.verified + verification.unverified + verification.not_found;
+  const deadlines = data.deadlines || { counts: {}, upcoming: [] };
+  const staleModels = health?.model_validation?.unknown_models || [];
+  const ocrMissing = health?.ocr && health.ocr.available === false;
 
   return (
     <div className="page">
@@ -39,7 +53,55 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
         </button>
       </div>
 
+      {staleModels.length > 0 && (
+        <CapabilityWarning title={`${staleModels.length} configured model(s) are not in OpenRouter's catalogue.`}>
+          Runs using them will fail — and notice reading fails with them,
+          because the reader borrows the tier's grounding model. Correct these
+          in Administration &rsaquo; Panel configuration before running a
+          matter: <code>{staleModels.join(', ')}</code>
+        </CapabilityWarning>
+      )}
+
+      {ocrMissing && (
+        <CapabilityWarning title="Scanned notices cannot be read on this installation.">
+          {health.ocr.reason} Until then, a notice that arrives as an image
+          must have its text pasted in by hand.
+        </CapabilityWarning>
+      )}
+
+      {deadlines.attention > 0 && (
+        <div
+          className={`alert ${deadlines.counts.overdue > 0 ? 'alert-danger' : 'alert-warning'}`}
+          style={{ marginBottom: 'var(--sp-5)' }}
+        >
+          <strong>
+            {deadlines.counts.overdue > 0
+              ? `${deadlines.counts.overdue} matter(s) are past their reply date.`
+              : `${deadlines.attention} matter(s) need a reply this week.`}
+          </strong>{' '}
+          A reply date that passes turns a reply into an appeal, with a
+          pre-deposit and a fresh limitation clock. Matters needing attention
+          are listed below.
+        </div>
+      )}
+
       <div className="stat-grid">
+        <Stat
+          label="Needs attention"
+          value={deadlines.attention || 0}
+          hint={
+            deadlines.counts.overdue
+              ? `${deadlines.counts.overdue} already overdue`
+              : 'due within seven days'
+          }
+          accent={
+            deadlines.counts.overdue > 0
+              ? 'danger'
+              : deadlines.attention > 0
+                ? 'warning'
+                : undefined
+          }
+        />
         <Stat
           label="Matters"
           value={data.matter_count}
@@ -66,8 +128,11 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
         {data.usage && (
           <Stat
             label="Model spend"
-            value={formatCost(data.usage.total_cost)}
-            hint={`${(data.usage.total_tokens || 0).toLocaleString()} tokens`}
+            // Rupees lead. A firm prices its engagements in rupees and nobody
+            // in the office converts dollars, so a dollar figure is a number
+            // that never becomes an intuition about cost.
+            value={data.usage.label || formatCost(data.usage.total_cost)}
+            hint={`${formatCost(data.usage.total_cost)} · ${(data.usage.total_tokens || 0).toLocaleString()} tokens`}
           />
         )}
         <Stat
@@ -83,6 +148,54 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
           <strong>{verification.not_found} authority(ies) could not be located.</strong>{' '}
           A citation that cannot be found must be treated as fabricated until
           proven otherwise. Review the affected matters before anything is filed.
+        </div>
+      )}
+
+      {deadlines.upcoming.length > 0 && (
+        <div className="card" style={{ marginBottom: 'var(--sp-5)' }}>
+          <div
+            className="card-pad row"
+            style={{ paddingBottom: 0, justifyContent: 'space-between' }}
+          >
+            <div className="section-title">Replies due — worst first</div>
+            <button
+              className="btn btn-secondary"
+              onClick={() => api.downloadCalendar()}
+              title="Opens in Outlook, Google Calendar or Apple Calendar"
+            >
+              Add to calendar
+            </button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Notice</th>
+                  <th>Reply due</th>
+                  <th>Status</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deadlines.upcoming.map((matter) => (
+                  <tr
+                    key={matter.id}
+                    onClick={() => onOpenMatter(matter.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td style={{ fontWeight: 500 }}>
+                      {matter.client_name || 'Unnamed'}
+                    </td>
+                    <td><span className="badge">{matter.notice_type || '—'}</span></td>
+                    <td>{formatDate(matter.due_date)}</td>
+                    <td><DeadlineBadge matter={matter} /></td>
+                    <td>{formatCurrency(matter.amount_disputed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -489,14 +489,13 @@ async def estimate_panel_cost(
 
     payload = request.intake or {}
     limbs = payload.get("defects") or []
-    triaged = defects_module.triage(limbs) if limbs else {}
-    panel_count = len(triaged.get("panel") or []) if triaged else 0
 
-    # A matter with no limbs still runs a single-issue panel rather than
-    # nothing, so it is never estimated at zero.
-    if limbs and panel_count == 0:
-        panel_count = 0
-    elif not limbs:
+    if limbs:
+        panel_count = defects_module.triage(limbs)["argue_count"]
+    else:
+        # A matter with no limbs read off the notice still runs, as a single
+        # undifferentiated issue. Estimating it at zero would be wrong in the
+        # direction that matters.
         panel_count = 1
 
     estimate = pricing.estimate_run(
