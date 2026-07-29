@@ -233,8 +233,16 @@ DEFECT_TYPES = [
     DefectType(
         "outward_short_payment",
         "Short payment of tax on outward supplies",
+        # The last three cover the Rule 88C / DRC-01B limb — the difference
+        # between the liability declared in GSTR-1 and that discharged in
+        # GSTR-3B. DRC-01B is issued in bulk and had no pattern at all, so the
+        # whole form segmented to nothing and the notice was answered as one
+        # undifferentiated issue.
         _p(r"short\s+payment.{0,40}outward", r"short\s+payment\s+of\s+tax",
-           r"outward\s+turnover\s+discrepanc"),
+           r"outward\s+turnover\s+discrepanc",
+           r"difference\s+in\s+liability",
+           r"liability.{0,60}gstr[\s-]*1.{0,60}gstr[\s-]*3b",
+           r"\brule\s*88C\b"),
         statute="Section 73/74 read with Sections 37 and 39",
         sections=["37", "39", "73"],
         default_posture=EXPLAINED,
@@ -390,8 +398,12 @@ DEFECT_TYPES = [
     DefectType(
         "itc_supplier_default",
         "Input tax credit denied for supplier default under Section 16(2)(c)",
-        _p(r"16\s*\(\s*2\s*\)\s*\(\s*c\s*\)", r"supplier\s+(?:has\s+)?not\s+"
-           r"(?:filed|paid)", r"non[\s-]?filer\s+supplier", r"tax\s+not\s+paid\s+"
+        # The second pattern used to require the singular "supplier not filed"
+        # with nothing between. Departments write "suppliers who have not
+        # filed returns" at least as often, and that phrasing matched nothing.
+        _p(r"16\s*\(\s*2\s*\)\s*\(\s*c\s*\)",
+           r"supplier[s]?\b.{0,30}\bnot\s+(?:filed|paid|furnished|discharged)",
+           r"non[\s-]?filer\s+supplier", r"tax\s+not\s+paid\s+"
            r"(?:to\s+)?(?:the\s+)?government"),
         statute="Section 16(2)(c) read with Section 155",
         sections=["16(2)(c)", "155"],
@@ -429,7 +441,9 @@ DEFECT_TYPES = [
     DefectType(
         "itc_180_days",
         "Reversal for non-payment to supplier within 180 days (Rule 37)",
-        _p(r"rule\s*37\b", r"180\s*days", r"second\s+proviso.{0,30}16\s*\(\s*2"),
+        _p(r"rule\s*37\b", r"180\s*days",
+           r"one\s+hundred\s+and\s+eighty\s+days",
+           r"second\s+proviso.{0,30}16\s*\(\s*2"),
         statute="Second proviso to Section 16(2) read with Rule 37",
         sections=["16(2)"],
         rules=["37"],
@@ -487,8 +501,13 @@ DEFECT_TYPES = [
            r"interest.{0,30}amendment",
            r"interest\s+(?:payable|leviable|liable|chargeable)"
            r".{0,30}(?:delayed|belated|late)",
-           r"interest\s+(?:u/s|under\s+section)\s*50\b",
            r"non[\s-]*payment\s+of\s+interest"),
+        # NOTE: do not add a bare "interest under section 50" pattern here.
+        # It was tried, and it matches the demand boilerplate carried by
+        # almost every notice — "...along with interest under Section 50 and
+        # penalty under Section 73(9)" — which grew a phantom interest limb on
+        # four of the eight golden cases, one of which then claimed the whole
+        # notice's total as its own figure and doubled the matter.
         statute="Section 50(1) read with Rule 88B",
         sections=["50(1)", "50(3)"],
         rules=["88B"],
@@ -505,7 +524,13 @@ DEFECT_TYPES = [
     DefectType(
         "einvoice",
         "Non-compliance with e-invoicing under Rule 48(4)",
-        _p(r"e[\s-]?invoic", r"rule\s*48\s*\(\s*[45]\s*\)", r"\birn\b",
+        # The leading \b is load-bearing. Without it "e[\s-]?invoic" matches
+        # the ordinary English phrase "th|e invoic|e" — so every notice using
+        # the words "the invoice", which is very nearly all of them, grew a
+        # spurious e-invoicing limb with a neighbouring limb's figures
+        # attached. Caught by the golden set on an RFD-08 whose second limb
+        # read "not accompanied by the invoice-wise details".
+        _p(r"\be[\s-]?invoic", r"rule\s*48\s*\(\s*[45]\s*\)", r"\birn\b",
            r"invoice\s+registration\s+portal"),
         statute="Rule 48(4) and 48(5) read with Section 125",
         sections=["2(6)", "122", "125", "126"],
@@ -587,7 +612,8 @@ DEFECT_TYPES = [
         "valuation",
         "Valuation dispute",
         _p(r"valuation", r"section\s*15\s*\(\s*[12]\s*\)",
-           r"transaction\s+value"),
+           r"transaction\s+value", r"related\s+(?:person|part(?:y|ies))",
+           r"\brule\s*28\b", r"open\s+market\s+value"),
         statute="Section 15 read with the Valuation Rules",
         sections=["15"],
         default_posture=CONTESTED,
@@ -635,7 +661,15 @@ DEFECT_TYPES = [
     DefectType(
         "refund_rejection",
         "Refund rejection proposed",
-        _p(r"refund", r"\bRFD[\s-]?0?[689]\b", r"section\s*54\b"),
+        # A bare "refund" was too broad: it matched the Section 73 boilerplate
+        # "tax not paid or short paid or erroneously refunded", so every s.73
+        # demand grew a refund limb. Refund must be the SUBJECT of the phrase.
+        # Rule 89 is included because a refund limb often argues the
+        # documentation requirement without using the word at all.
+        _p(r"\brefund\s+(?:claim|application|of|order|reject|sanction|is\b)",
+           r"rejection\s+of\s+.{0,30}refund",
+           r"\brefund\b.{0,20}(?:inadmissible|not\s+admissible|rejected)",
+           r"\bRFD[\s-]?0?[689]\b", r"section\s*54\b", r"rule\s*89\b"),
         statute="Section 54 read with Rules 89 to 96",
         sections=["54", "54(1)", "56"],
         rules=["89", "92(3)"],
