@@ -69,6 +69,8 @@ MATTER = {
                     "legal_framework": [
                         {"provision": "Section 16(2), CGST Act, 2017",
                          "relevance": "Cumulative conditions for eligibility"},
+                        {"provision": "Circular No. 999/9/2024-GST",
+                         "relevance": "A circular that does not exist"},
                     ],
                     "authorities": [
                         {"citation": "Section 73(10)", "proposition": "Limitation"},
@@ -111,7 +113,7 @@ MATTER = {
         },
         "verification": {
             "checked": True,
-            "summary": {"verified": 1, "unverified": 1, "not_found": 0, "total": 2},
+            "summary": {"verified": 2, "unverified": 1, "not_found": 1, "total": 4},
             "authorities": [
                 {"citation": "Section 73(10)", "proposition": "Limitation",
                  "status": "VERIFIED", "note": "Traced.", "correction": "",
@@ -119,6 +121,15 @@ MATTER = {
                 {"citation": "Circular No. 183/15/2022-GST",
                  "proposition": "2A mismatch", "status": "UNVERIFIED",
                  "note": "Not confirmed.", "correction": "", "defect_index": 1},
+                {"citation": "Section 16(2), CGST Act, 2017",
+                 "proposition": "Cumulative conditions", "status": "VERIFIED",
+                 "note": "Traced.", "correction": "", "defect_index": 1,
+                 "source": "legal_framework"},
+                {"citation": "Circular No. 999/9/2024-GST",
+                 "proposition": "A circular that does not exist",
+                 "status": "NOT_FOUND", "note": "No such circular.",
+                 "correction": "", "defect_index": 1,
+                 "source": "legal_framework"},
             ],
         },
     },
@@ -254,6 +265,105 @@ class TestVerificationGating:
         for text in (_all_text(_filing()), _all_text(_note())):
             assert "UNVERIFIED" not in text
             assert "NOT_FOUND" not in text
+
+    def test_verified_framework_entry_reaches_the_filing_document(self):
+        assert "Cumulative conditions for eligibility" in _all_text(_filing())
+
+    def test_unverified_framework_entry_is_withheld_from_the_filing_document(self):
+        """The legal framework table is gated exactly as the authorities
+        table is: the chairman is invited to put circulars and case law in
+        it, and an entry that failed verification must not print for the
+        officer."""
+        text = _all_text(_filing())
+        assert "Circular No. 999/9/2024-GST" not in text
+        assert "Circular No. 999/9/2024-GST" in _all_text(_note())
+
+    def test_no_framework_is_filable_when_verification_did_not_run(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["verification"] = {}
+        assert "Cumulative conditions for eligibility" not in _all_text(_filing(matter))
+
+
+# ---------------------------------------------------------------------------
+# Citations inside the filed prose
+# ---------------------------------------------------------------------------
+
+
+class TestProseCitationGate:
+    """
+    A citation the chairman writes INTO a submission paragraph cannot be
+    withheld the way a table entry is — the paragraph would have to be
+    rewritten. So it is stamped and blocked instead: the filing document
+    carries a NOT FOR FILING header until the citation is confirmed or
+    struck, and the file note leads with it as a blocker.
+    """
+
+    def _with_prose_citation(self, citation_sentence):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["determination"]["defects"][0]["submission"] = (
+            f"The demand of Rs. 41,20,000 is not sustainable "
+            f"{citation_sentence}"
+        )
+        return matter
+
+    def test_an_unverified_prose_citation_stamps_the_filing_document(self):
+        matter = self._with_prose_citation(
+            "in view of Circular No. 183/15/2022-GST")
+        header = _filing(matter).sections[0].header.paragraphs[0].text
+        assert "NOT FOR FILING" in header
+        assert "UNVERIFIED AUTHORITY" in header
+
+    def test_an_unverified_prose_citation_leads_the_file_note(self):
+        matter = self._with_prose_citation(
+            "in view of Circular No. 183/15/2022-GST")
+        note = _all_text(_note(matter))
+        assert "cannot be withheld automatically" in note
+
+    def test_a_verified_prose_citation_does_not_stamp(self):
+        import copy
+        matter = self._with_prose_citation(
+            "in view of Circular No. 172/04/2022-GST")
+        matter["result"]["verification"]["authorities"].append(
+            {"citation": "Circular No. 172/04/2022-GST",
+             "proposition": "Works contract credit", "status": "VERIFIED",
+             "note": "Traced.", "correction": "", "defect_index": 1,
+             "source": "filed_text"})
+        assert "NOT FOR FILING" not in _all_text(_filing(matter))
+
+    def test_prose_citations_are_stamped_when_verification_never_ran(self):
+        """Same failure direction as _is_filable: a citation nobody checked
+        is a gap, not a pass."""
+        import copy
+        matter = self._with_prose_citation(
+            "in view of Circular No. 172/04/2022-GST")
+        matter["result"]["verification"] = {}
+        header = _filing(matter).sections[0].header.paragraphs[0].text
+        assert "NOT FOR FILING" in header
+
+    def test_clean_prose_is_not_stamped(self):
+        assert "NOT FOR FILING" not in _all_text(_filing())
+
+    def test_a_blocker_the_panel_already_recorded_is_not_listed_twice(self):
+        matter = self._with_prose_citation(
+            "in view of Circular No. 183/15/2022-GST")
+        matter["result"]["determination"]["filing_blockers"] = [
+            "The reply text for defect 1 cites an authority that did not "
+            "verify: Circular No. 183/15/2022-GST [UNVERIFIED]. Confirm it "
+            "against the reported text or remove it from the prose."
+        ]
+        note = _all_text(_note(matter))
+        assert "1 matter(s) must be resolved before filing" in note
+
+    def test_the_stamp_joins_an_existing_watermark_rather_than_replacing_it(self):
+        import copy
+        matter = self._with_prose_citation(
+            "in view of Circular No. 183/15/2022-GST")
+        matter["metadata"]["watermark"] = "DRAFT — NOT FOR FILING"
+        header = _filing(matter).sections[0].header.paragraphs[0].text
+        assert "DRAFT" in header
+        assert "UNVERIFIED AUTHORITY" in header
 
 
 # ---------------------------------------------------------------------------

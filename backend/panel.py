@@ -28,8 +28,9 @@ from .roles import (
     build_chairman_prompt,
     build_cross_exam_prompt,
     build_role_prompt,
+    format_matter,
 )
-from .verification import verify_authorities
+from .verification import VERIFIED, verify_authorities
 
 
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
@@ -200,6 +201,40 @@ def merge_determination(
     return merged
 
 
+def filed_text_blockers(verification: Dict[str, Any]) -> List[str]:
+    """
+    Blockers for citations found in the filed prose that did not verify.
+
+    The structured `authorities` and `legal_framework` lists are gated at
+    export — an entry that fails verification is simply withheld. A citation
+    the chairman wrote INTO a submission paragraph cannot be withheld without
+    rewriting the paragraph, so it must be surfaced as a blocker the reviewer
+    resolves by hand: confirm it against the reported text, or strike it from
+    the prose before filing.
+    """
+    blockers: List[str] = []
+    for authority in verification.get("authorities") or []:
+        if authority.get("source") != "filed_text":
+            continue
+        if authority.get("status") == VERIFIED:
+            continue
+        where = (
+            f"defect {authority['defect_index']}"
+            f" ({authority.get('defect_heading') or 'unheaded'})"
+            if authority.get("defect_index") is not None
+            else "the preliminary or general text of the reply"
+        )
+        blockers.append(
+            f"The reply text for {where} cites an authority that did not "
+            f"verify: {authority.get('citation')} "
+            f"[{authority.get('status', 'UNCHECKED')}]. Confirm it against "
+            "the reported text or remove it from the prose before filing — "
+            "it cannot be withheld automatically because it sits inside a "
+            "filed paragraph."
+        )
+    return blockers
+
+
 def _usage_of(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result.get("usage") if result.get("ok") else None
 
@@ -240,11 +275,13 @@ async def run_panel_stream(
     working_matter = matter
     if tier["anonymise"]:
         working_matter, replacements = sanitizer.sanitize_matter(matter)
-        leak_probe = " ".join(
-            str(working_matter.get(f) or "")
-            for f in ("issues", "facts", "documents_available")
-        )
-        leaks = sanitizer.audit_leaks(leak_probe)
+        # Audit the text as the models will actually receive it — the full
+        # rendered matter block, defects and all — not a hand-picked subset of
+        # fields. A probe narrower than the prompt is a probe that passes the
+        # exact leak it exists to catch.
+        leak_probe = format_matter(working_matter, pack)
+        leaks = sanitizer.audit_leaks(leak_probe,
+                                      client_name=matter.get("client_name"))
         if leaks:
             yield {
                 "type": "error",
@@ -448,6 +485,15 @@ async def run_panel_stream(
             determination, pack, tier["verifier"]
         )
         yield {"type": "verification_complete", "data": verification}
+
+        # A citation embedded in the filed prose is more dangerous than one in
+        # the authorities table: the table is gated at export, the prose is
+        # printed verbatim. Any prose citation that did not come back VERIFIED
+        # becomes a filing blocker, so it leads section 1 of the file note and
+        # stamps the filing document until it is resolved.
+        prose_blockers = filed_text_blockers(verification)
+        if prose_blockers:
+            determination.setdefault("filing_blockers", []).extend(prose_blockers)
 
     # ---- Restore identifiers locally (anonymising tier only) -------------
     if replacements:

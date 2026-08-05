@@ -312,3 +312,188 @@ class TestMergeDetermination:
             {"index": 1, "posture": "contested"},
         ]})
         assert [d["index"] for d in merged] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# The anonymisation gate, end to end
+# ---------------------------------------------------------------------------
+
+
+class TestTheAnonymisationGate:
+    """
+    The gate CLAUDE.md calls sacred, tested through the stream it protects.
+
+    Two properties, and both are needed: identifiers planted in the defect
+    text — the notice's own prose, which the intake form scrub does not touch
+    but every counsel prompt carries — must be scrubbed before any model call;
+    and if the scrub ever fails, the run must abort before a single request
+    leaves the machine.
+    """
+
+    def _matter(self):
+        from backend import defects
+        return {
+            "client_name": "Acme Industries Private Limited",
+            "gstin": "29AAAPL1234C1ZV",
+            "notice_type": "ASMT-10",
+            "state": "Karnataka",
+            "tax_period": "FY 2019-20",
+            "issues": "ITC availed in excess of GSTR-2B.",
+            "facts": "Returns were filed in time.",
+            "defects": [defects.new_defect(
+                1,
+                "Excess ITC availed by Acme Industries Private Limited "
+                "(GSTIN 29AAAPL1234C1ZV)",
+                "itc_excess_2b",
+                department_contention=(
+                    "Tvl. Acme Industries Private Limited, GSTIN "
+                    "29AAAPL1234C1ZV, availed credit in excess of GSTR-2B."),
+                amount_by_head={"cgst": 50000, "sgst": 50000},
+            )],
+        }
+
+    async def test_defect_text_is_scrubbed_before_any_model_call(
+            self, monkeypatch):
+        from backend import config
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", False)
+
+        prompts = []
+
+        async def fake_query(model, messages, **kwargs):
+            prompts.append(messages[0]["content"])
+            return {"ok": True, "content": "analysis", "usage": None,
+                    "model": model}
+
+        monkeypatch.setattr(panel, "query_model", fake_query)
+
+        events = []
+        async for event in panel.run_panel_stream(
+                self._matter(), tier_name="draft", skip_verification=True):
+            events.append(event)
+
+        assert not any(e["type"] == "error" for e in events), \
+            "the scrub should succeed, not abort"
+        assert prompts, "no model was ever called"
+        outgoing = "\n".join(prompts)
+        for secret in ("29AAAPL1234C1ZV", "AAAPL1234C", "Acme"):
+            assert secret not in outgoing, f"LEAKED to a model prompt: {secret}"
+
+    async def test_the_run_aborts_when_the_scrub_fails(self, monkeypatch):
+        """If sanitisation ever regresses, the probe — built from the same
+        rendered block the prompts use — must catch it and abort."""
+        from backend import config
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", False)
+        monkeypatch.setattr(panel.sanitizer, "sanitize_matter",
+                            lambda matter, **kw: (dict(matter), {}))
+
+        called = []
+
+        async def fake_query(*args, **kwargs):
+            called.append(1)
+            return {"ok": True, "content": ""}
+
+        monkeypatch.setattr(panel, "query_model", fake_query)
+
+        events = []
+        async for event in panel.run_panel_stream(
+                self._matter(), tier_name="draft", skip_verification=True):
+            events.append(event)
+
+        assert events[0]["type"] == "error"
+        assert "Anonymisation failed" in events[0]["message"]
+        assert not called, "a request left the machine after the gate failed"
+
+    async def test_a_surviving_client_name_alone_is_enough_to_abort(
+            self, monkeypatch):
+        """The trade name carries no regex signature, so the audit must be
+        told it. A matter whose only leak is the client's name must abort."""
+        from backend import config
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", False)
+        monkeypatch.setattr(panel.sanitizer, "sanitize_matter",
+                            lambda matter, **kw: (dict(matter), {}))
+
+        async def fake_query(*args, **kwargs):
+            raise AssertionError("no request may leave after the gate fails")
+
+        monkeypatch.setattr(panel, "query_model", fake_query)
+
+        matter = self._matter()
+        matter["gstin"] = ""
+        matter["defects"][0]["heading"] = \
+            "Excess ITC availed by Acme Industries Private Limited"
+        matter["defects"][0]["department_contention"] = ""
+
+        events = []
+        async for event in panel.run_panel_stream(
+                matter, tier_name="draft", skip_verification=True):
+            events.append(event)
+
+        assert events[0]["type"] == "error"
+        assert "CLIENT_NAME" in events[0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# Citations embedded in filed prose
+# ---------------------------------------------------------------------------
+
+
+class TestFiledTextBlockers:
+    """A citation inside a filed paragraph cannot be withheld the way a table
+    entry is — it must surface as a blocker the reviewer resolves by hand."""
+
+    def test_unverified_prose_citation_becomes_a_blocker(self):
+        verification = {"authorities": [
+            {"citation": "Bogus Traders v. State of Karnataka",
+             "source": "filed_text", "status": "NOT_FOUND",
+             "defect_index": 2, "defect_heading": "Blocked credit"},
+            {"citation": "Section 73(10)", "source": "defect",
+             "status": "UNVERIFIED"},
+            {"citation": "Circular No. 172/04/2022-GST",
+             "source": "filed_text", "status": "VERIFIED"},
+        ]}
+        blockers = panel.filed_text_blockers(verification)
+        assert len(blockers) == 1
+        assert "Bogus Traders v. State of Karnataka" in blockers[0]
+        assert "defect 2" in blockers[0]
+
+    def test_a_verified_prose_citation_raises_nothing(self):
+        verification = {"authorities": [
+            {"citation": "Circular No. 172/04/2022-GST",
+             "source": "filed_text", "status": "VERIFIED"},
+        ]}
+        assert panel.filed_text_blockers(verification) == []
+
+    async def test_the_stream_records_prose_blockers_on_the_determination(
+            self, monkeypatch):
+        from backend import config
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", False)
+
+        async def fake_query(model, messages, **kwargs):
+            return {"ok": True, "content": '{"defects": []}', "usage": None,
+                    "model": model}
+
+        async def fake_verify(determination, pack, verifier):
+            return {
+                "checked": True,
+                "authorities": [
+                    {"citation": "Bogus Traders v. State of Karnataka",
+                     "source": "filed_text", "status": "NOT_FOUND",
+                     "defect_index": 1, "defect_heading": "Excess ITC"},
+                ],
+                "summary": {"verified": 0, "superseded": 0, "unverified": 0,
+                            "not_found": 1, "total": 1},
+            }, []
+
+        monkeypatch.setattr(panel, "query_model", fake_query)
+        monkeypatch.setattr(panel, "verify_authorities", fake_verify)
+
+        summary = None
+        async for event in panel.run_panel_stream(
+                {"issues": "ITC mismatch", "facts": "None.",
+                 "notice_type": "ASMT-10"},
+                tier_name="pro"):
+            if event["type"] == "summary":
+                summary = event
+
+        blockers = summary["data"]["determination"]["filing_blockers"]
+        assert any("Bogus Traders" in b for b in blockers)

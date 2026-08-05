@@ -145,7 +145,13 @@ function Authorities({ verification }) {
 
 export default function Deliberation({ result, metadata, user, onExport }) {
   const determination = result?.determination;
-  const canSeeDeliberation = user?.permissions?.view_deliberation !== false;
+  // Fail closed: the deliberation is privileged working material, so it is
+  // shown only on a positive grant. Both auth paths (accounts and the legacy
+  // shared token) supply a full permissions object, so a missing key means
+  // something is wrong — and wrong must mean hidden, not shown. The server
+  // redacts the stream and the stored matter for staff regardless; this
+  // check only decides what the UI offers to render.
+  const canSeeDeliberation = user?.permissions?.view_deliberation === true;
 
   if (!determination) {
     return canSeeDeliberation ? (
