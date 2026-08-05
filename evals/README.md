@@ -128,8 +128,8 @@ uv run python -m evals.run
 # One matter, while you are iterating on a prompt
 uv run python -m evals.run --only gst-001
 
-# Compare tiers — is the free tier good enough for research work?
-uv run python -m evals.run --tier free
+# Compare tiers — is the draft tier good enough for research work?
+uv run python -m evals.run --tier draft
 
 # Dry run: no model calls, just checks your golden set parses
 uv run python -m evals.run --dry-run
@@ -155,5 +155,5 @@ better frequently score worse.
 ## Cost
 
 A full run over 10 matters on the Pro tier is roughly ₹150-500 depending on
-notice complexity. Run the free tier while iterating on structure, and the Pro
+notice complexity. Run the draft tier while iterating on structure, and the Pro
 tier when you are deciding whether something is genuinely better.

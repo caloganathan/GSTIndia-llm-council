@@ -296,6 +296,10 @@ def _unpack(matter: Dict[str, Any]):
     verification = result.get("verification") or {}
     metadata = matter.get("metadata") or {}
     defect_list = determination.get("defects") or intake.get("defects") or []
+    # Both builders index every limb as a mapping. The panel already drops
+    # malformed entries, but a stored matter is read back from disk and may
+    # predate that, and neither document may fail to build over one bad limb.
+    defect_list = [d for d in defect_list if isinstance(d, dict)]
     return intake, determination, verification, metadata, defect_list
 
 
@@ -680,8 +684,11 @@ def _payment_rows(defect_list: List[Dict[str, Any]]) -> List[List[str]]:
     rows = []
     counter = 0
     for defect in defect_list:
-        payment = defect.get("payment") or {}
-        if not payment.get("reference"):
+        payment = defect.get("payment")
+        # Guarded like splits, authorities and legal_framework above: a stored
+        # matter can carry a payment the panel wrote as prose, and this
+        # document must still build.
+        if not isinstance(payment, dict) or not payment.get("reference"):
             continue
         counter += 1
         under_protest = bool(payment.get("under_protest")) or \

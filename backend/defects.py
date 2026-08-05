@@ -307,8 +307,11 @@ def validate(defect: Dict[str, Any]) -> List[str]:
         )
 
     if posture in (AGREED_PAID, PAID_UNDER_PROTEST):
-        payment = defect.get("payment") or {}
-        if not payment.get("reference"):
+        payment = defect.get("payment")
+        # A payment the panel wrote as prose rather than as an object carries
+        # no reference this can read, so it is treated as absent — which is
+        # what it is, for the purpose of closing the limb.
+        if not isinstance(payment, dict) or not payment.get("reference"):
             problems.append(
                 f"{heading}: {POSTURE_LABEL[posture].lower()} but no DRC-03 "
                 "reference is recorded. The officer closes a conceded limb on "

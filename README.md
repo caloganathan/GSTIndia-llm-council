@@ -46,9 +46,11 @@ containing the draft reply, an issue-wise analysis, a schedule of
 authorities, risk flags for a reviewing partner, and a note for the file.
 
 **Two tiers, and why.** *Draft* strips the client's name, GSTIN and PAN before
-anything leaves the machine — good for a first read; every exported page is
-watermarked. *Pro* sends full facts through zero-retention routing — use this
-for anything actually going to the department.
+anything leaves the machine, and restores them locally afterwards — good for a
+first read or a second opinion. It exports, but every page is watermarked
+**not for filing**, so a draft cannot be mistaken for the real thing.
+*Pro* sends full facts through zero-retention routing and exports unwatermarked
+— use this for anything actually going to the department.
 
 **Instructions to hand to your team:**
 
@@ -218,6 +220,10 @@ reply pack both say so.
 On the Draft tier anonymisation is enforced in code and the run **aborts** if
 any identifier survives the scrub. Identifiers are restored locally afterwards,
 so the partner still reads real names while the model never saw them.
+
+Export is allowed on both tiers, and that is deliberate: blocking it on the
+cheap tier only pushed people into copying text out of the browser, which loses
+the watermark along with it. The Draft tier stamps every page instead.
 
 **There was once a genuinely free tier**, running on OpenRouter's `:free`
 endpoints. Every model ID in it went stale and the whole tier failed silently
@@ -494,7 +500,7 @@ that starts and reports the problem.
 uv run pytest
 ```
 
-308 tests. The suites that matter most: the sanitizer (identifier leaks —
+475 tests. The suites that matter most: the sanitizer (identifier leaks —
 a failure there is a confidentiality breach, not a bug), citation verification
 and its never-upgrade rule, reply-pack formatting (Arial-only, monochrome-only,
 no machine vocabulary in the deliverable), reconciliation ingestion (proof
