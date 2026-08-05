@@ -314,3 +314,83 @@ class TestValidation:
         assert defects.validate(defects.new_defect(
             1, "Blocked credit", posture=defects.CONTESTED,
             annexures=["Purchase invoices"])) == []
+
+
+class TestTheLastLimbDoesNotAbsorbTheDemandSummary:
+    """
+    A notice ends with its own summary, restating every limb's figure. The
+    last limb runs into it unless the boundary is drawn, and then reports a
+    neighbour's number as its own — which reconciles to nothing and is not
+    visibly wrong on the face of the reply.
+    """
+
+    NOTICE = (
+        "FORM GST DRC-01\nGSTIN: 33AACFG8063F1ZM\n"
+        + "The officer has scrutinised the returns furnished for the year. " * 8
+        + "\n\n• Scrutiny of ITC reversals:\n"
+        "Excess ITC reversal reported in the annual return\n"
+        "238473 238473 0 0 476946\n"
+        "\n• Claim of Ineligible ITC-Sec 17(5):\n"
+        "Total ineligible ITC under Section 17(5)\n"
+        "20691 20691 0 0 41382\n"
+        "\nThe total tax payable on account of these deficiencies is arrived "
+        "as follows:\n"
+        "1 Scrutiny of ITC reversals 238473 238473 0 0 476946\n"
+        "2 Total tax due 259164 259164 0 0 518328\n"
+    )
+
+    def _limbs(self):
+        return defects.segment(self.NOTICE, gst.DEFECT_TYPES)
+
+    def test_the_summary_is_not_part_of_the_last_limb(self):
+        last = self._limbs()[-1]
+        assert "total tax payable" not in last["notice_extract"].lower()
+
+    def test_the_last_limb_keeps_its_own_figure(self):
+        last = self._limbs()[-1]
+        row = notice_tables.read_defect_amount(last["notice_extract"])
+        assert row["total"] == 41382
+
+
+class TestColumnRulersAreNotMoney:
+    """
+    Departmental tables number their columns on a line of their own. Those
+    digits are not amounts, and left in the token stream they supply
+    components for free: the ruler plus a row serial sums to the belated-return
+    COUNT beside it, passes the checksum exactly, and reports a late fee of
+    Rs. 10 for one of Rs. 5,400.
+    """
+
+    LATE_FEE = (
+        "• GSTR-1 late fee:\n"
+        "S.No No of GSTR-1 filed SGST late fee CGST late fee\n"
+        "1 2 3 4\n"
+        "1 10 2700 2700\n"
+    )
+
+    def test_the_ruler_does_not_become_a_row(self):
+        assert notice_tables.find_head_rows(self.LATE_FEE) == []
+
+    def test_the_real_pair_is_read_instead(self):
+        row = notice_tables.read_defect_amount(self.LATE_FEE)
+        assert row["total"] == 5400
+        assert row["basis"] == "paired"
+
+    def test_a_genuine_row_of_small_numbers_still_reads(self):
+        # The guard removes consecutive ascending rulers, not small money.
+        assert notice_tables.find_head_rows("40 30 20 10 100")[0]["total"] == 100
+
+
+class TestRoundingSlackIsNotAProportionOfNothing:
+    """
+    Two rupees is paisa drift on a row of lakhs and a seventeenth of a row of
+    twelve. A count of belated returns once passed the checksum against a
+    ruler that summed to within two of it.
+    """
+
+    def test_drift_is_refused_where_it_is_material(self):
+        assert notice_tables.find_head_rows("2 3 4 1 12") == []
+
+    def test_paisa_drift_on_a_real_row_still_passes(self):
+        rows = notice_tables.find_head_rows("237303 237303 0 0 474605")
+        assert rows and rows[0]["total"] == 474605

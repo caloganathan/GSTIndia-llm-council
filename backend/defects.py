@@ -556,20 +556,59 @@ ANNEXURE_BOUNDARY_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# The sentence that opens the notice's own demand summary.
+#
+# This is a stronger boundary than the ones above, and it is kept separate
+# because it is exempt from the proportion guard. The phrases above are closing
+# formalities, recognised by where they tend to sit; this one NAMES what
+# follows it — the total tax payable is arrived at below — so everything after
+# it belongs to the notice as a whole by definition, wherever it falls.
+#
+# Without it the LAST limb runs on into that summary, and the summary restates
+# every limb's figure. On a real notice the Section 17(5) limb, whose own
+# annexure put it at Rs. 41,382, took the row printed against "Scrutiny of ITC
+# reversals" in the summary and reported Rs. 4,76,946 — its neighbour's figure,
+# to the rupee. The same notice's limbs then reconciled exactly once the
+# boundary was applied. A late-fee limb on another notice took the summary's
+# interest row the same way.
+SUMMARY_BOUNDARY_RE = re.compile(
+    r"The\s+total\s+tax\s+(?:payable|due)\s+on\s+account\s+of\s+these\s+"
+    r"deficienc\w+",
+    re.IGNORECASE,
+)
+
+# Enough text to carry a header and at least one defect heading. A summary
+# sentence appearing before this much has not been preceded by any limb, so it
+# is not the boundary it appears to be.
+MIN_OPERATIVE_CHARS = 500
+
 
 def operative_region(text: str) -> str:
     """
     The part of a notice that states the defects, with annexures trimmed off.
 
-    Trimming is refused if it would remove most of the document — a short
-    notice whose boundary phrase appears early would otherwise be gutted.
+    Everything after the boundary belongs to the notice as a whole rather than
+    to the last defect. Without it the final limb absorbs every annexure in the
+    document and its figures come out orders of magnitude wrong.
+
+    Trimming on the weaker boundaries is refused if it would remove most of the
+    document — a short notice whose boundary phrase appears early would
+    otherwise be gutted. The demand summary carries no such condition, for the
+    reason given against SUMMARY_BOUNDARY_RE, and where both are present the
+    earlier one wins.
     """
-    match = ANNEXURE_BOUNDARY_RE.search(text or "")
-    if not match:
-        return text or ""
-    if match.start() < len(text) * 0.3:
-        return text or ""
-    return text[:match.start()]
+    text = text or ""
+    cuts = []
+
+    summary = SUMMARY_BOUNDARY_RE.search(text)
+    if summary and summary.start() >= MIN_OPERATIVE_CHARS:
+        cuts.append(summary.start())
+
+    annexure = ANNEXURE_BOUNDARY_RE.search(text)
+    if annexure and annexure.start() >= len(text) * 0.3:
+        cuts.append(annexure.start())
+
+    return text[:min(cuts)] if cuts else text
 
 
 def segment(text: str, catalogue: Iterable[Any]) -> List[Dict[str, Any]]:

@@ -56,6 +56,41 @@ NUMBER_RE = re.compile(
 # which would reject genuine rounded rows.
 MAX_ROW_SPAN = 140
 
+# The column ruler a departmental table prints under its headings: a line
+# reading "1 2 3 4", numbering the columns so the prose can refer to them.
+#
+# It is not money and it must not enter the sliding window. Left in, the ruler
+# supplies components for free and the next real figure becomes their total:
+#
+#     S.No | No of GSTR-1 filed | SGST late fee | CGST late fee
+#     1 2 3 4
+#     1 10 2700 2700
+#
+# reads 2+3+4+1 = 10 against the belated-return COUNT of 10 — an exact
+# checksum, on a row that is not a row — and reported Rs. 10 for a late fee of
+# Rs. 5,400. It also displaced the paired-heads reader that would have read the
+# two equal figures correctly. The same table with a count of 12 passed by
+# rounding tolerance instead, for Rs. 47,600.
+#
+# Only a genuine ruler is removed: consecutive integers ascending by one from
+# 1 or 2, alone on their line. Four head amounts are never that sequence.
+COLUMN_RULER_RE = re.compile(
+    r"^[ \t|]*\d{1,2}(?:[ \t|]+\d{1,2}){2,}[ \t|]*$", re.MULTILINE
+)
+
+
+def _without_column_rulers(text: str) -> str:
+    """Blank out column rulers, preserving every offset in the document."""
+    def blank(match: re.Match) -> str:
+        numbers = [int(n) for n in re.findall(r"\d+", match.group(0))]
+        if numbers[0] not in (1, 2):
+            return match.group(0)
+        if any(b - a != 1 for a, b in zip(numbers, numbers[1:])):
+            return match.group(0)
+        return " " * len(match.group(0))
+
+    return COLUMN_RULER_RE.sub(blank, text)
+
 # Column orders seen in departmental annexures. The Tamil Nadu scrutiny
 # attachment prints SGST first; central formats usually print CGST first.
 DEFAULT_HEAD_ORDER = ("sgst", "cgst", "igst", "cess")
@@ -74,6 +109,27 @@ OPERATIVE_LABELS = (
 # Rounding slack, in rupees. Departmental annexures round components to whole
 # rupees and occasionally carry a paisa of drift into the total.
 TOLERANCE = 2.0
+
+# The same slack, expressed as a share of the row.
+#
+# Two rupees is paisa drift on a row of lakhs and a seventeenth of a row of
+# twelve, and the checksum is only as trustworthy as the arithmetic it is
+# willing to call equal. A late-fee table printed as
+#
+#     S.No | No of GSTR-1 filed belatedly | SGST late fee | CGST late fee
+#     1 2 3 4
+#     1 12 23800 23800
+#
+# offers the column ruler and the row's serial as components — 2+3+4+1 = 10 —
+# against the belated-return count of 12 as their total. Two rupees apart, so
+# the row passed, and the limb reported Rs. 12 for a late fee of Rs. 47,600.
+# It also displaced the paired-heads reader below, which would have read the
+# two equal figures correctly.
+#
+# Drift must therefore be small in both senses: never more than a couple of
+# rupees, and never a material share of the row. Anything at the scale where
+# these coincide is required to be exact, which is how such rows are printed.
+RELATIVE_TOLERANCE = 0.005
 
 
 def _to_float(raw: str) -> Optional[float]:
@@ -114,6 +170,9 @@ def find_head_rows(text: str, head_order: Optional[List[str]] = None) -> List[Di
         return []
     order = head_order or detect_head_order(text)
 
+    # Offsets are preserved, so labels and positions still index the original.
+    text = _without_column_rulers(text)
+
     tokens = [
         (match.start(), match.end(), _to_float(match.group(1)))
         for match in NUMBER_RE.finditer(text)
@@ -137,7 +196,8 @@ def find_head_rows(text: str, head_order: Optional[List[str]] = None) -> List[Di
 
         # The checksum. Also require a non-trivial total, or every run of
         # zeroes in the document qualifies.
-        if total <= 0 or abs(sum(components) - total) > TOLERANCE:
+        drift = abs(sum(components) - total)
+        if total <= 0 or drift > min(TOLERANCE, total * RELATIVE_TOLERANCE):
             continue
         # A row of all-equal tiny numbers is a column header ("1 2 3 4 10"),
         # not a money row.
