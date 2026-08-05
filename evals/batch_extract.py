@@ -70,33 +70,85 @@ def find_notices(root: Path) -> List[Path]:
     )
 
 
+# What the department calls its own demand total. The row carrying one of
+# these labels is the only row that is a notice-level total; every other row
+# that passes the checksum is a working row.
+DEMAND_TOTAL_LABELS = (
+    "total tax due", "total tax payable", "total tax liability",
+    "net tax payable", "total amount payable", "total demand",
+)
+
+
+def _is_demand_total(label: str) -> bool:
+    """
+    Whether a row's label names it as the demand total, rather than merely
+    following one.
+
+    A row label is the 160 characters printed before its figures, so the rows
+    BENEATH the demand total inherit its wording: on a real summary table the
+    interest row, the penalty row and the tax-plus-interest-plus-penalty grand
+    total all carry "Total tax due" somewhere in their lookback. Taking the
+    last of those compared tax-only limbs against a grand total that includes
+    interest and penalty, which is a mismatch by construction.
+
+    So the phrase has to be the last thing said before the figures. Anything
+    between the phrase and the numbers is allowed to be words — departments
+    write "Total tax due in (Excess claim of ITC) above" — but not digits,
+    because digits mean another row's figures have intervened.
+    """
+    text = (label or "").lower()
+    for phrase in DEMAND_TOTAL_LABELS:
+        position = text.rfind(phrase)
+        if position != -1 and not any(
+            character.isdigit() for character in text[position + len(phrase):]
+        ):
+            return True
+    return False
+
+
 def notice_printed_total(text: str, limb_totals: List[float]) -> float:
     """
     The total the notice prints for itself — 0.0 where it prints none.
 
-    Taken as the largest head-wise row that passes its own checksum, EXCEPT
-    where that row is itself one of the limbs. Many forms print only their
-    limb rows and no notice-level summary: an RFD-08 objecting to a refund on
-    two grounds prints the two grounds and nothing else, and reading its
-    larger ground as the notice total reports a discrepancy against a figure
-    the notice never claimed.
+    Taken from the row the department LABELS as its demand total, and from
+    nowhere else.
 
-    Getting this wrong matters more than it looks. The reconciliation flag is
-    the one check here that needs no ground truth, so it is the one a reviewer
-    will trust; a flag that fires on notices that are perfectly fine is worse
-    than no flag, because it teaches people to ignore it.
+    This used to be the largest head-wise row in the document that passed its
+    own checksum. On synthetic notices, where the only tables are the limb
+    annexures, that is the same thing. On real ones it is not: a scrutiny
+    notice carries an ITC reconciliation whose working rows dwarf the demand,
+    and the largest row in the document is "ITC on inward supplies as per
+    GSTR-3B" — the whole year's credit. Reading that as the notice total
+    reported Rs. 17.53 crore against limbs of Rs. 20.8 lakh, and did it on
+    twelve notices out of twelve.
 
-    A genuine over-read is still caught: if a limb has absorbed a neighbour's
-    figure the limbs will exceed a summary row that matches no single limb,
-    and that still reports.
+    That is worse than useless. The reconciliation flag is the one check in
+    this harness that needs no ground truth, so it is the one a reviewer will
+    trust; firing it on every notice teaches them to ignore it, and it is then
+    not there on the notice where a limb really has absorbed its neighbour's
+    figure.
+
+    Where no labelled demand total is printed the answer is 0.0 and the report
+    says so, which is a true statement about the notice rather than a false
+    one about the extraction.
     """
-    rows = notice_tables.find_head_rows(text)
-    if not rows:
+    labelled = [row for row in notice_tables.find_head_rows(text)
+                if _is_demand_total(row["label"])]
+    if not labelled:
         return 0.0
-    largest = max(row["total"] for row in rows)
-    if any(abs(largest - total) <= 2.0 for total in limb_totals):
+
+    # Departmental summaries build to their conclusion, so the last such row
+    # is the operative one.
+    total = labelled[-1]["total"]
+
+    # A form that prints only its limb rows and calls one of them a total is
+    # not stating a notice-level figure. An RFD-08 objecting to a refund on
+    # two grounds prints the two grounds and nothing else, and reading its
+    # larger ground as the notice total reports a discrepancy against a figure
+    # the notice never claimed.
+    if any(abs(total - limb) <= 2.0 for limb in limb_totals):
         return 0.0
-    return largest
+    return total
 
 
 async def extract_one(path: Path, pack) -> Dict[str, Any]:
@@ -126,7 +178,15 @@ async def extract_one(path: Path, pack) -> Dict[str, Any]:
         "source": "OCR" if result.get("scanned") else "text",
         "text_length": result.get("text_length", 0),
         "fields": fields,
-        "missing_fields": [f for f in KEY_FIELDS if not fields.get(f)],
+        # A notice that gives a period running from service prints no calendar
+        # date, and reporting due_date as "not found" invites someone to go
+        # looking for one. The period is what there is to know.
+        "reply_window_days": fields.get("reply_window_days"),
+        "missing_fields": [
+            f for f in KEY_FIELDS
+            if not fields.get(f)
+            and not (f == "due_date" and fields.get("reply_window_days"))
+        ],
         "ocr_fields": [k for k, v in sources.items() if str(v).endswith("-ocr")],
         "limbs": limbs,
         "limb_count": len(limbs),
@@ -165,6 +225,12 @@ def flags_for(entry: Dict[str, Any]) -> List[str]:
         )
     if entry["source"] == "OCR":
         flags.append("READ BY OCR — check every figure against the notice")
+    if entry.get("reply_window_days") and not entry["fields"].get("due_date"):
+        flags.append(
+            f"Reply due within {entry['reply_window_days']} days of receipt — "
+            "the notice prints no calendar date, so the date of service has to "
+            "be supplied before this matter can be diarised"
+        )
     if entry["missing_fields"]:
         flags.append("Fields not found: " + ", ".join(entry["missing_fields"]))
     if not entry["printed_total"]:

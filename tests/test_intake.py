@@ -118,14 +118,57 @@ class TestLocalExtraction:
     def test_notice_date_read_from_the_document(self):
         assert self.fields["notice_date"] == "2026-06-14"
 
-    def test_due_date_is_not_guessed_from_position(self):
+    def test_due_date_comes_from_the_direction_to_reply(self):
         """
-        The reply deadline comes from the portal form's labelled row or not at
-        all. Taking the LAST date in the document read an invoice date out of
-        an annexure and presented it as the deadline — an error that, acted on,
-        loses the client the right to reply.
+        The reply deadline is read where the notice states it, and this notice
+        states it: "explain the discrepancies on or before 30.07.2026".
+
+        This test previously asserted the opposite — that no due date was read
+        here at all — because the only accepted source was the portal form's
+        labelled row. That was too narrow. The State letter formats carry no
+        such row and print the deadline in a sentence instead, so refusing to
+        read it left the field empty on notices that plainly stated it, and a
+        deadline nobody extracted is a deadline nobody diarised.
+
+        What was actually wrong with the old behaviour is preserved by the
+        test below: the date must be anchored to a direction to answer, not
+        taken from its position in the document.
         """
-        assert "due_date" not in self.fields
+        assert self.fields["due_date"] == "2026-07-30"
+        assert self.result["sources"]["due_date"] == "notice-directed"
+
+    def test_a_date_with_no_direction_beside_it_is_not_a_deadline(self):
+        """
+        The failure the old rule existed to prevent. Taking the LAST date in
+        the document read an invoice date out of an annexure and presented it
+        as the deadline — an error that, acted on, loses the client the right
+        to reply. An "on or before" with no direction to answer in front of it
+        is a term of supply, not a deadline.
+        """
+        text = (
+            "GSTIN: 29AAAPL1234C1ZV\n"
+            "FORM GST ASMT-10\n"
+            "Annexure: the goods were to be delivered on or before 30.07.2026 "
+            "under the purchase order.\n"
+        )
+        fields = intake.extract_fields_local(text, gst)["fields"]
+        assert "due_date" not in fields
+
+    def test_a_relative_window_is_recorded_as_a_window(self):
+        """
+        Most scrutiny notices print no date at all — they run a period from
+        service, which the department cannot date either. Recording the period
+        is the honest reading; inventing a date from it would not be.
+        """
+        text = (
+            "GSTIN: 29AAAPL1234C1ZV\n"
+            "FORM GST ASMT-10\n"
+            "You are requested to file your reply through the GST Common "
+            "portal within 30 days of receipt of the notice.\n"
+        )
+        fields = intake.extract_fields_local(text, gst)["fields"]
+        assert fields["reply_window_days"] == 30
+        assert "due_date" not in fields
 
     def test_amount_is_not_guessed_from_the_largest_figure(self):
         """

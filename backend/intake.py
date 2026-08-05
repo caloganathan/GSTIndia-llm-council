@@ -161,6 +161,38 @@ LABELLED_DUE_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A deadline the notice states in words, as the State letter formats do:
+# "...explain the reasons for the above discrepancy on or before 19.01.2026".
+#
+# This is not the positional guess that was removed — that took the LAST date
+# anywhere in the document and read an invoice date out of an annexure. Here
+# the date is anchored to a direction to answer, within the preceding sentence.
+# A date with no such direction beside it is still not a deadline.
+ON_OR_BEFORE_RE = re.compile(
+    r"\bon\s+or\s+before\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{4})", re.IGNORECASE
+)
+
+REPLY_DIRECTION_RE = re.compile(
+    r"\b(?:repl(?:y|ies)|response|respond|explain|explanation|objection|"
+    r"submit|furnish|show\s+cause)\b",
+    re.IGNORECASE,
+)
+
+DIRECTION_LOOKBACK = 200
+
+# Most scrutiny notices print no deadline at all. They give a period running
+# from a date the department does not know either: "within 30 days of receipt
+# of the notice". Recording that period is the honest reading — the field is
+# not missing, it is relative, and the difference matters to a reviewer
+# deciding what still has to be found before the matter can be diarised.
+# The parentheses are not decoration: departments print "within (30) days from
+# the date of receipt of this notice" at least as often as they print it plain.
+REPLY_WINDOW_RE = re.compile(
+    r"within\s+\(?\s*(\d{1,3})\s*\)?\s+days\s+(?:of|from)\s+(?:the\s+)?"
+    r"(?:date\s+of\s+)?(?:receipt|service|issue|issuance)",
+    re.IGNORECASE,
+)
+
 LABELLED_NOTICE_DATE_RE = re.compile(
     r"Reference\s*No\.?\s*[:\-]?\s*[A-Z0-9]+\s*Date\s*[:\-]?\s*"
     r"(\d{1,2}[./\-]\d{1,2}[./\-]\d{4})",
@@ -232,6 +264,50 @@ DUE_DATE_HINT_RE = re.compile(
     r"(?:on or before|within|by)\s+([^.\n]{0,60})",
     re.IGNORECASE,
 )
+
+# The taxpayer's own name, from the labelled block rather than from anywhere
+# in the document.
+#
+# THIS IS THE FIELD THE ANNEXURE STEALS. A notice carries a supplier-wise ITC
+# annexure listing dozens of counterparties, every one of them a company with
+# a statutory suffix, and a document-wide search for that suffix returns
+# whichever supplier happens to have the longest name. On a real corpus that
+# put "THE NEW INDIA ASSURANCE CO LIMITED" — row 42 of the annexure, with its
+# own GSTIN — on the letterhead of a reply filed for a packaging firm whose
+# name was printed, correctly and plainly, on page 1. Eight of thirteen
+# notices came back with the wrong entity, and none of them was flagged,
+# because a match had been found.
+#
+# The name is therefore taken from where the form states it, in this order:
+# the labelled row, then the taxpayer block, then a prefix near the taxpayer's
+# own GSTIN. The document-wide search survives only as the last resort, for
+# text that carries no GSTIN at all.
+
+# "Legal Name: Tvl. F Care Plus Llp" — the letter format states it inline.
+LABELLED_ENTITY_RE = re.compile(
+    r"(?:Legal|Trade)\s*Name\s*[:\-]\s*(?:M/s\.?|Tvl\.?|Messrs\.?)?[ \t]*"
+    r"([A-Za-z][\w&.'\-]*(?:[ \t]+[A-Za-z][\w&.'\-]*){0,7})"
+)
+
+# The portal attachment prints a taxpayer block instead: three labels and
+# three values, with the GSTIN last. Its furniture is what identifies the
+# block as the taxpayer's rather than a supplier row in an annexure.
+TAXPAYER_BLOCK_RE = re.compile(
+    r"Details\s+of\s+the\s+Tax\s?payer|Reg\s+Status|Trade\s+Name",
+    re.IGNORECASE,
+)
+
+# How far from the taxpayer's GSTIN the name is still the taxpayer's name.
+ENTITY_WINDOW = 600
+
+# Lines inside the taxpayer block that are labels, column rulers or status
+# values rather than the name.
+_NOT_A_NAME = {
+    "gstin", "gstn", "pan", "name", "trade name", "legal name", "reg status",
+    "status", "active", "inactive", "financial year", "zone", "circle",
+    "details of the tax payer", "details of the taxpayer", "office details",
+    "designation of the proper officer",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -453,27 +529,95 @@ def _collect(pattern: re.Pattern, text: str) -> List[str]:
     return ordered
 
 
+def _looks_like_a_name(line: str) -> bool:
+    """Whether a line inside the taxpayer block is the name rather than a label."""
+    cleaned = line.strip().strip(".,;")
+    if not (3 <= len(cleaned) <= 80):
+        return False
+    if ":" in cleaned or cleaned[0].isdigit():
+        return False
+    if not re.search(r"[A-Za-z]{2}", cleaned):
+        return False
+    return re.sub(r"\s+", " ", cleaned).lower() not in _NOT_A_NAME
+
+
+def _name_from_taxpayer_block(text: str, gstin: re.Match):
+    """
+    The name printed directly above the taxpayer's own GSTIN.
+
+    The block prints Trade Name, Legal Name and GSTIN as three consecutive
+    values, so the line above the GSTIN is the legal name. Two conditions keep
+    this off the supplier rows of an annexure, where a name also sits beside a
+    GSTIN: the GSTIN must stand alone on its line, which a tabulated annexure
+    row never does, and the block's own furniture must be nearby.
+    """
+    line_start = text.rfind("\n", 0, gstin.start()) + 1
+    line_end = text.find("\n", gstin.end())
+    line_end = len(text) if line_end == -1 else line_end
+    if text[line_start:line_end].strip() != gstin.group(0):
+        return None, None
+
+    around = text[max(0, gstin.start() - ENTITY_WINDOW):
+                  gstin.end() + ENTITY_WINDOW]
+    if not TAXPAYER_BLOCK_RE.search(around):
+        return None, None
+
+    offset = line_start
+    for raw in reversed(text[:line_start].splitlines()[-3:]):
+        offset -= len(raw) + 1
+        if not raw.strip():
+            continue
+        if _looks_like_a_name(raw):
+            return raw.strip().strip(".,;"), max(offset, 0)
+        break
+    return None, None
+
+
+def _best_in(matches, floor: int = 0):
+    """The longest capture in a list of matches, with its offset."""
+    candidates = [(m.group(1).strip(" .,"), m.start()) for m in matches
+                  if len(m.group(1).strip(" .,")) >= floor]
+    if not candidates:
+        return None, None
+    return max(candidates, key=lambda pair: len(pair[0]))
+
+
 def find_entity_name(text: str, with_offset: bool = False):
     """
-    The taxpayer's name.
+    The taxpayer's name, read from where the form states it.
 
-    A "Tvl."/"M/s." prefix is the strongest signal and is preferred outright.
-    Failing that, the statutory suffix is used and the longest match wins, so
-    "Acme Steel Industries Private Limited" is not truncated to "Acme Steel
-    Industries".
+    In descending order of authority: the labelled row, the taxpayer block
+    above the GSTIN, a "Tvl."/"M/s." prefix near the taxpayer's own GSTIN, and
+    a statutory suffix near it. Only when the text carries no GSTIN at all does
+    the search widen to the whole document — see LABELLED_ENTITY_RE above for
+    what a document-wide search does to a notice with a supplier annexure.
     """
-    prefixed = [(m.group(1).strip(" .,"), m.start())
-                for m in PREFIXED_ENTITY_RE.finditer(text or "")]
-    if prefixed:
-        name, at = max(prefixed, key=lambda pair: len(pair[0]))
-        return (name, at) if with_offset else name
+    text = text or ""
 
-    candidates = [(m.group(1).strip(), m.start())
-                  for m in ENTITY_RE.finditer(text or "")]
-    if not candidates:
-        return (None, None) if with_offset else None
-    name, at = max(candidates, key=lambda pair: len(pair[0]))
-    return (name, at) if with_offset else name
+    labelled = LABELLED_ENTITY_RE.search(text)
+    if labelled:
+        name = labelled.group(1).strip(" .,")
+        return (name, labelled.start(1)) if with_offset else name
+
+    gstin = GSTIN_RE.search(text)
+    if gstin:
+        name, at = _name_from_taxpayer_block(text, gstin)
+        if name:
+            return (name, at) if with_offset else name
+
+        start = max(0, gstin.start() - ENTITY_WINDOW)
+        window = text[start:gstin.end() + ENTITY_WINDOW]
+        for pattern in (PREFIXED_ENTITY_RE, ENTITY_RE):
+            name, at = _best_in(pattern.finditer(window))
+            if name:
+                return (name, at + start) if with_offset else name
+
+    for pattern in (PREFIXED_ENTITY_RE, ENTITY_RE):
+        name, at = _best_in(pattern.finditer(text))
+        if name:
+            return (name, at) if with_offset else name
+
+    return (None, None) if with_offset else None
 
 
 def find_amounts(text: str) -> List[float]:
@@ -497,6 +641,21 @@ def find_tax_period(text: str, with_offset: bool = False):
         end = end[2:]
     period = f"FY {start}-{end}"
     return (period, match.start()) if with_offset else period
+
+
+def _directed_deadline(text: str) -> Optional[re.Match]:
+    """
+    An "on or before <date>" that the notice attaches to a direction to answer.
+
+    The direction must appear in the run-up to the date, so a date standing on
+    its own — an invoice date in an annexure, a rate notification — is not
+    promoted to a deadline merely by being formatted like one.
+    """
+    for match in ON_OR_BEFORE_RE.finditer(text or ""):
+        lead = text[max(0, match.start() - DIRECTION_LOOKBACK):match.start()]
+        if REPLY_DIRECTION_RE.search(lead):
+            return match
+    return None
 
 
 def _iso_from_numeric(raw: str) -> Optional[str]:
@@ -585,6 +744,15 @@ def extract_fields_local(text: str, pack) -> Dict[str, Any]:
     if labelled_due:
         put("due_date", _iso_from_numeric(labelled_due.group(1)),
             "notice-labelled", labelled_due)
+    else:
+        directed = _directed_deadline(text)
+        if directed:
+            put("due_date", _iso_from_numeric(directed.group(1)),
+                "notice-directed", directed)
+
+    window = REPLY_WINDOW_RE.search(text)
+    if window and not fields.get("due_date"):
+        put("reply_window_days", int(window.group(1)), "notice", window)
 
     if not fields.get("notice_date"):
         dates = find_dates(text)
