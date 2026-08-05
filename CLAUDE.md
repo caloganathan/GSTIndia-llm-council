@@ -162,7 +162,7 @@ a refund on two grounds came back as one limb with both figures.
 3. Model IDs churn on OpenRouter. Startup validation reports stale IDs — check `/api/health` and the Admin > Panel configuration tab first when a tier silently fails.
 4. The sanitizer leak test is sacred. A failure there is a confidentiality breach, not a bug.
 5. **Departmental PDFs do not emit in reading order.** The first limb's table is extracted ABOVE its own bullet heading, which is why `segment()` gives the FIRST defect a `preamble` and only the first — so no later limb can be handed a figure belonging to its neighbour.
-6. **Bound the last defect.** Without `ANNEXURE_BOUNDARY_RE` the final limb absorbs every annexure in the document; a Rs. 44 interest limb once read Rs. 1.24 crore.
+6. **Bound the last defect.** Without `ANNEXURE_BOUNDARY_RE` the final limb absorbs every annexure in the document; a Rs. 44 interest limb once read Rs. 1.24 crore. **`operative_region()` must scan every candidate boundary, not just the first.** One of the patterns is the repeated `GSTIN : … Name : …` block heading an annexure — which is also the shape of the notice's OWN header, printed in the first few lines. Testing only the first match found the header at ~1%, declined to trim on the "would gut the document" guard, and returned the whole notice, so the real boundary below was never reached and the bound silently did nothing on any notice with a standard portal header. The whole path had no test; it has four now, in `TestTheAnnexureBoundary`.
 7. Extraction that cannot read a figure must report it unread. `amount_unread` surfaces in the UI as an empty field to fill. Never fill it with a zero.
 
 ### Frontend
@@ -177,6 +177,17 @@ these ship in a public repository and a golden case built from a client matter
 must never be committed. `gst-asmt10-multilimb-fy2324` mirrors the reference
 matter: eight limbs, and an e-invoicing limb that is lost on a missing IRP
 acknowledgement despite a correct legal position.
+
+**A real client matter goes in `evals/golden/private/`, which is gitignored.**
+That directory IS the boundary. The ignore rule was once `evals/golden/*.json`,
+which kept client matters out and the synthetic cases with them: a fresh clone
+got no golden set, `test_golden_set.py` skipped itself in full, and three tests
+in `test_api_practice.py` failed outright on a file that had never been
+committed — so the harness guarding every catalogue pattern ran only on the
+machine that wrote it. `TestTheGoldenSetBoundary` in `tests/test_deployment.py`
+now holds both sides: the private directory stays ignored, the synthetic set
+stays committed and stays marked `synthetic`. `evals/run.py` reads both
+directories; the free scorer reads only the committed top level.
 
 **`tests/test_golden_set.py` — free, runs on every push.** Segmentation and
 figure reading are decided in Python, so they are scored without a single model

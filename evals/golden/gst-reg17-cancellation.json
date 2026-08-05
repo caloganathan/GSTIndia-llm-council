@@ -1,0 +1,54 @@
+{
+  "id": "gst-reg17-cancellation",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. Carries no head-wise table at all. The correct extraction here is an unread amount, not a zero — this case exists to hold that line.",
+  "description": "A cancellation notice with suspension already in force and no money in issue. What matters is the seven-day window and the revocation route, not a demand.",
+  "notice_text": "FORM GST REG-17\n[See rule 22(1)]\nShow Cause Notice for cancellation of registration\n\nReference No : ZA070325882014        Date : 03/03/2025\n\nGSTIN : 07AAHCN2276J1ZF\nName : M/s. NIRMAAN INTERIORS PRIVATE LIMITED\nAddress : 214 OKHLA INDUSTRIAL ESTATE PHASE III, NEW DELHI - 110020\n\nTax Period : FY 2024-25\nSection under which notice is issued : 29\nDate by which reply has to be submitted : 10/03/2025\n\nWhereas on the basis of the record it appears that your registration\nis liable to be cancelled for the reason stated below, you are hereby\ndirected to show cause in FORM GST REG-18 within seven working days.\n\n1. Cancellation of registration proposed under Section 29(2)(c)\n\n   The returns for a continuous period of six months have not been furnished. You are called upon to show cause why the registration should not be cancelled.\n\nYou are further directed to appear before the undersigned on the date\nthat will be intimated. If no reply is furnished within the time\nallowed, the case will be decided ex parte on the basis of the record.\n\nPlease note that your registration stands suspended with effect from\nthe date of this notice.\n\nProper Officer\nName : MEENAKSHI ARORA\nDesignation : Goods and Services Tax Officer\nJurisdiction : WARD 84 , SOUTH DELHI , Delhi",
+  "intake": {
+    "client_name": "NIRMAAN INTERIORS PRIVATE LIMITED",
+    "gstin": "07AAHCN2276J1ZF",
+    "notice_type": "REG-17",
+    "state": "Delhi",
+    "tax_period": "FY 2024-25",
+    "section_invoked": "29",
+    "notice_date": "2025-03-03",
+    "due_date": "2025-03-10",
+    "issues": "1. Cancellation of registration proposed under Section 29(2)(c)",
+    "facts": "Interior contracting firm. Returns were not filed for six months following the death of the accountant and the loss of portal credentials. All returns have since been filed with late fee and the liability is fully discharged.",
+    "documents_available": "Acknowledgements of all filed returns, challans evidencing late fee and tax, affidavit explaining the default",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Cancellation of registration proposed under Section 29(2)(c)",
+        "type": "registration"
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "explain",
+    "position_keywords": [
+      "returns filed",
+      "Rule 22(4)",
+      "suspension"
+    ],
+    "issues_expected": [
+      "cancellation for non-filing"
+    ],
+    "procedural_points": [
+      "29(2)(c)",
+      "22(4)",
+      "REG-18"
+    ],
+    "must_not_say": [
+      "accept cancellation"
+    ],
+    "outcome": "Proceedings dropped in REG-20 once all returns were filed and dues paid.",
+    "notes": "Rule 22(4) requires the officer to drop the proceedings where the returns are filed and the dues paid. The correct reply annexes the acknowledgements and asks for REG-20; there is nothing to argue."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "explained"
+    }
+  ]
+}

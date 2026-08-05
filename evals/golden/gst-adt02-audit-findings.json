@@ -1,0 +1,107 @@
+{
+  "id": "gst-adt02-audit-findings",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. An audit report rather than a notice, so the set covers the objection stage as well as the demand stage.",
+  "description": "Four audit findings of different characters — an arithmetic reversal, an admitted reverse-charge liability, a Rule 37 reversal answered by payment evidence, and a classification dispute that is the only limb worth a panel.",
+  "notice_text": "FORM GST ADT-02\n[See rule 101(5)]\nAudit Report under Section 65(6)\n\nReference No : ZK320725118842        Date : 22/07/2025\n\nGSTIN : 32AABCM7734G1ZD\nName : M/s. MALABAR MARINE FOODS PRIVATE LIMITED\nAddress : WAREHOUSE 4, WILLINGDON ISLAND, KOCHI - 682003\n\nTax Period : FY 2021-22\nSection under which notice is issued : 65\nDate by which reply has to be submitted : 21/08/2025\n\nThe audit of the records for the period stated above has been\ncompleted. The findings, the reasons for them and the amounts\nquantified are set out below. You are directed to file your\nobjections, failing which proceedings may be initiated under Section\n73 or Section 74 of the Act.\n\n1. Common credit not reversed under Rule 42 on exempt turnover\n\n   Common inputs and input services have been used for both taxable and exempt supplies, and the proportionate reversal required has not been carried out for the period under audit.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Amount quantified                      62,400.00     62,400.00          0.00          0.00      124,800.00\n\n2. Reverse charge liability not discharged on notified services\n\n   Legal services and goods transport agency services received during the period attract tax under reverse charge, and the liability has not been discharged in cash.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Amount quantified                      18,900.00     18,900.00          0.00          0.00       37,800.00\n\n3. Reversal required under Rule 37 for non-payment within 180 days\n\n   Credit has been availed on invoices where the consideration was not paid to the supplier within one hundred and eighty days of the date of invoice.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Amount quantified                      24,150.00     24,150.00          0.00          0.00       48,300.00\n\n4. Classification of goods adopted at an incorrect rate of tax\n\n   Goods cleared under one heading are, on examination of the product literature, classifiable under another heading attracting a higher rate of tax.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Amount quantified                      55,325.00     55,325.00          0.00          0.00      110,650.00\n\nFor the above discrepancies, kindly substantiate your position with\nsupporting records within the time allowed.\n\nSummary of tax and other dues proposed\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Total quantified                      160,775.00    160,775.00          0.00          0.00      321,550.00\n\nProper Officer\nName : T G NAIR\nDesignation : Deputy Commissioner (Audit)\nJurisdiction : AUDIT CIRCLE II , ERNAKULAM , Kerala",
+  "intake": {
+    "client_name": "MALABAR MARINE FOODS PRIVATE LIMITED",
+    "gstin": "32AABCM7734G1ZD",
+    "notice_type": "ADT-02",
+    "state": "Kerala",
+    "tax_period": "FY 2021-22",
+    "section_invoked": "65",
+    "amount_disputed": 321550,
+    "notice_date": "2025-07-22",
+    "due_date": "2025-08-21",
+    "issues": "1. Common credit not reversed under Rule 42 on exempt turnover\n2. Reverse charge liability not discharged on notified services\n3. Reversal required under Rule 37 for non-payment within 180 days\n4. Classification of goods adopted at an incorrect rate of tax",
+    "facts": "Seafood processor and exporter. Exempt turnover is raw material sold locally; the Rule 42 working was done annually rather than monthly. Reverse charge on legal and transport services is admitted and has been paid. Most Rule 37 invoices were in fact paid within the period but the payment evidence is scattered across three bank accounts. The classification finding turns on whether the product is processed or merely chilled.",
+    "documents_available": "Annual Rule 42 working, exempt turnover ledger, DRC-03 for reverse charge, supplier ledgers, product literature and process flow",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Common credit not reversed under Rule 42 on exempt turnover",
+        "type": "itc_common_credit",
+        "amount_by_head": {
+          "sgst": 62400.0,
+          "cgst": 62400.0
+        }
+      },
+      {
+        "index": 2,
+        "heading": "Reverse charge liability not discharged on notified services",
+        "type": "rcm",
+        "amount_by_head": {
+          "sgst": 18900.0,
+          "cgst": 18900.0
+        }
+      },
+      {
+        "index": 3,
+        "heading": "Reversal required under Rule 37 for non-payment within 180 days",
+        "type": "itc_180_days",
+        "amount_by_head": {
+          "sgst": 24150.0,
+          "cgst": 24150.0
+        }
+      },
+      {
+        "index": 4,
+        "heading": "Classification of goods adopted at an incorrect rate of tax",
+        "type": "classification",
+        "amount_by_head": {
+          "sgst": 55325.0,
+          "cgst": 55325.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "mixed",
+    "position_keywords": [
+      "Rule 42",
+      "Rule 37",
+      "classification",
+      "Section 65"
+    ],
+    "issues_expected": [
+      "common credit",
+      "reverse charge",
+      "180 days",
+      "classification"
+    ],
+    "procedural_points": [
+      "65(6)",
+      "73"
+    ],
+    "must_not_say": [
+      "all findings are accepted"
+    ],
+    "outcome": "Findings 2 and 3 dropped on evidence. Finding 1 re-worked monthly and reduced. Finding 4 proceeded to a show cause notice.",
+    "notes": "Only the classification finding needs counsel. Convening a panel on the other three produces prose where a working was wanted."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "partial"
+    },
+    {
+      "index": 2,
+      "posture": "agreed_paid"
+    },
+    {
+      "index": 3,
+      "posture": "explained",
+      "required_evidence_that_was_missing": [
+        "Bank statements across all three accounts evidencing payment to each supplier within one hundred and eighty days of the invoice date"
+      ]
+    },
+    {
+      "index": 4,
+      "posture": "contested",
+      "required_evidence_that_was_missing": [
+        "Product literature and the process flow chart establishing the degree of processing the goods undergo"
+      ]
+    }
+  ]
+}

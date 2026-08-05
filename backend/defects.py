@@ -307,8 +307,11 @@ def validate(defect: Dict[str, Any]) -> List[str]:
         )
 
     if posture in (AGREED_PAID, PAID_UNDER_PROTEST):
-        payment = defect.get("payment") or {}
-        if not payment.get("reference"):
+        payment = defect.get("payment")
+        # A payment the panel wrote as prose rather than as an object carries
+        # no reference this can read, so it is treated as absent — which is
+        # what it is, for the purpose of closing the limb.
+        if not isinstance(payment, dict) or not payment.get("reference"):
             problems.append(
                 f"{heading}: {POSTURE_LABEL[posture].lower()} but no DRC-03 "
                 "reference is recorded. The officer closes a conceded limb on "
@@ -591,11 +594,26 @@ def operative_region(text: str) -> str:
     to the last defect. Without it the final limb absorbs every annexure in the
     document and its figures come out orders of magnitude wrong.
 
-    Trimming on the weaker boundaries is refused if it would remove most of the
+    Two independent failures produced that outcome, and both are guarded here.
+
+    EVERY candidate annexure boundary is considered, not just the first. One of
+    the boundary patterns is the repeated `GSTIN : ... Name : ...` block that
+    heads an annexure — and that is also the shape of the notice's OWN header,
+    which the portal prints in the first few lines. Testing only the first
+    match therefore found the header at around 1% of the document, declined to
+    trim on the "would gut it" guard, and returned the whole notice: the real
+    boundary further down was never reached. That is the failure that once read
+    a Rs. 44 interest limb as Rs. 1.24 crore, and it was live for any notice
+    carrying a standard portal header.
+
+    Trimming on those boundaries is refused where it would remove most of the
     document — a short notice whose boundary phrase appears early would
     otherwise be gutted. The demand summary carries no such condition, for the
-    reason given against SUMMARY_BOUNDARY_RE, and where both are present the
-    earlier one wins.
+    reason given against SUMMARY_BOUNDARY_RE.
+
+    Where both kinds of boundary are present the earlier one wins: whatever
+    ends the operative part ends it, and the summary is not less of a boundary
+    for having an annexure behind it.
     """
     text = text or ""
     cuts = []
@@ -604,9 +622,10 @@ def operative_region(text: str) -> str:
     if summary and summary.start() >= MIN_OPERATIVE_CHARS:
         cuts.append(summary.start())
 
-    annexure = ANNEXURE_BOUNDARY_RE.search(text)
-    if annexure and annexure.start() >= len(text) * 0.3:
-        cuts.append(annexure.start())
+    for match in ANNEXURE_BOUNDARY_RE.finditer(text):
+        if match.start() >= len(text) * 0.3:
+            cuts.append(match.start())
+            break
 
     return text[:min(cuts)] if cuts else text
 

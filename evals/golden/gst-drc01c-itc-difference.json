@@ -1,0 +1,61 @@
+{
+  "id": "gst-drc01c-itc-difference",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. A single-limb intimation, included so the set does not test only multi-limb segmentation.",
+  "description": "A Rule 88D intimation on a single ITC difference, with a seven-day clock. Almost entirely timing credit, but the reply is worthless without the month-by-month working.",
+  "notice_text": "FORM GST DRC-01C\n[See rule 88D]\nIntimation of difference in input tax credit available in the\nauto-generated statement and that availed in the return\n\nReference No : ZD240325661002        Date : 14/03/2025\n\nGSTIN : 24AAFCP3391N1ZB\nName : M/s. PRAGATI POLYFABS PRIVATE LIMITED\nAddress : PLOT 415, GIDC ESTATE VATVA, AHMEDABAD - 382445\n\nTax Period : FY 2024-25\nSection under which notice is issued : 61\nDate by which reply has to be submitted : 21/03/2025\n\nThe following difference has been observed for the tax period stated\nabove. You are advised to either pay the differential with interest\nthrough FORM GST DRC-03 or furnish an explanation in Part B of this\nintimation within seven days.\n\n1. Difference in input tax credit between GSTR-2B and GSTR-3B\n\n   The input tax credit availed in the summary return exceeds the credit available in the auto-generated statement by more than the prescribed limit. You are required to explain the difference or pay the amount with interest.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                             58,900.00     58,900.00          0.00          0.00      117,800.00\n\nFailure to do either will render the amount liable to be demanded\nunder Section 73 or Section 74, and may restrict the filing of the\nstatement of outward supplies for the succeeding period.\n\nProper Officer\nName : H B PATEL\nDesignation : State Tax Officer\nJurisdiction : GHATAK 12 VATVA , AHMEDABAD , Gujarat",
+  "intake": {
+    "client_name": "PRAGATI POLYFABS PRIVATE LIMITED",
+    "gstin": "24AAFCP3391N1ZB",
+    "notice_type": "DRC-01C",
+    "state": "Gujarat",
+    "tax_period": "FY 2024-25",
+    "section_invoked": "61",
+    "amount_disputed": 117800,
+    "notice_date": "2025-03-14",
+    "due_date": "2025-03-21",
+    "issues": "1. Difference in input tax credit between GSTR-2B and GSTR-3B",
+    "facts": "Woven sacks manufacturer. The difference is credit taken on receipt of goods where the supplier reported the invoice in the following month; it reverses in the very next period. A small residue relates to one supplier's amendment.",
+    "documents_available": "Month-by-month 2B versus 3B working showing the reversal in the succeeding period, purchase register, supplier amendment extract",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Difference in input tax credit between GSTR-2B and GSTR-3B",
+        "type": "itc_excess_2b",
+        "amount_by_head": {
+          "cgst": 58900.0,
+          "sgst": 58900.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "explain",
+    "position_keywords": [
+      "timing",
+      "Rule 88D",
+      "succeeding period"
+    ],
+    "issues_expected": [
+      "ITC difference"
+    ],
+    "procedural_points": [
+      "88D",
+      "seven days"
+    ],
+    "must_not_say": [
+      "pay the entire difference"
+    ],
+    "outcome": "Explanation accepted in Part B. No demand followed.",
+    "notes": "The seven-day clock is the practical risk here, not the merits. A reply that misses it converts an explainable timing difference into a Section 73 demand."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "explained",
+      "required_evidence_that_was_missing": [
+        "Month-by-month working showing the credit reversing in the succeeding tax period"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "id": "gst-drc01-s73-itc-mismatch",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. The three-limb shape of an ordinary FY 2020-21 scrutiny-cycle demand.",
+  "description": "A Section 73 demand on ITC: an arithmetic 2B difference, a supplier default limb that turns on law, and consequential interest. The supplier-default limb is defensible but needs proof of payment that the file does not yet contain.",
+  "notice_text": "FORM GST DRC-01\n[See rule 142(1)(a)]\nSummary of Show Cause Notice\n\nReference No : ZD290525004411        Date : 12/05/2025\n\nGSTIN : 29AAECS7621M1ZQ\nName : M/s. SHREYAS POLYMERS PRIVATE LIMITED\nAddress : PLOT 22, PEENYA INDUSTRIAL AREA PHASE II, BENGALURU - 560058\n\nTax Period : FY 2020-21\nSection under which notice is issued : 73\nDate by which reply has to be submitted : 11/06/2025\n\nWhereas it appears that tax has not been paid or input tax credit has\nbeen wrongly availed for the period stated above, for reasons other than\nfraud or any wilful misstatement, you are hereby called upon to show\ncause why the amounts set out below should not be demanded and\nrecovered under Section 73 of the Act.\n\nSummary of tax and other dues proposed\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Total demand                          146,025.00    146,025.00          0.00          0.00      292,050.00\n\n1. Excess input tax credit availed with reference to GSTR-2B\n\n   The credit availed in the summary returns for the period exceeds the credit reflected in the auto-generated statement. The excess is proposed to be recovered under Section 73 together with interest.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                             96,400.00     96,400.00          0.00          0.00      192,800.00\n\n2. Input tax credit denied where the supplier has not filed returns\n\n   Three suppliers whose invoices are reflected in your purchase register have not discharged the tax collected. The condition in Section 16(2)(c) is therefore said to be unsatisfied.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                             41,250.00     41,250.00          0.00          0.00       82,500.00\n\n3. Interest on belated payment of tax under Section 50(1)\n\n   Interest is proposed on the tax found short paid, computed from the due date of the return to the date of this notice.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                              8,375.00      8,375.00          0.00          0.00       16,750.00\n\nYou are directed to furnish a reply on or before the date stated above.\nIf you wish to be heard in person, indicate so in your reply.\n\nProper Officer\nName : K RAMAPRASAD\nDesignation : Assistant Commissioner of Commercial Taxes\nJurisdiction : LGSTO 065 , BENGALURU , Karnataka",
+  "intake": {
+    "client_name": "SHREYAS POLYMERS PRIVATE LIMITED",
+    "gstin": "29AAECS7621M1ZQ",
+    "notice_type": "DRC-01",
+    "state": "Karnataka",
+    "tax_period": "FY 2020-21",
+    "section_invoked": "73",
+    "amount_disputed": 292050,
+    "notice_date": "2025-05-12",
+    "due_date": "2025-06-11",
+    "issues": "1. Excess input tax credit availed with reference to GSTR-2B\n2. Input tax credit denied where the supplier has not filed returns\n3. Interest on belated payment of tax under Section 50(1)",
+    "facts": "Injection moulding unit. The 2B difference is almost entirely timing — credit taken in the month of receipt where the supplier reported in the following month. Of the three defaulting suppliers, two have since filed; the third has not been traced. All invoices are on record and every payment went through banking channels.",
+    "documents_available": "Supplier-wise 2A/2B versus 3B reconciliation, purchase register, tax invoices, bank statements evidencing payment to suppliers",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Excess input tax credit availed with reference to GSTR-2B",
+        "type": "itc_excess_2b",
+        "amount_by_head": {
+          "cgst": 96400.0,
+          "sgst": 96400.0
+        }
+      },
+      {
+        "index": 2,
+        "heading": "Input tax credit denied where the supplier has not filed returns",
+        "type": "itc_supplier_default",
+        "amount_by_head": {
+          "cgst": 41250.0,
+          "sgst": 41250.0
+        }
+      },
+      {
+        "index": 3,
+        "heading": "Interest on belated payment of tax under Section 50(1)",
+        "type": "interest_delayed_payment",
+        "amount_by_head": {
+          "cgst": 8375.0,
+          "sgst": 8375.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "contest",
+    "position_keywords": [
+      "timing",
+      "16(2)(c)",
+      "Section 73"
+    ],
+    "issues_expected": [
+      "excess ITC",
+      "supplier default",
+      "interest"
+    ],
+    "procedural_points": [
+      "73",
+      "16(2)(c)"
+    ],
+    "must_not_say": [
+      "concede the entire demand"
+    ],
+    "outcome": "Limbs 1 and 3 dropped on reconciliation. Limb 2 confirmed only for the untraced supplier.",
+    "notes": "Section 16(2)(c) recovery from a bona fide recipient is the contested question. The panel must still call for proof of payment supplier by supplier — the argument does not survive without it."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "explained"
+    },
+    {
+      "index": 2,
+      "posture": "contested",
+      "required_evidence_that_was_missing": [
+        "Bank statements and payment advices evidencing payment of invoice value plus tax to each defaulting supplier",
+        "Supplier ledger confirmations for the three suppliers named in the annexure"
+      ]
+    },
+    {
+      "index": 3,
+      "posture": "partial"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "id": "gst-mov07-eway-bill",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. The set's concession case. A golden set of winnable matters trains the panel in the wrong direction, and conceding is a positive recommendation in this product.",
+  "description": "An interception with no e-way bill at all and no expiry or clerical argument available. Detention costs run daily, so the correct advice is to pay under Section 129(1)(a) and secure release.",
+  "notice_text": "FORM GST MOV-07\n[See rule 138]\nNotice under Section 129(3) of the Act\n\nReference No : ZU090125336708        Date : 09/01/2025\n\nGSTIN : 09AAGCB8814P1ZR\nName : M/s. BHARAT AGRO IMPLEMENTS PRIVATE LIMITED\nAddress : C 18 UPSIDC INDUSTRIAL AREA, KANPUR - 208022\n\nTax Period : FY 2024-25\nSection under which notice is issued : 129\nDate by which reply has to be submitted : 16/01/2025\n\nThe goods and the conveyance described in the order of detention have\nbeen detained for the reason set out below. You are hereby called upon\nto show cause why the tax and penalty proposed should not be payable.\n\n1. E-way bill not tendered for the consignment intercepted in movement\n\n   The vehicle was intercepted and the person in charge did not tender an e-way bill for the goods in movement. Tax and penalty are proposed under Section 129(1)(a) of the Act.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Tax and penalty payable                27,000.00     27,000.00          0.00          0.00       54,000.00\n\nThe goods and conveyance shall be released on payment of the amount\nproposed, or on furnishing security equivalent to that amount.\n\nProper Officer\nName : R K TIWARI\nDesignation : Assistant Commissioner, Mobile Squad\nJurisdiction : MOBILE SQUAD UNIT 2 , KANPUR , Uttar Pradesh",
+  "intake": {
+    "client_name": "BHARAT AGRO IMPLEMENTS PRIVATE LIMITED",
+    "gstin": "09AAGCB8814P1ZR",
+    "notice_type": "MOV-07",
+    "state": "Uttar Pradesh",
+    "tax_period": "FY 2024-25",
+    "section_invoked": "129",
+    "amount_disputed": 54000,
+    "notice_date": "2025-01-09",
+    "due_date": "2025-01-16",
+    "issues": "1. E-way bill not tendered for the consignment intercepted in movement",
+    "facts": "Consignment of agricultural implements moved without any e-way bill being generated. The despatch clerk did not generate one and none was generated later. The invoice was genuine and the goods were accounted for, but there is no document to tender and no expiry or typographical argument available. The vehicle is detained and demurrage is running.",
+    "documents_available": "Tax invoice, delivery challan, transporter's consignment note, stock records",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "E-way bill not tendered for the consignment intercepted in movement",
+        "type": "eway_bill",
+        "amount_by_head": {
+          "cgst": 27000.0,
+          "sgst": 27000.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "concede",
+    "position_keywords": [
+      "Section 129(1)(a)",
+      "release",
+      "MOV-09"
+    ],
+    "issues_expected": [
+      "e-way bill contravention"
+    ],
+    "procedural_points": [
+      "129(1)(a)",
+      "129(3)"
+    ],
+    "must_not_say": [
+      "the contravention is merely technical"
+    ],
+    "outcome": "Paid under Section 129(1)(a). Goods and conveyance released; no appeal filed.",
+    "notes": "There is no e-way bill and no argument that it was generated. Running a contest here costs more in detention than the penalty. A panel that manufactures a technical-breach argument on these facts has failed this matter, not won it."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "agreed_paid"
+    }
+  ]
+}
