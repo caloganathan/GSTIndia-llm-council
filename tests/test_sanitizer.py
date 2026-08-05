@@ -115,6 +115,64 @@ class TestSanitizeMatter:
         assert clean["amount_disputed"] == 4_500_000
 
 
+class TestDefectScrub:
+    """
+    The defects carry the notice's own prose — headings, contentions, the raw
+    extract — and every one of those strings is rendered into the counsel
+    prompts. A scrub that covers the intake form and not the defect list is a
+    scrub that misses the place identifiers actually live: the department
+    writes the GSTIN and the trade name straight into its headings.
+    """
+
+    MATTER = {
+        "client_name": "Acme Industries Private Limited",
+        "gstin": "29AAAPL1234C1ZV",
+        "issues": "As per the notice.",
+        "defects": [{
+            "index": 1,
+            "type": "itc_excess_2b",
+            "heading": "Excess ITC availed by Acme Industries Private Limited "
+                       "(GSTIN 29AAAPL1234C1ZV)",
+            "department_contention": "Tvl. Acme Industries Private Limited, "
+                                     "holding GSTIN 29AAAPL1234C1ZV, has "
+                                     "availed credit in excess of GSTR-2B.",
+            "notice_extract": "GSTIN : 29AAAPL1234C1ZV Name : Acme Industries "
+                              "Private Limited. Defect No. 1 ...",
+            "amount_by_head": {"cgst": 50000, "sgst": 50000},
+            "posture": "undecided",
+        }],
+    }
+
+    def test_no_identifier_survives_in_any_defect_field(self):
+        clean, _ = sanitizer.sanitize_matter(self.MATTER)
+        outgoing = " ".join(
+            str(v) for d in clean["defects"] for v in d.values()
+        )
+        for secret in ("Acme", "AAAPL1234C", "29AAAPL1234C1ZV"):
+            assert secret not in outgoing, f"LEAKED via defects: {secret}"
+        assert sanitizer.audit_leaks(
+            outgoing, client_name=self.MATTER["client_name"]) == {}
+
+    def test_defect_scrub_is_restorable(self):
+        clean, replacements = sanitizer.sanitize_matter(self.MATTER)
+        restored = sanitizer.restore_structure(clean["defects"], replacements)
+        assert "29AAAPL1234C1ZV" in restored[0]["heading"]
+        assert "Acme Industries Private Limited" in restored[0]["heading"]
+
+    def test_original_matter_is_not_mutated(self):
+        """The partner-facing record keeps the real text; only the copy that
+        travels is scrubbed."""
+        sanitizer.sanitize_matter(self.MATTER)
+        assert "29AAAPL1234C1ZV" in self.MATTER["defects"][0]["heading"]
+
+    def test_structured_defect_fields_are_preserved(self):
+        clean, _ = sanitizer.sanitize_matter(self.MATTER)
+        defect = clean["defects"][0]
+        assert defect["index"] == 1
+        assert defect["type"] == "itc_excess_2b"
+        assert defect["amount_by_head"] == {"cgst": 50000, "sgst": 50000}
+
+
 class TestRestore:
     def test_round_trip_restores_identifiers(self):
         matter = {"client_name": "Acme Ltd", "facts": "Acme Ltd has PAN AAAPL1234C."}
@@ -146,3 +204,17 @@ class TestAuditLeaks:
 
     def test_clean_text_reports_nothing(self):
         assert sanitizer.audit_leaks("the Taxpayer disputes the ITC reversal") == {}
+
+    def test_flags_a_surviving_client_name(self):
+        """The trade name is the identifier most likely to survive in prose,
+        and the regex table cannot know it. The audit must."""
+        leaks = sanitizer.audit_leaks(
+            "Acme Industries filed its returns in time.",
+            client_name="Acme Industries",
+        )
+        assert "CLIENT_NAME" in leaks
+
+    def test_client_name_check_is_case_insensitive(self):
+        leaks = sanitizer.audit_leaks(
+            "ACME INDUSTRIES filed late.", client_name="Acme Industries")
+        assert "CLIENT_NAME" in leaks

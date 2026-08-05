@@ -55,7 +55,14 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from . import config, defects
-from .verification import ACTIONABLE, NOT_FOUND, SUPERSEDED, UNVERIFIED, VERIFIED
+from .verification import (
+    ACTIONABLE,
+    NOT_FOUND,
+    SUPERSEDED,
+    UNVERIFIED,
+    VERIFIED,
+    extract_citations,
+)
 
 BLACK = RGBColor(0x00, 0x00, 0x00)
 GREY = RGBColor(0x40, 0x40, 0x40)
@@ -331,6 +338,64 @@ def _reply_form(intake: Dict[str, Any], pack_types: Dict[str, Any]) -> str:
     return (notice.reply_form if notice else None) or "the appropriate reply form"
 
 
+def _prose_citation_gaps(
+    determination: Dict[str, Any],
+    defect_list: List[Dict[str, Any]],
+    verified: Dict[str, Dict[str, Any]],
+    pack,
+) -> List[Dict[str, str]]:
+    """
+    Citations sitting INSIDE the filed prose that are not filable.
+
+    The structured lists are gated by withholding: an authority that failed
+    verification simply does not print. A citation the chairman wrote into a
+    submission paragraph cannot be withheld without rewriting the paragraph,
+    so it is surfaced instead — as a blocker in the file note and as a stamp
+    on the filing document — until a reviewer confirms it or strikes it.
+
+    Same failure direction as `_is_filable`: a citation nobody checked is a
+    gap, so a run where verification never happened stamps rather than files.
+    """
+    texts: List[Tuple[str, str]] = []
+    for defect in defect_list:
+        label = (f"defect {defect.get('index')} "
+                 f"({defect.get('heading') or 'unheaded'})")
+        for field in ("submission", "facts", "our_position"):
+            if defect.get(field):
+                texts.append((label, str(defect[field])))
+    if determination.get("preliminary_submissions"):
+        texts.append(("the preliminary submissions",
+                      str(determination["preliminary_submissions"])))
+
+    gaps: List[Dict[str, str]] = []
+    seen = set()
+    for label, text in texts:
+        for citation in extract_citations(text, pack):
+            if _is_filable(citation, verified):
+                continue
+            key = re.sub(r"\s+", " ", citation).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            record = verified.get(citation.strip().lower()) or {}
+            status = STATUS_LABEL.get(record.get("status"),
+                                      "not covered by verification")
+            gaps.append({
+                "citation": citation,
+                "message": (
+                    f"The filed text for {label} cites \"{citation}\" "
+                    f"({status}). It sits inside a filed paragraph and cannot "
+                    "be withheld automatically — confirm it against the "
+                    "reported text or strike it from the prose before filing."
+                ),
+            })
+    return gaps
+
+
+PROSE_GAP_STAMP = ("NOT FOR FILING — UNVERIFIED AUTHORITY CITED IN THE TEXT "
+                   "— SEE THE FILE NOTE")
+
+
 # ---------------------------------------------------------------------------
 # 1. The filing document
 # ---------------------------------------------------------------------------
@@ -354,6 +419,13 @@ def build_filing_reply(matter: Dict[str, Any]) -> bytes:
     _margins(doc)
 
     watermark = metadata.get("watermark")
+    # A citation inside the filed prose that did not verify cannot be
+    # withheld the way a table entry is. Blocking the export entirely only
+    # pushes the text out through the clipboard, so the document exports —
+    # stamped on every page so it cannot be mistaken for filable.
+    if _prose_citation_gaps(determination, defect_list, verified, pack):
+        watermark = (f"{watermark} — {PROSE_GAP_STAMP}" if watermark
+                     else PROSE_GAP_STAMP)
     if watermark:
         _page_header(doc, watermark)
 
@@ -568,9 +640,14 @@ def _defect_section(doc: Document, defect: Dict[str, Any],
         _para(doc, "Factual position", bold=True, size=Pt(10))
         _numbered_body(doc, defect["facts"])
 
+    # Gated exactly as the authorities table below is: the chairman is invited
+    # to put circulars, notifications and case law in this field, and an entry
+    # that did not come back VERIFIED belongs in the file note, not here. If
+    # verification never ran, nothing is filable — the correct direction.
     framework = [
         entry for entry in (defect.get("legal_framework") or [])
         if isinstance(entry, dict) and entry.get("provision")
+        and _is_filable(entry.get("provision", ""), verified)
     ]
     if framework:
         _para(doc, "Legal framework", bold=True, size=Pt(10))
@@ -749,7 +826,10 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
     and every evidence gap belongs — stated bluntly, because the only reader is
     a professional deciding whether to sign.
     """
+    from .domains import get_pack
     intake, determination, verification, metadata, defect_list = _unpack(matter)
+    pack = get_pack(matter.get("domain", "gst"))
+    verified = _verified_index(verification)
 
     doc = Document()
     _configure_styles(doc)
@@ -790,7 +870,15 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
     _para(doc, config.EXPORT_REVIEW_NOTE, italic=True, size=Pt(9))
 
     # ---- 1. Blockers ------------------------------------------------------
-    blockers = determination.get("filing_blockers") or []
+    blockers = list(determination.get("filing_blockers") or [])
+    # Recomputed here as well as at panel time, so a stored matter that
+    # predates the panel-side check still surfaces a prose citation that was
+    # never verified. Gaps already recorded by the panel (matched on the
+    # citation text) are not listed twice.
+    recorded = "\n".join(str(b) for b in blockers)
+    for gap in _prose_citation_gaps(determination, defect_list, verified, pack):
+        if gap["citation"] not in recorded:
+            blockers.append(gap["message"])
     _heading(doc, "1.  Before this reply can be filed", 1)
     if blockers:
         _para(doc, f"{len(blockers)} matter(s) must be resolved before filing.",

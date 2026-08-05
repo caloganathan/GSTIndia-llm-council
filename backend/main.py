@@ -563,6 +563,26 @@ async def run_panel_endpoint(
     intake = request.intake or {}
     storage.create_matter(matter_id, intake, request.domain, request.tier, user)
 
+    # The stored matter is redacted per-reader on GET; the live stream must be
+    # redacted the same way, or a staff user who RUNS the matter reads the
+    # privileged deliberation in the network tab that the matter page would
+    # have hidden. The full record is persisted regardless — redaction is per
+    # viewer, never per matter.
+    can_see_deliberation = users.can(user, "view_deliberation")
+
+    def _redact_event(event):
+        if can_see_deliberation:
+            return event
+        if event.get("type") in ("stage1_complete", "stage2_complete"):
+            return {**event, "data": [], "_redacted": True}
+        if event.get("type") == "summary":
+            data = dict(event.get("data") or {})
+            data["analyses"] = []
+            data["cross_exams"] = []
+            data["_redacted"] = True
+            return {**event, "data": data}
+        return event
+
     async def event_generator():
         try:
             yield f"data: {json.dumps({'type': 'matter_created', 'matter_id': matter_id})}\n\n"
@@ -576,7 +596,7 @@ async def run_panel_endpoint(
             ):
                 if event["type"] == "summary":
                     final = event
-                yield f"data: {json.dumps(event)}\n\n"
+                yield f"data: {json.dumps(_redact_event(event))}\n\n"
 
             if final is not None:
                 storage.complete_matter(

@@ -49,6 +49,18 @@ IDENTIFIER_RULES = [
 SCRUBBED_FIELDS = ("issues", "facts", "documents_available")
 DROPPED_FIELDS = ("client_name", "gstin", "client_ref")
 
+# Defect fields that carry the notice's own prose. The department writes the
+# GSTIN, the trade name and supplier names straight into its headings and
+# contentions, and every one of these strings is rendered into the counsel
+# prompts — so on the anonymising tier they are scrubbed exactly as the
+# matter-level free text is. This list was added after a review found the
+# scrub covered the intake form but not the notice extract riding on each
+# limb, which is where the identifiers actually live.
+DEFECT_SCRUBBED_FIELDS = (
+    "heading", "department_contention", "notice_extract", "preamble",
+    "fallback_text",
+)
+
 
 def _bucket_amount(value: float) -> str:
     """Replace an exact figure with an order-of-magnitude band."""
@@ -131,6 +143,23 @@ def sanitize_matter(
         if clean.get(field):
             clean[field] = scrub_text(clean[field], replacements, client_name)
 
+    # The defects carry the notice's own words limb by limb. Copy before
+    # scrubbing — the caller's matter must keep its original text so the
+    # partner-facing record is never the anonymised one.
+    if clean.get("defects"):
+        scrubbed_defects = []
+        for defect in clean["defects"]:
+            if not isinstance(defect, dict):
+                scrubbed_defects.append(defect)
+                continue
+            defect = dict(defect)
+            for field in DEFECT_SCRUBBED_FIELDS:
+                if defect.get(field):
+                    defect[field] = scrub_text(defect[field], replacements,
+                                               client_name)
+            scrubbed_defects.append(defect)
+        clean["defects"] = scrubbed_defects
+
     if bucket_amounts and clean.get("amount_disputed") not in (None, ""):
         replacements["[AMOUNT]"] = str(clean["amount_disputed"])
         clean["amount_disputed"] = _bucket_amount(clean["amount_disputed"])
@@ -162,16 +191,26 @@ def restore_structure(payload: Any, replacements: Dict[str, str]) -> Any:
     return payload
 
 
-def audit_leaks(text: str) -> Dict[str, list]:
+def audit_leaks(text: str, client_name: Optional[str] = None) -> Dict[str, list]:
     """
     Detect identifiers surviving in text that is about to leave the machine.
 
     Used as a belt-and-braces assertion before any free-tier call, and as the
     basis of the test that must never be allowed to fail.
+
+    `client_name` extends the audit beyond statutory identifiers: the trade
+    name is the identifier most likely to survive in prose, and an audit that
+    only knows the regex table passes a matter whose client is named in every
+    paragraph.
     """
     found: Dict[str, list] = {}
     for label, pattern in IDENTIFIER_RULES:
         matches = pattern.findall(text or "")
         if matches:
             found[label] = matches
+    if client_name and len(client_name.strip()) >= 3:
+        name_pattern = re.compile(re.escape(client_name.strip()), re.IGNORECASE)
+        matches = name_pattern.findall(text or "")
+        if matches:
+            found["CLIENT_NAME"] = matches
     return found
