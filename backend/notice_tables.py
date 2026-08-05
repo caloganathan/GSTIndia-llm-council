@@ -317,13 +317,36 @@ def each_head_penalty(text: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def _is_in_the_head_columns(text: str, match: re.Match) -> bool:
+    """
+    Whether an equal pair sits in the rightmost columns of its own line.
+
+    The head columns come last in these tables, so anything printed after a
+    pair on the same line means the pair was a leading column instead. It is
+    the leading columns that produce false pairs, because a row's serial number
+    and its count are small integers that are equal as often as not:
+
+        S.No | No of GSTR-1 filed belatedly | SGST late fee | CGST late fee
+        1 1 25 25
+
+    Here "1 1" is the first equal pair on the line and reported a late fee of
+    Rs. 2 for one of Rs. 50. Trailing zeros are allowed after the pair, because
+    a head that carries nothing is printed rather than omitted.
+    """
+    line_end = text.find("\n", match.end())
+    line_end = len(text) if line_end == -1 else line_end
+    return all(not _to_float(number.group(1))
+               for number in NUMBER_RE.finditer(text[match.end():line_end]))
+
+
 def paired_head_row(text: str, head_order: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
     """
     A CGST/SGST pair printed without a total, as late-fee rows are.
 
     Every match is examined rather than only the first: departmental tables are
     full of "0 0" runs, and stopping at the first pair found reports nothing on
-    a table that does carry a real figure further down.
+    a table that does carry a real figure further down. A pair that is not in
+    the head columns is skipped for the same reason — see above.
     """
     order = head_order or detect_head_order(text)
     intra = [h for h in order if h in ("sgst", "cgst")]
@@ -332,7 +355,7 @@ def paired_head_row(text: str, head_order: Optional[List[str]] = None) -> Option
 
     for match in PAIRED_HEADS_RE.finditer(text or ""):
         value = _to_float(match.group(1))
-        if not value:
+        if not value or not _is_in_the_head_columns(text, match):
             continue
         return {
             "label": _label_before(text, match.start()),

@@ -394,3 +394,30 @@ class TestRoundingSlackIsNotAProportionOfNothing:
     def test_paisa_drift_on_a_real_row_still_passes(self):
         rows = notice_tables.find_head_rows("237303 237303 0 0 474605")
         assert rows and rows[0]["total"] == 474605
+
+
+class TestAPairedRowIsReadFromTheHeadColumns:
+    """
+    A row's serial number and its count are small integers, and they are equal
+    as often as not. Taking the first equal pair on the line therefore read the
+    leading columns of a late-fee table and reported Rs. 2 for Rs. 50.
+    """
+
+    def test_the_leading_columns_are_not_the_head_columns(self):
+        row = notice_tables.paired_head_row(
+            "S.No No of GSTR-1 filed belatedly SGST late fee CGST late fee\n"
+            "1 1 25 25\n"
+        )
+        assert row["total"] == 50
+
+    def test_a_head_that_carries_nothing_does_not_disqualify_the_pair(self):
+        row = notice_tables.paired_head_row("1 1 25 25 0 0\n")
+        assert row["total"] == 50
+
+    def test_an_unambiguous_row_is_unaffected(self):
+        assert notice_tables.paired_head_row("1 4 175 175\n")["total"] == 350
+
+    def test_a_labelled_row_is_unaffected(self):
+        row = notice_tables.paired_head_row(
+            "1 Actual late fee to be paid 100 100\n")
+        assert row["total"] == 200
