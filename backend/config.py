@@ -187,6 +187,20 @@ TIERS = {
 
 DEFAULT_TIER = os.getenv("DEFAULT_PANEL_TIER", "pro")
 
+# The generic multi-model council — the upstream project this one grew out of.
+#
+# It is kept, and it still works, but it is not part of the compliance product
+# and no client engagement uses it. Left visible it doubles the navigation a
+# new user has to understand, invites the question "so is this a chatbot?",
+# and carries its own model-churn maintenance. So it is opt-in.
+#
+# The ENGINE is untouched by this flag — the panel is built on the same
+# deliberation machinery. This governs only whether the generic chat surface
+# is offered.
+ENABLE_GENERAL_COUNCIL = os.getenv(
+    "ENABLE_GENERAL_COUNCIL", "false"
+).lower() in ("1", "true", "yes")
+
 # ---------------------------------------------------------------------------
 # Token routing
 # ---------------------------------------------------------------------------

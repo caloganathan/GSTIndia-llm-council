@@ -45,7 +45,7 @@ def _p(*patterns):
 class DefectType:
     def __init__(self, key, label, patterns, statute="", sections=(), rules=(),
                  default_posture=UNDECIDED, evidence_required=(),
-                 authority_tags=(), drafting_note=""):
+                 authority_tags=(), drafting_note="", hearing_questions=()):
         self.key = key
         self.label = label
         self.patterns = patterns
@@ -56,6 +56,7 @@ class DefectType:
         self.evidence_required = list(evidence_required)
         self.authority_tags = list(authority_tags)
         self.drafting_note = drafting_note
+        self.hearing_questions = list(hearing_questions)
 
     def as_dict(self):
         return {
@@ -67,7 +68,164 @@ class DefectType:
             "default_posture": self.default_posture,
             "evidence_required": self.evidence_required,
             "drafting_note": self.drafting_note,
+            "hearing_questions": self.hearing_questions,
         }
+
+
+# ---------------------------------------------------------------------------
+# What the officer asks at the personal hearing
+# ---------------------------------------------------------------------------
+# The written reply is only half the proceeding. Section 75(4) gives a right of
+# hearing wherever an adverse decision is contemplated, and the hearing is
+# where small-practice representation is weakest — not because the law is not
+# known but because the questions are not anticipated, and a limb that was
+# answered perfectly in writing is conceded across the table by an unprepared
+# answer.
+#
+# These are the questions officers actually put, per defect type. They are
+# assembled into the hearing brief in the file note, alongside the artefact to
+# carry for that limb. Deliberately phrased as the officer would put them,
+# not as a topic list: "which table of GSTR-1 carries the credit note, and in
+# which month" is preparable, "credit note issues" is not.
+HEARING_QUESTIONS = {
+    "outward_short_payment": [
+        "Show me the month in which this invoice was reported, and in which "
+        "table of GSTR-1.",
+        "Your 3B for that month is lower than your 1. Which specific invoices "
+        "account for the difference?",
+        "Was any part of this difference paid later, and through which "
+        "challan?",
+    ],
+    "turnover_difference": [
+        "Take me from the turnover in the audited accounts to the turnover in "
+        "GSTR-9, line by line.",
+        "What is this residual difference, and which document supports it?",
+        "Does this figure include any non-GST or Schedule III income? Show me "
+        "where it sits in the accounts.",
+    ],
+    "credit_notes": [
+        "Which table of GSTR-1 carries this credit note, and in which month?",
+        "Has the recipient reversed the corresponding credit? What is your "
+        "evidence of that?",
+        "Was the credit note issued within the time limit in Section 34(2)?",
+    ],
+    "itc_excess_2b": [
+        "Give me the supplier-wise breakup of the difference between 2B and "
+        "your 3B.",
+        "For each supplier: has the invoice been paid, and through what mode?",
+        "Which of these differences are timing, and in which month did they "
+        "reverse?",
+    ],
+    "itc_blocked_17_5": [
+        "What was this expenditure incurred for, and how does it relate to "
+        "your outward supply?",
+        "Has this been capitalised? Has depreciation been claimed on the tax "
+        "component?",
+        "Why do you say this falls outside clause (c)/(d) of Section 17(5)?",
+    ],
+    "itc_time_limit": [
+        "On what date was this credit taken in your 3B, and for which invoice "
+        "date?",
+        "Do you rely on Section 16(5) or 16(6)? For which financial year?",
+        "Was the return for the relevant period filed, and on what date?",
+    ],
+    "itc_supplier_default": [
+        "What steps did you take to satisfy yourself that this supplier had "
+        "paid?",
+        "Show me proof of payment to the supplier including the tax component.",
+        "Has the supplier since filed? Have you obtained a certificate from "
+        "them?",
+    ],
+    "itc_common_credit": [
+        "Show me the Rule 42 working for each month of the year.",
+        "What is your exempt turnover, and how has it been arrived at?",
+        "Has the annual reconciliation under Rule 42(2) been carried out?",
+    ],
+    "itc_180_days": [
+        "On what date was this supplier paid, and by what mode?",
+        "If the payment is beyond 180 days, has the credit been reversed and "
+        "re-availed?",
+        "Show me the ledger of this supplier for the whole year.",
+    ],
+    "rcm": [
+        "Which of these inward supplies do you accept attract reverse charge?",
+        "Has the tax been paid in cash? Show me the challan.",
+        "If you have taken credit of the same, in which month?",
+    ],
+    "einvoice": [
+        "What was your aggregate turnover in the preceding financial year? "
+        "Show me the working.",
+        "From which date did the mandate apply to you?",
+        "Show me the first e-invoice generated after that date, with its IRN "
+        "and acknowledgement.",
+    ],
+    "eway_bill": [
+        "Why was the e-way bill not generated, or why had it expired?",
+        "What is the evidence that the goods are covered by a tax invoice "
+        "reported in your returns?",
+        "What material is there of any intent to evade tax?",
+    ],
+    "interest_delayed_payment": [
+        "For which periods do you accept delay, and for how many days?",
+        "How much of the liability was discharged in cash, and how much by "
+        "credit?",
+        "Do you rely on the proviso to Section 50(1)? On what basis?",
+    ],
+    "late_fee": [
+        "What is the date of filing of each return in question?",
+        "Do you rely on any amnesty or waiver notification? Which one?",
+    ],
+    "classification": [
+        "Under which heading do you classify this, and on what reasoning?",
+        "Is there any advance ruling, circular or judgment you rely on?",
+        "How have you classified the same supply in earlier periods?",
+    ],
+    "valuation": [
+        "How was the transaction value arrived at? Is the recipient a related "
+        "person?",
+        "What discounts have been given, and were they known at or before the "
+        "time of supply?",
+        "Show me the agreement governing this supply.",
+    ],
+    "place_of_supply": [
+        "Where was the recipient located, and where were the goods delivered?",
+        "Which provision of Sections 10 to 13 do you say governs this?",
+        "If the tax was paid under the wrong head, has Section 77 been "
+        "invoked?",
+    ],
+    "registration": [
+        "On what date did the aggregate turnover cross the threshold?",
+        "From which date have you obtained registration, and why the delay?",
+    ],
+    "refund_rejection": [
+        "Which documents required by Rule 89 were filed with the application?",
+        "Was a deficiency memo issued? On what date, and what did it say?",
+        "How has the refund amount been computed?",
+    ],
+    "penalty_general": [
+        "What is the material establishing intent, suppression or wilful "
+        "misstatement?",
+        "Why should penalty be levied where the tax has been paid with "
+        "interest?",
+    ],
+}
+
+
+def hearing_questions_for(key: str):
+    """
+    The questions to expect on a limb of this type.
+
+    Falls back to the questions that apply to any limb rather than to nothing:
+    an officer always asks what the figure is made of and what supports it, and
+    a brief that says "no questions" for an unmapped defect type is worse than
+    one that says the obvious.
+    """
+    return HEARING_QUESTIONS.get(key) or [
+        "How is the amount in this limb made up? Take me through the working.",
+        "Which document supports that working, and is it on record?",
+        "Do you accept any part of this limb? If so, how much, and has it been "
+        "paid?",
+    ]
 
 
 DEFECT_TYPES = [
@@ -75,8 +233,16 @@ DEFECT_TYPES = [
     DefectType(
         "outward_short_payment",
         "Short payment of tax on outward supplies",
+        # The last three cover the Rule 88C / DRC-01B limb — the difference
+        # between the liability declared in GSTR-1 and that discharged in
+        # GSTR-3B. DRC-01B is issued in bulk and had no pattern at all, so the
+        # whole form segmented to nothing and the notice was answered as one
+        # undifferentiated issue.
         _p(r"short\s+payment.{0,40}outward", r"short\s+payment\s+of\s+tax",
-           r"outward\s+turnover\s+discrepanc"),
+           r"outward\s+turnover\s+discrepanc",
+           r"difference\s+in\s+liability",
+           r"liability.{0,60}gstr[\s-]*1.{0,60}gstr[\s-]*3b",
+           r"\brule\s*88C\b"),
         statute="Section 73/74 read with Sections 37 and 39",
         sections=["37", "39", "73"],
         default_posture=EXPLAINED,
@@ -142,9 +308,22 @@ DEFECT_TYPES = [
     DefectType(
         "itc_excess_2b",
         "Excess input tax credit availed against GSTR-2B",
+        # The most common defect in Indian GST practice, and the patterns
+        # below were the narrowest in the catalogue. The golden set caught it:
+        # a heading reading "Input tax credit availed in excess of that
+        # appearing in GSTR-2B" — the department's own standard phrasing —
+        # matched none of the original four patterns, because they all
+        # required the words "excess" and "ITC" adjacent and in that order.
+        # A limb that does not segment is a limb the reply never answers, and
+        # an unanswered limb is confirmed unopposed.
         _p(r"excess\s+(?:claim|availment)\s+of\s+itc", r"itc.{0,30}w\.?r\.?t\.?"
            r"\s*gstr[\s-]*2[ab]", r"excess\s+itc\s+availed",
-           r"input\s+tax\s+discrepanc"),
+           r"input\s+tax\s+discrepanc",
+           r"(?:itc|input\s+tax\s+credit)\s+availed\s+in\s+excess",
+           r"excess\s+input\s+tax\s+credit",
+           r"(?:itc|input\s+tax\s+credit).{0,50}(?:excess|exceeds|"
+           r"mismatch|difference).{0,50}gstr[\s-]*2[ab]",
+           r"gstr[\s-]*2[ab].{0,40}(?:vs\.?|versus|and)\s*gstr[\s-]*3b"),
         statute="Section 16(2)(aa) read with Rule 36(4); Rule 88D",
         sections=["16(2)(aa)", "16(2)(b)", "16(2)(c)", "16(2)(d)", "73"],
         rules=["36(4)", "88D"],
@@ -219,8 +398,12 @@ DEFECT_TYPES = [
     DefectType(
         "itc_supplier_default",
         "Input tax credit denied for supplier default under Section 16(2)(c)",
-        _p(r"16\s*\(\s*2\s*\)\s*\(\s*c\s*\)", r"supplier\s+(?:has\s+)?not\s+"
-           r"(?:filed|paid)", r"non[\s-]?filer\s+supplier", r"tax\s+not\s+paid\s+"
+        # The second pattern used to require the singular "supplier not filed"
+        # with nothing between. Departments write "suppliers who have not
+        # filed returns" at least as often, and that phrasing matched nothing.
+        _p(r"16\s*\(\s*2\s*\)\s*\(\s*c\s*\)",
+           r"supplier[s]?\b.{0,30}\bnot\s+(?:filed|paid|furnished|discharged)",
+           r"non[\s-]?filer\s+supplier", r"tax\s+not\s+paid\s+"
            r"(?:to\s+)?(?:the\s+)?government"),
         statute="Section 16(2)(c) read with Section 155",
         sections=["16(2)(c)", "155"],
@@ -258,7 +441,9 @@ DEFECT_TYPES = [
     DefectType(
         "itc_180_days",
         "Reversal for non-payment to supplier within 180 days (Rule 37)",
-        _p(r"rule\s*37\b", r"180\s*days", r"second\s+proviso.{0,30}16\s*\(\s*2"),
+        _p(r"rule\s*37\b", r"180\s*days",
+           r"one\s+hundred\s+and\s+eighty\s+days",
+           r"second\s+proviso.{0,30}16\s*\(\s*2"),
         statute="Second proviso to Section 16(2) read with Rule 37",
         sections=["16(2)"],
         rules=["37"],
@@ -308,9 +493,21 @@ DEFECT_TYPES = [
     DefectType(
         "interest_delayed_payment",
         "Interest on delayed payment of tax",
+        # "Interest PAYABLE on delayed payment" is how the portal prints this
+        # heading, and the original pattern required "interest on delayed"
+        # with nothing between. Caught by the golden set.
         _p(r"interest\s+on\s+(?:delayed|belated)", r"section\s*50\s*\(\s*1\s*\)",
            r"interest\s+on\s+invoice\s+value\s+increased",
-           r"interest.{0,30}amendment"),
+           r"interest.{0,30}amendment",
+           r"interest\s+(?:payable|leviable|liable|chargeable)"
+           r".{0,30}(?:delayed|belated|late)",
+           r"non[\s-]*payment\s+of\s+interest"),
+        # NOTE: do not add a bare "interest under section 50" pattern here.
+        # It was tried, and it matches the demand boilerplate carried by
+        # almost every notice — "...along with interest under Section 50 and
+        # penalty under Section 73(9)" — which grew a phantom interest limb on
+        # four of the eight golden cases, one of which then claimed the whole
+        # notice's total as its own figure and doubled the matter.
         statute="Section 50(1) read with Rule 88B",
         sections=["50(1)", "50(3)"],
         rules=["88B"],
@@ -327,7 +524,13 @@ DEFECT_TYPES = [
     DefectType(
         "einvoice",
         "Non-compliance with e-invoicing under Rule 48(4)",
-        _p(r"e[\s-]?invoic", r"rule\s*48\s*\(\s*[45]\s*\)", r"\birn\b",
+        # The leading \b is load-bearing. Without it "e[\s-]?invoic" matches
+        # the ordinary English phrase "th|e invoic|e" — so every notice using
+        # the words "the invoice", which is very nearly all of them, grew a
+        # spurious e-invoicing limb with a neighbouring limb's figures
+        # attached. Caught by the golden set on an RFD-08 whose second limb
+        # read "not accompanied by the invoice-wise details".
+        _p(r"\be[\s-]?invoic", r"rule\s*48\s*\(\s*[45]\s*\)", r"\birn\b",
            r"invoice\s+registration\s+portal"),
         statute="Rule 48(4) and 48(5) read with Section 125",
         sections=["2(6)", "122", "125", "126"],
@@ -409,7 +612,8 @@ DEFECT_TYPES = [
         "valuation",
         "Valuation dispute",
         _p(r"valuation", r"section\s*15\s*\(\s*[12]\s*\)",
-           r"transaction\s+value"),
+           r"transaction\s+value", r"related\s+(?:person|part(?:y|ies))",
+           r"\brule\s*28\b", r"open\s+market\s+value"),
         statute="Section 15 read with the Valuation Rules",
         sections=["15"],
         default_posture=CONTESTED,
@@ -457,7 +661,15 @@ DEFECT_TYPES = [
     DefectType(
         "refund_rejection",
         "Refund rejection proposed",
-        _p(r"refund", r"\bRFD[\s-]?0?[689]\b", r"section\s*54\b"),
+        # A bare "refund" was too broad: it matched the Section 73 boilerplate
+        # "tax not paid or short paid or erroneously refunded", so every s.73
+        # demand grew a refund limb. Refund must be the SUBJECT of the phrase.
+        # Rule 89 is included because a refund limb often argues the
+        # documentation requirement without using the word at all.
+        _p(r"\brefund\s+(?:claim|application|of|order|reject|sanction|is\b)",
+           r"rejection\s+of\s+.{0,30}refund",
+           r"\brefund\b.{0,20}(?:inadmissible|not\s+admissible|rejected)",
+           r"\bRFD[\s-]?0?[689]\b", r"section\s*54\b", r"rule\s*89\b"),
         statute="Section 54 read with Rules 89 to 96",
         sections=["54", "54(1)", "56"],
         rules=["89", "92(3)"],

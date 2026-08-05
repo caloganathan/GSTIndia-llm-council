@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { ConfidenceBadge, EmptyState, Loading } from './shared';
+import { ConfidenceBadge, DeadlineBadge, EmptyState, Loading } from './shared';
 import { formatCurrency, formatDate } from '../format';
 
 export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthError }) {
@@ -90,6 +90,7 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
             <thead>
               <tr>
                 <th>Client</th>
+                <th>Reply due</th>
                 <th>Notice</th>
                 <th>State</th>
                 <th>Period</th>
@@ -110,6 +111,7 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
                     style={{ cursor: 'pointer' }}
                   >
                     <td style={{ fontWeight: 500 }}>{matter.client_name || 'Unnamed'}</td>
+                    <td><DeadlineBadge matter={matter} /></td>
                     <td><span className="badge">{matter.notice_type || '—'}</span></td>
                     <td>{matter.state || '—'}</td>
                     <td>{matter.tax_period || '—'}</td>

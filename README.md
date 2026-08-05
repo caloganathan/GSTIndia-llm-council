@@ -45,19 +45,25 @@ Arial, monochrome, bold headings, nothing that reads as machine-generated —
 containing the draft reply, an issue-wise analysis, a schedule of
 authorities, risk flags for a reviewing partner, and a note for the file.
 
-**Two tiers, and why.** *Free* strips the client's name, GSTIN and PAN before
-anything leaves the machine — good for a first read, export is disabled.
-*Pro* sends full facts through zero-retention routing and enables export —
-use this for anything actually going to the department.
+**Two tiers, and why.** *Draft* strips the client's name, GSTIN and PAN before
+anything leaves the machine, and restores them locally afterwards — good for a
+first read or a second opinion. It exports, but every page is watermarked
+**not for filing**, so a draft cannot be mistaken for the real thing.
+*Pro* sends full facts through zero-retention routing and exports unwatermarked
+— use this for anything actually going to the department.
 
 **Instructions to hand to your team:**
 
 1. Log in with the credentials you were given.
 2. New Matter → upload the notice (and the reconciliation Excel, if you have
-   one).
+   one). Scanned notices are read too, if the OCR extra is installed — see
+   "Scanned notices" below.
 3. Check the auto-extracted facts (GSTIN, dates, amounts, section) — correct
-   anything wrong before running the panel.
-4. Choose Free (quick check) or Pro (real work) and run it.
+   anything wrong before running the panel. **Each field shows the sentence it
+   was read from**, so you can confirm it without opening the PDF. Anything
+   read from a scan is marked in amber: check every one of those figures.
+4. Choose Draft (quick check) or Pro (real work) and run it. The estimated
+   cost in rupees is shown before you start.
 5. Read all four counsel opinions and the chairman's determination. **This is
    a draft for professional review, not a filing.** Any citation marked "to be
    confirmed" or "not traced" must be checked against the reported text before
@@ -69,6 +75,39 @@ use this for anything actually going to the department.
 **The one honest caveat to give them up front:** this is new and still being
 validated notice by notice. Treat its output as a strong first draft from a
 very well-read junior — not a substitute for the partner's judgment.
+
+### Reply deadlines
+
+The dashboard opens on what needs attention: matters past their reply date
+first, then those due within the week. **Add to calendar** downloads every
+reply date as an `.ics` file that Outlook, Google Calendar and Apple Calendar
+all open, with a reminder two days out — two rather than one, because a reply
+needs the client's documents and a reminder the day before arrives too late to
+ask for anything.
+
+This is here because a missed reply date is the most expensive ordinary
+mistake in GST practice. The window closes, an ex-parte order follows under
+s.73(9) for the full amount proposed, and what was a reply becomes an appeal
+with a 10% pre-deposit and a limitation clock of its own.
+
+### Scanned notices
+
+Notices that arrive as images — printed, signed, stamped, scanned — need the
+optional OCR engine:
+
+```bash
+uv sync --extra ocr
+```
+
+It runs entirely on your machine. Cloud OCR was deliberately not used: a page
+image cannot be anonymised before it is uploaded, so it would break the Draft
+tier's promise that client identifiers never leave the building. Without the
+extra installed the application says so plainly and asks you to paste the text
+— it never guesses.
+
+Everything read from a scan is machine-read and marked as such, all the way
+through to the review screen. **Check every figure against the notice before
+running the panel.**
 
 ## The Compliance Panel
 
@@ -106,7 +145,7 @@ pattern, and the State is derived from the first two digits of the GSTIN,
 which is what drives the jurisdiction weighting.
 
 A model reads only the two fields a pattern cannot: what the issues are and a
-summary of the facts. On the free tier the notice text is scrubbed first, so
+summary of the facts. On the Draft tier the notice text is scrubbed first, so
 an uploaded notice is no less private than a typed one. The uploaded file is
 parsed in memory and never written to disk.
 
@@ -172,17 +211,71 @@ reply pack both say so.
 
 ### Two tiers — a risk tier, not just a price tier
 
-| | Free Council | Pro Council |
+| | Draft Council | Pro Council |
 |---|---|---|
-| Models | DeepSeek R1, GLM, Qwen, Kimi (free endpoints) | GPT-5.5, Claude Opus 4.8, Gemini 3.1 Pro, Grok 4.3 |
+| Models | Cheap paid endpoints — cents per run | GPT-5.5, Claude Opus 4.8, Gemini 3.1 Pro, Grok 4.3 |
 | Client identifiers | **Stripped before any request leaves the machine** | Full facts, zero-data-retention routing |
-| Output | Research grade, watermarked, export blocked | Signing-ready pack with DOCX export |
+| Output | Every exported page watermarked, not for filing | Signing-ready pack with DOCX export |
 
-Free endpoints are frequently free because the provider may retain or train on
-prompts. Sending a client's PAN, GSTIN and dispute particulars there is a
-confidentiality breach, so on the free tier anonymisation is enforced in code
-and the run aborts if any identifier survives. Identifiers are restored
-locally, so the partner still reads real names while the model never saw them.
+On the Draft tier anonymisation is enforced in code and the run **aborts** if
+any identifier survives the scrub. Identifiers are restored locally afterwards,
+so the partner still reads real names while the model never saw them.
+
+Export is allowed on both tiers, and that is deliberate: blocking it on the
+cheap tier only pushed people into copying text out of the browser, which loses
+the watermark along with it. The Draft tier stamps every page instead.
+
+**There was once a genuinely free tier**, running on OpenRouter's `:free`
+endpoints. Every model ID in it went stale and the whole tier failed silently
+in production — including notice reading, because the reader borrows the tier's
+grounding model. Free endpoints churn faster than a professional tool can
+track. The replacement is a cheap *paid* tier: a full run costs cents, the IDs
+are stable, and the property that actually mattered is unchanged. Matters saved
+under the old tier open on Draft, never on Pro — re-running work someone chose
+to anonymise must not silently send real identifiers.
+
+### Statutory computations — Python, never a prompt
+
+Interest under s.50, the s.73/74 penalty stages, the s.107/112 pre-deposit,
+appeal limitation and s.128A eligibility are computed in code and never by a
+model. A model that computes 18% for 402 days on Rs. 3,17,450 produces a figure
+that looks right, cannot be audited, and is different next run. Every figure
+here carries its own working — the period, the rate, the day count — so it can
+be checked line by line by whoever signs it.
+
+Two of these are worth calling out because they are routinely conceded in
+practice for want of a computation:
+
+- **s.50(3) at 24% applies only to credit wrongly availed AND utilised.**
+  Availed but not utilised puts the matter outside s.50(3) altogether. That is
+  a ground of defence, not merely a lower rate, and the output says so.
+- **The s.73 and s.74 concession windows are date-driven**, and the dates are
+  not in the notice — they are computed from it. Under s.73, tax and interest
+  paid within 30 days of the SCN attracts **no penalty at all**.
+
+These reach the internal file note. They reach the filing document only where
+the posture is one that pays, because a penalty computation put in front of the
+officer volunteers an admission nobody asked for.
+
+### Personal hearing brief
+
+The file note carries a brief for whoever attends the s.75(4) hearing: for each
+limb, the position in one line, the artefact to carry, and the questions
+officers actually put on that defect type. The hearing is where small-practice
+representation is weakest — not because the law is unknown, but because the
+questions are not anticipated and a limb answered perfectly on paper gets
+conceded across the table.
+
+### What a run costs
+
+Shown in rupees, before the run and after it. The estimate is built from your
+own completed matters rather than a published price table — a table keyed to
+model IDs goes stale silently, which is exactly how the old free tier failed.
+Until you have run a few matters it says so and quotes a wide range.
+
+It prices the limbs that **convene counsel**, not the total. Triage means most
+limbs are answered by arithmetic, documents or a payment: on the reference
+eight-limb notice, four.
 
 ### Users and roles
 
@@ -407,7 +500,7 @@ that starts and reports the problem.
 uv run pytest
 ```
 
-308 tests. The suites that matter most: the sanitizer (identifier leaks —
+475 tests. The suites that matter most: the sanitizer (identifier leaks —
 a failure there is a confidentiality breach, not a bug), citation verification
 and its never-upgrade rule, reply-pack formatting (Arial-only, monochrome-only,
 no machine vocabulary in the deliverable), reconciliation ingestion (proof

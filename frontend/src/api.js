@@ -175,6 +175,33 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  /**
+   * Every reply deadline on file, as a calendar file.
+   *
+   * A download rather than a subscribable feed: a live feed URL has to carry
+   * its own credential, and minting a long-lived token that exposes the
+   * client list is not a trade worth making for a self-hosted deployment.
+   */
+  async downloadCalendar() {
+    const response = await request('/api/matters/calendar.ics');
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement('a');
+    link.href = url;
+    link.download = 'compliance-panel-deadlines.ics';
+    window.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  /** Interest, penalty stages, pre-deposit and amnesty position. */
+  matterComputations: (id) => json(`/api/matters/${id}/computations`),
+
+  /** What a run will cost, in rupees, before it is run. */
+  estimatePanel: (payload) =>
+    json('/api/panel/estimate', { method: 'POST', body: JSON.stringify(payload) }),
+
   /** Run the panel, streaming stage events. */
   async runPanel(payload, onEvent) {
     const response = await fetch(apiUrl('/api/panel/run'), {

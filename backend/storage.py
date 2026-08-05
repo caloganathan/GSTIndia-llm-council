@@ -280,8 +280,16 @@ def list_matters() -> List[Dict[str, Any]]:
         outcome = document.get("result") or {}
         determination = outcome.get("determination") or {}
         verification = outcome.get("verification") or {}
+        limbs = intake.get("defects") or []
+        # Cost scales with the limbs that convened counsel, not with the limb
+        # count, so the estimator needs both to learn from this matter.
+        panel_limbs = [d for d in limbs
+                       if (d.get("posture") or "undecided")
+                       in ("contested", "partial", "undecided")]
         return {
             "id": document["id"],
+            "defect_count": len(limbs),
+            "panel_defect_count": len(panel_limbs),
             "created_at": document["created_at"],
             "updated_at": document.get("updated_at", document["created_at"]),
             "domain": document.get("domain", "gst"),

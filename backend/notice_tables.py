@@ -30,7 +30,31 @@ import re
 from typing import Any, Dict, List, Optional
 
 # A bare integer or decimal, possibly with Indian digit grouping.
-NUMBER_RE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?![\w])")
+#
+# The leading lookbehind excludes a digit run that is part of a hyphenated
+# identifier — the "1" of GSTR-1, the "10" of ASMT-10, the "01" of DRC-01.
+# Those are not money and they are everywhere in the prose of a notice. Left
+# in, they enter the sliding window below as though they were head amounts:
+# on a real limb reading "...declared in GSTR-1 ... reported in GSTR-1 ...
+# IGST 0.00 CGST 42,150.00 ...", the two stray 1s and the following two
+# figures summed to within the rounding tolerance of the wrong total, passed
+# the checksum, and reported Rs. 42,152 for a limb the annexure put at
+# Rs. 84,300.
+NUMBER_RE = re.compile(
+    r"(?<![\w.])(?<![A-Za-z]-)"
+    r"(\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?![\w])"
+)
+
+# A head-wise row is printed as a row. Its five figures sit within a line or
+# two of each other, never with a paragraph of prose between them.
+#
+# This is the structural guard behind the checksum, and it is what makes the
+# checksum trustworthy: four arbitrary numbers scattered through prose will
+# occasionally sum to a fifth, and the tolerance that exists for paisa drift
+# is exactly wide enough to let a coincidence through. Requiring the run to be
+# contiguous removes the coincidence rather than tightening the arithmetic,
+# which would reject genuine rounded rows.
+MAX_ROW_SPAN = 140
 
 # Column orders seen in departmental annexures. The Tamil Nadu scrutiny
 # attachment prints SGST first; central formats usually print CGST first.
@@ -105,6 +129,11 @@ def find_head_rows(text: str, head_order: Optional[List[str]] = None) -> List[Di
             continue
         components = [value for _, _, value in window[:4]]
         total = window[4][2]
+
+        # The five figures must have been printed as one row. Without this the
+        # checksum can be satisfied by coincidence across a paragraph of prose.
+        if window[4][1] - window[0][0] > MAX_ROW_SPAN:
+            continue
 
         # The checksum. Also require a non-trivial total, or every run of
         # zeroes in the document qualifies.

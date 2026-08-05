@@ -14,7 +14,11 @@ const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: '▤' },
   { key: 'panel', label: 'New Matter', icon: '✦' },
   { key: 'matters', label: 'Matters', icon: '▦' },
-  { key: 'council', label: 'General Council', icon: '◇' },
+  // The generic council is the upstream project this one grew out of. It
+  // still works, but no client engagement uses it, and left in the navigation
+  // it doubles what a new user has to understand and invites the question
+  // "so is this a chatbot?". Off unless ENABLE_GENERAL_COUNCIL is set.
+  { key: 'council', label: 'General Council', icon: '◇', feature: 'general_council' },
   { key: 'admin', label: 'Administration', icon: '⚙', permission: 'admin' },
 ];
 
@@ -22,6 +26,7 @@ export default function App() {
   const { theme, toggle } = useTheme();
   const [authState, setAuthState] = useState('checking');
   const [user, setUser] = useState(null);
+  const [features, setFeatures] = useState({});
   const [view, setView] = useState('dashboard');
   const [activeMatterId, setActiveMatterId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -30,6 +35,7 @@ export default function App() {
     try {
       const result = await api.checkAuth();
       setUser(result.user);
+      setFeatures(result.features || {});
       setAuthState('ok');
     } catch (error) {
       if (error.status === 401) {
@@ -109,7 +115,11 @@ export default function App() {
   }
 
   const can = (permission) => Boolean(user?.permissions?.[permission]);
-  const nav = NAV.filter((item) => !item.permission || can(item.permission));
+  const nav = NAV.filter(
+    (item) =>
+      (!item.permission || can(item.permission)) &&
+      (!item.feature || features[item.feature])
+  );
 
   return (
     <div className="app">
@@ -191,7 +201,9 @@ export default function App() {
           />
         )}
         {view === 'admin' && <AdminPanel user={user} onAuthError={handleAuthError} />}
-        {view === 'council' && <GeneralCouncil onAuthError={handleAuthError} />}
+        {view === 'council' && features.general_council && (
+          <GeneralCouncil onAuthError={handleAuthError} />
+        )}
       </main>
     </div>
   );

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import Deliberation from './Deliberation';
 import DefectList from './DefectList';
-import { ConfidenceBadge, Loading } from './shared';
+import { ConfidenceBadge, Loading, SourceSnippet } from './shared';
 import { formatCurrency } from '../format';
 
 const STAGE_LABELS = {
@@ -25,6 +25,7 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
   const [readResult, setReadResult] = useState(null);
   const [recon, setRecon] = useState(null);
   const [reconciling, setReconciling] = useState(false);
+  const [estimate, setEstimate] = useState(null);
   const fileRef = useRef(null);
   const reconRef = useRef(null);
 
@@ -39,6 +40,28 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
       }
     })();
   }, [onAuthError]);
+
+  // What this run will cost, before it is run. Re-estimated whenever the
+  // limbs or the tier change, because both drive it — triage means most limbs
+  // never convene counsel, so the cost tracks the argued limbs and not the
+  // total.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const quote = await api.estimatePanel({
+          intake: { defects: form.defects || [] },
+          domain: 'gst',
+          tier,
+        });
+        if (!cancelled) setEstimate(quote);
+      } catch {
+        // An estimate is a convenience. Never block the run on it.
+        if (!cancelled) setEstimate(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [form.defects, tier]);
 
   if (error && !config) {
     return <div className="page"><div className="alert alert-danger">{error}</div></div>;
@@ -266,8 +289,16 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
               <span className="badge badge-success">
                 {readResult.filename} read
               </span>
+              {readResult.scanned && (
+                <span className="badge badge-warning">
+                  scanned — read by OCR
+                </span>
+              )}
               {Object.entries(readResult.sources || {}).map(([field, origin]) => (
-                <span key={field} className="badge">
+                <span
+                  key={field}
+                  className={`badge ${String(origin).endsWith('-ocr') ? 'badge-warning' : ''}`}
+                >
                   {field.replace(/_/g, ' ')} · {origin}
                 </span>
               ))}
@@ -350,6 +381,11 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
                 )}
 
                 {field.help && <div className="field-help">{field.help}</div>}
+
+                <SourceSnippet
+                  snippet={readResult?.snippets?.[field.key]}
+                  origin={readResult?.sources?.[field.key]}
+                />
               </div>
             );
           })}
@@ -421,6 +457,16 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
             {missing.length > 0
               ? `Required: ${missing.map((f) => f.label).join(', ')}`
               : 'Ready. Expect two to four minutes for a full deliberation.'}
+            {estimate && missing.length === 0 && (
+              <div style={{ marginTop: 4 }}>
+                Estimated cost <strong>{estimate.label}</strong>
+                {estimate.triage && estimate.triage.total > 0 && (
+                  <> — {estimate.triage.convening_counsel} of{' '}
+                    {estimate.triage.total} limbs convene counsel</>
+                )}
+                <span className="muted"> ({estimate.basis})</span>
+              </div>
+            )}
           </div>
           <button className="btn btn-primary" disabled={!canRun} onClick={run}>
             Convene the panel

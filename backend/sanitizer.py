@@ -1,10 +1,13 @@
-"""Anonymisation gate for the free tier.
+"""Anonymisation gate for the draft tier.
 
-Free OpenRouter endpoints are frequently free *because* the provider may
-retain or train on prompts. Sending a client's PAN, GSTIN, turnover and
-dispute particulars to such an endpoint is a breach of professional
-confidentiality and a DPDP Act exposure. On the free tier this module runs
+An endpoint that costs little may be cheap *because* the provider retains or
+trains on prompts. Sending a client's PAN, GSTIN, turnover and dispute
+particulars to such an endpoint is a breach of professional confidentiality
+and a DPDP Act exposure. On any tier marked `anonymise` this module runs
 unconditionally: identifiers never leave the machine.
+
+(This gate was written for a free tier that has since been retired; the draft
+tier replaced it and inherits the rule unchanged.)
 
 The mapping is kept locally so the identifiers can be restored in the output
 the user actually reads. The model sees "the Taxpayer"; the partner sees the
@@ -112,7 +115,7 @@ def sanitize_matter(
     bucket_amounts: bool = True,
 ) -> Tuple[Dict[str, Any], Dict[str, str]]:
     """
-    Produce a version of the matter safe to send to a free endpoint.
+    Produce a version of the matter safe to send to a retaining endpoint.
 
     Returns (sanitised_matter, replacements). `replacements` maps the
     placeholder back to the original value so output can be restored locally.

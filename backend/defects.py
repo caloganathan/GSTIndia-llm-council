@@ -307,8 +307,11 @@ def validate(defect: Dict[str, Any]) -> List[str]:
         )
 
     if posture in (AGREED_PAID, PAID_UNDER_PROTEST):
-        payment = defect.get("payment") or {}
-        if not payment.get("reference"):
+        payment = defect.get("payment")
+        # A payment the panel wrote as prose rather than as an object carries
+        # no reference this can read, so it is treated as absent — which is
+        # what it is, for the purpose of closing the limb.
+        if not isinstance(payment, dict) or not payment.get("reference"):
             problems.append(
                 f"{heading}: {POSTURE_LABEL[posture].lower()} but no DRC-03 "
                 "reference is recorded. The officer closes a conceded limb on "
@@ -370,6 +373,19 @@ DEFECT_MARKER_RE = re.compile(
 # The scrutiny notice itself uses bulleted parameter headings instead.
 BULLET_HEADING_RE = re.compile(
     r"^\s*[•‣▪]\s*(.{3,90}?)\s*:\s*$", re.MULTILINE,
+)
+
+# A plainly numbered heading: "1. Short payment of tax on outward supplies".
+#
+# This is how most departmental notices actually number their limbs — far more
+# often than they write "Defect -1:", which is an adjudication-order
+# convention. Without this signal a notice numbered 1., 2., 3. fell through to
+# the catalogue fallback below, which can only ever produce ONE limb per
+# defect type: an RFD-08 raising two distinct refund objections came back as a
+# single limb carrying both figures, and a DRC-01B raising one came back with
+# none at all.
+NUMBERED_HEADING_RE = re.compile(
+    r"^\s*(\d{1,2})\s*[.)]\s+(\S.{5,118})$", re.MULTILINE,
 )
 
 
@@ -436,6 +452,10 @@ def find_defect_headings(text: str, catalogue: Iterable[Any]) -> List[Dict[str, 
     if bullets:
         return bullets
 
+    numbered = _numbered_headings(text, catalogue)
+    if numbered:
+        return numbered
+
     found = []
     seen_spans: List[tuple] = []
     for entry in catalogue:
@@ -457,6 +477,51 @@ def find_defect_headings(text: str, catalogue: Iterable[Any]) -> List[Dict[str, 
 
     found.sort(key=lambda f: f["start"])
     return found
+
+
+def _numbered_headings(text: str, catalogue: Iterable[Any]) -> List[Dict[str, Any]]:
+    """
+    Numbered lines that are genuinely defect headings.
+
+    The numbering alone is not enough of a signal — a notice is full of
+    numbered prose, numbered annexure references and numbered sub-clauses. So
+    a candidate line qualifies only if the heading text ITSELF matches a
+    catalogue pattern. Numbering says "this is a boundary"; the catalogue says
+    "this is a defect"; both are required.
+
+    That combination is also what keeps the metadata block out. "ARN of refund
+    application: AA240925004417P" matches the refund pattern but carries no
+    number, and "1." on its own matches no pattern, so neither becomes a limb.
+
+    The declared numbers must ascend. A run that jumps around is a list inside
+    a paragraph rather than the notice's own limb numbering.
+    """
+    candidates = []
+    for match in NUMBERED_HEADING_RE.finditer(text):
+        heading = match.group(2).strip()
+        # Trailing full stops mean a sentence, not a heading. Departmental
+        # headings do not carry them, and requiring their absence removes most
+        # of the numbered prose that would otherwise qualify.
+        if heading.endswith("."):
+            continue
+        if not any(pattern.search(heading)
+                   for entry in catalogue for pattern in entry.patterns):
+            continue
+        candidates.append({
+            "start": match.start(),
+            "heading": heading,
+            "declared_index": int(match.group(1)),
+            "signal": "numbered-plain",
+        })
+
+    if len(candidates) < 1:
+        return []
+
+    ascending = [candidates[0]]
+    for candidate in candidates[1:]:
+        if candidate["declared_index"] > ascending[-1]["declared_index"]:
+            ascending.append(candidate)
+    return ascending
 
 
 def classify_heading(heading: str, body: str, catalogue: Iterable[Any]) -> Any:
@@ -501,13 +566,23 @@ def operative_region(text: str) -> str:
 
     Trimming is refused if it would remove most of the document — a short
     notice whose boundary phrase appears early would otherwise be gutted.
+
+    EVERY candidate boundary is considered, not just the first. One of the
+    boundary patterns is the repeated `GSTIN : ... Name : ...` block that heads
+    an annexure — and that is also the shape of the notice's OWN header, which
+    the portal prints in the first few lines. Testing only the first match
+    therefore found the header at around 1% of the document, declined to trim
+    on the "would gut it" guard, and returned the whole notice: the real
+    boundary further down was never reached, and the last limb went on to
+    absorb every annexure in the file. That is the failure that once read a
+    Rs. 44 interest limb as Rs. 1.24 crore, and it was live for any notice
+    carrying a standard portal header.
     """
-    match = ANNEXURE_BOUNDARY_RE.search(text or "")
-    if not match:
-        return text or ""
-    if match.start() < len(text) * 0.3:
-        return text or ""
-    return text[:match.start()]
+    text = text or ""
+    for match in ANNEXURE_BOUNDARY_RE.finditer(text):
+        if match.start() >= len(text) * 0.3:
+            return text[:match.start()]
+    return text
 
 
 def segment(text: str, catalogue: Iterable[Any]) -> List[Dict[str, Any]]:

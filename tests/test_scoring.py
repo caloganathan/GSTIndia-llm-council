@@ -404,3 +404,70 @@ class TestEvidenceGapScoring:
 
     def test_nothing_to_score_when_the_golden_case_records_no_loss(self):
         assert score_evidence_gaps({"defects": []}, [{"index": 1}])["passed"] is None
+
+
+class TestScorecardSurfacesWhatItScores:
+    """
+    A metric that is computed but never printed cannot do its job.
+
+    `defect_coverage` and `evidence_gap_catch` are the two numbers this
+    product is judged on, and `aggregate()` computed both correctly while the
+    scorecard showed neither — so a regression in either could ship without
+    anyone seeing a changed number. These assert the report renders them.
+    """
+
+    MATTER = {
+        "id": "gst-001",
+        "description": "reference matter",
+        "passed": False,
+        "usage": {"total_cost": 0.01},
+        "scores": {
+            "citations": {"verified": 1, "unverified": 0, "not_found": 0,
+                          "superseded": 0, "verified_rate": 1.0,
+                          "fabricated": [], "stale": [], "passed": True},
+            "issues": {"expected": 1, "found": 1, "rate": 1.0, "missed": [],
+                       "passed": True},
+            "procedural": {"expected": 1, "found": 1, "rate": 1.0, "missed": [],
+                           "raised_but_dropped": [], "passed": True},
+            "position": {"expected_position": "contest",
+                         "inferred_position": "contest", "agrees": True,
+                         "violations": [], "passed": True},
+            "integrity": {"confidence": "defensible", "passed": True},
+            "defects": {"expected": 8, "found": 7, "posture_matches": 6,
+                        "rate": 0.875, "posture_rate": 0.75,
+                        "missed": ["E-invoicing"],
+                        "posture_errors": [{"defect": "Late fee",
+                                            "expected": "agreed_paid",
+                                            "got": "contested"}],
+                        "passed": False},
+            "evidence": {"expected": 1, "found": 0, "rate": 0.0,
+                         "missed": [{"defect": "E-invoicing",
+                                     "document": "first e-invoice for August 2023"}],
+                         "passed": False},
+        },
+    }
+
+    def _scorecard(self, tmp_path):
+        from evals.run import write_scorecard
+        summary = aggregate([self.MATTER])
+        out = tmp_path / "scorecard.md"
+        write_scorecard(out, summary, [self.MATTER], "draft")
+        return out.read_text()
+
+    def test_the_two_headline_metrics_appear(self, tmp_path):
+        text = self._scorecard(tmp_path)
+        assert "Defect coverage" in text
+        assert "Evidence gap catch" in text
+
+    def test_a_missed_limb_is_named(self, tmp_path):
+        assert "E-invoicing" in self._scorecard(tmp_path)
+
+    def test_a_document_never_demanded_is_called_out(self, tmp_path):
+        text = self._scorecard(tmp_path)
+        assert "CRITICAL EVIDENCE NOT DEMANDED" in text
+        assert "first e-invoice for August 2023" in text
+
+    def test_a_wrong_posture_is_named_with_both_sides(self, tmp_path):
+        text = self._scorecard(tmp_path)
+        assert "Late fee" in text
+        assert "agreed_paid" in text

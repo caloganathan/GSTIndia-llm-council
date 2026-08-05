@@ -19,6 +19,17 @@ data/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
-# Golden set contains client matter details; results are run artefacts
-evals/golden/*.json
+# Golden cases are committed ONLY when synthetic. This rule used to be
+# `evals/golden/*.json`, written when the golden set was expected to hold real
+# client matters — and it then swallowed the synthetic cases authored
+# specifically so they COULD ship. A fresh clone got no golden set at all: the
+# free scorer skipped in full and three tests in test_api_practice.py failed
+# outright, so the harness that guards every catalogue pattern was not running
+# for anyone but its author.
+#
+# So the boundary is a directory, not a glob. A case built from a real matter
+# goes in evals/golden/private/ and never leaves the machine;
+# tests/test_golden_set.py loads only the top level and enforces
+# `"synthetic": true` plus a provenance note on everything it finds there.
+evals/golden/private/
 evals/results/

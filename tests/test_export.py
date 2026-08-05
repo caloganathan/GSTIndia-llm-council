@@ -481,6 +481,38 @@ class TestIndianConventions:
             "_File_Note_INTERNAL.docx")
 
 
+class TestMalformedPanelOutputStillBuilds:
+    """
+    Neither document may fail to build over one malformed limb.
+
+    A builder that raises does not degrade gracefully — the response dies
+    mid-flight and the browser reports "Failed to fetch", with nothing in the
+    UI to say which limb was at fault. A limb rendered without its payment row
+    is recoverable; a download that never arrives is not.
+    """
+
+    def test_payment_written_as_prose_does_not_break_the_filing_reply(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["determination"]["defects"][1]["payment"] = \
+            "Rs. 2,300 paid vide DRC-03 dated 26/06/2026"
+        text = _all_text(_filing(matter))
+        assert "GSTR-1 late fee" in text
+
+    def test_payment_written_as_prose_does_not_break_the_file_note(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["determination"]["defects"][1]["payment"] = "paid"
+        assert "GSTR-1 late fee" in _all_text(_note(matter))
+
+    @pytest.mark.parametrize("builder", [_filing, _note])
+    def test_a_non_dict_limb_is_skipped_rather_than_raising(self, builder):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["determination"]["defects"].append("a stray string")
+        assert "Excess input tax credit against GSTR-2B" in _all_text(builder(matter))
+
+
 class TestFilenameSanitization:
     """
     A client name lifted from a scanned notice can carry stray control

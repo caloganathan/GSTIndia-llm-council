@@ -316,6 +316,36 @@ textarea:disabled {
   margin-top: var(--sp-1);
 }
 
+/* The text a field was read from, so the reviewer can confirm it without
+   opening the notice. Set apart from the field's own help text — this is a
+   quotation from the document, not the application talking. */
+.source-snippet {
+  margin-top: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 0 3px 3px 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* A field recovered by OCR from a scan is a proposal, not the document.
+   The warning colour carries that distinction to the person signing. */
+.source-snippet-scanned {
+  border-left-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.source-snippet-text {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-word;
+}
+
+.source-snippet .badge {
+  margin-right: var(--sp-2);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

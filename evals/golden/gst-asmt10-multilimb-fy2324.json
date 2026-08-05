@@ -1,0 +1,164 @@
+{
+  "id": "gst-asmt10-multilimb-fy2324",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. The eight-limb shape, and the e-invoicing limb argued correctly and still lost for want of one system report, mirror the pattern this product was designed against — the shape is real practice, the matter is invented.",
+  "description": "Eight-limb Tamil Nadu scrutiny notice on a GSTR-9C filer. Six limbs are answered by reconciliation, documents or a payment; two turn on law. The e-invoicing limb is argued correctly and still lost, because the first e-invoice for the month is never produced.",
+  "notice_text": "FORM GST ASMT - 10\n[See rule 99(1)]\nNotice for intimating discrepancies in the return after scrutiny\n\nReference No : ZD331224098765        Date : 18/12/2024\n\nGSTIN : 33AABCV1234K1Z5\nName : Tvl. VELMURUGAN PRECISION CASTINGS PRIVATE LIMITED\nAddress : SURVEY NO 118, SIDCO INDUSTRIAL ESTATE, AMBATTUR, CHENNAI - 600098\n\nTax Period : FY 2023-24\nSection under which notice is issued : 61\nDate by which reply has to be submitted : 17/01/2025\n\nThe return furnished by you for the tax period referred to above has been\nscrutinised and the following discrepancies are noticed. You are hereby\ndirected to explain the discrepancies, parameter-wise, within the time\nallowed.\n\n1. Short payment of tax on outward supplies\n\n   On comparison of the outward supplies declared in the statement of outward supplies with the tax discharged in the summary return for the said period, the tax paid falls short of the tax payable on the turnover declared. The head-wise shortfall is tabulated below.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                             42,150.00     42,150.00          0.00          0.00       84,300.00\n\n2. Difference in turnover between the annual return and the audited accounts\n\n   The turnover reported in the annual return does not agree with the turnover certified in the reconciliation statement filed along with it. The unreconciled residue is treated as suppressed turnover and taxed at the standard rate.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                             28,000.00     28,000.00          0.00          0.00       56,000.00\n\n3. Credit notes issued in excess of the permissible limit under Section 34\n\n   Credit notes have been declared in the statement of outward supplies without evidence that the recipient has reversed the corresponding credit. The reduction in output liability is accordingly disallowed.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                             15,750.00     15,750.00          0.00          0.00       31,500.00\n\n4. Excess input tax credit availed with reference to GSTR-2B\n\n   The input tax credit availed in the summary return exceeds the credit reflected as available in the auto-generated statement for the corresponding months. The excess is proposed to be recovered with interest.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                             37,300.00     37,300.00          0.00          0.00       74,600.00\n\n5. Ineligible ITC availed on blocked credit under Section 17(5)\n\n   Credit has been availed on motor vehicles and on works contract services received for construction of an immovable property, both of which are blocked under clauses of Section 17(5).\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                             14,450.00     14,450.00          0.00          0.00       28,900.00\n\n6. Late fee payable for belated filing of returns\n\n   The returns for the months indicated in the annexure were filed beyond the prescribed due dates. Late fee is leviable for the period of delay.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                              5,000.00      5,000.00          0.00          0.00       10,000.00\n\n7. Non-compliance with e-invoicing under Rule 48(4)\n\n   The aggregate turnover of the preceding financial year exceeded the threshold notified for e-invoicing, and invoices have been issued without obtaining an Invoice Reference Number from the Invoice Registration Portal. The tax charged on such invoices is proposed to be treated as not properly documented.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                             15,850.00     15,850.00          0.00          0.00       31,700.00\n\n8. Interest payable on belated discharge of liability through amendments\n\n   Amendments made to outward supplies in a later period increased the liability of the original period. Interest is chargeable on the differential from the original due date to the date of discharge.\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Difference                                225.00        225.00          0.00          0.00          450.00\n\nFor the above discrepancies, kindly substantiate your position with\nsupporting records, failing which proceedings under Section 73 or\nSection 74 of the Act, as the case may be, shall be initiated without\nfurther reference to you.\n\nIn case of accepted discrepancy, pay the amount along with interest and\nfurnish intimation of such payment.\n\nSummary of tax and other dues proposed\n\n   Particulars                                   SGST           CGST         IGST       CESS           Total\n   Total demand                          158,725.00    158,725.00          0.00          0.00      317,450.00\n\nSignature\nName : R SUNDARARAJAN\nDesignation : State Tax Officer\nJurisdiction : AMBATTUR ASSESSMENT CIRCLE , CHENNAI NORTH , Tamil Nadu",
+  "intake": {
+    "client_name": "VELMURUGAN PRECISION CASTINGS PRIVATE LIMITED",
+    "gstin": "33AABCV1234K1Z5",
+    "notice_type": "ASMT-10",
+    "state": "Tamil Nadu",
+    "tax_period": "FY 2023-24",
+    "section_invoked": "61",
+    "amount_disputed": 317450,
+    "notice_date": "2024-12-18",
+    "due_date": "2025-01-17",
+    "issues": "1. Short payment of tax on outward supplies\n2. Difference in turnover between the annual return and the audited accounts\n3. Credit notes issued in excess of the permissible limit under Section 34\n4. Excess input tax credit availed with reference to GSTR-2B\n5. Ineligible ITC availed on blocked credit under Section 17(5)\n6. Late fee payable for belated filing of returns\n7. Non-compliance with e-invoicing under Rule 48(4)\n8. Interest payable on belated discharge of liability through amendments",
+    "facts": "Precision castings manufacturer, GSTR-9C filer for FY 2023-24. Books, monthly reconciliations and the supplier ledger are complete. The e-invoicing threshold was crossed in the preceding year and IRNs were generated from August 2023 onward, but the IRN register for that month has not been retrieved from the portal.",
+    "documents_available": "GSTR-1 vs 3B monthly reconciliation, GSTR-9C with the auditor's reconciliation, credit note register with recipient confirmations, supplier-wise 2B reconciliation, purchase register, DRC-03 for late fee and interest",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Short payment of tax on outward supplies",
+        "type": "outward_short_payment",
+        "amount_by_head": {
+          "sgst": 42150.0,
+          "cgst": 42150.0
+        }
+      },
+      {
+        "index": 2,
+        "heading": "Difference in turnover between the annual return and the audited accounts",
+        "type": "turnover_difference",
+        "amount_by_head": {
+          "sgst": 28000.0,
+          "cgst": 28000.0
+        }
+      },
+      {
+        "index": 3,
+        "heading": "Credit notes issued in excess of the permissible limit under Section 34",
+        "type": "credit_notes",
+        "amount_by_head": {
+          "sgst": 15750.0,
+          "cgst": 15750.0
+        }
+      },
+      {
+        "index": 4,
+        "heading": "Excess input tax credit availed with reference to GSTR-2B",
+        "type": "itc_excess_2b",
+        "amount_by_head": {
+          "sgst": 37300.0,
+          "cgst": 37300.0
+        }
+      },
+      {
+        "index": 5,
+        "heading": "Ineligible ITC availed on blocked credit under Section 17(5)",
+        "type": "itc_blocked_17_5",
+        "amount_by_head": {
+          "sgst": 14450.0,
+          "cgst": 14450.0
+        }
+      },
+      {
+        "index": 6,
+        "heading": "Late fee payable for belated filing of returns",
+        "type": "late_fee",
+        "amount_by_head": {
+          "sgst": 5000.0,
+          "cgst": 5000.0
+        }
+      },
+      {
+        "index": 7,
+        "heading": "Non-compliance with e-invoicing under Rule 48(4)",
+        "type": "einvoice",
+        "amount_by_head": {
+          "sgst": 15850.0,
+          "cgst": 15850.0
+        }
+      },
+      {
+        "index": 8,
+        "heading": "Interest payable on belated discharge of liability through amendments",
+        "type": "interest_delayed_payment",
+        "amount_by_head": {
+          "sgst": 225.0,
+          "cgst": 225.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "mixed",
+    "position_keywords": [
+      "parameter-wise",
+      "reconciliation",
+      "Section 17(5)",
+      "Rule 48(4)"
+    ],
+    "issues_expected": [
+      "short payment",
+      "turnover difference",
+      "credit notes",
+      "excess ITC",
+      "blocked credit",
+      "late fee",
+      "e-invoicing",
+      "interest"
+    ],
+    "procedural_points": [
+      "61",
+      "73"
+    ],
+    "must_not_say": [
+      "concede the entire demand"
+    ],
+    "outcome": "Seven limbs dropped on the reply. The e-invoicing limb survived to a show cause notice.",
+    "notes": "The limb that is lost is lost on evidence, not on law. A panel that argues Rule 48(4) correctly and does not call for the IRN register has reproduced the original failure."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "explained"
+    },
+    {
+      "index": 2,
+      "posture": "explained"
+    },
+    {
+      "index": 3,
+      "posture": "explained"
+    },
+    {
+      "index": 4,
+      "posture": "partial",
+      "required_evidence_that_was_missing": [
+        "Supplier-wise reconciliation of GSTR-2B against the credit availed in GSTR-3B, month by month"
+      ]
+    },
+    {
+      "index": 5,
+      "posture": "contested"
+    },
+    {
+      "index": 6,
+      "posture": "agreed_paid"
+    },
+    {
+      "index": 7,
+      "posture": "contested",
+      "required_evidence_that_was_missing": [
+        "The first e-invoice issued for the month of August 2023, with its Invoice Reference Number",
+        "IRN generation report downloaded from the Invoice Registration Portal for the period"
+      ]
+    },
+    {
+      "index": 8,
+      "posture": "agreed_paid"
+    }
+  ]
+}
