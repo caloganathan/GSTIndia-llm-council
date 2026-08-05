@@ -314,3 +314,68 @@ class TestValidation:
         assert defects.validate(defects.new_defect(
             1, "Blocked credit", posture=defects.CONTESTED,
             annexures=["Purchase invoices"])) == []
+
+
+class TestTheAnnexureBoundary:
+    """
+    Where the operative part of a notice stops.
+
+    Without a boundary the last limb absorbs every annexure in the document,
+    which is how a Rs. 44 interest limb once came out at Rs. 1.24 crore. This
+    whole path was previously untested, and it was broken: one of the boundary
+    patterns matches the repeated `GSTIN : ... Name : ...` block that heads an
+    annexure, which is also the shape of the notice's own header. Only the
+    first match was tested, so on any notice printing a standard portal header
+    the boundary was found at ~1%, rejected by the "would gut the document"
+    guard, and nothing was ever trimmed.
+    """
+
+    HEADER = ("FORM GST ASMT - 10\n\nGSTIN : 33AABCV1234K1Z5\n"
+              "Name : Tvl. ACME CASTINGS PRIVATE LIMITED\n\n")
+    BODY = "The notice states the following discrepancies. " * 40
+    TAIL = ("\n\nFor the above discrepancies, kindly substantiate your "
+            "position.\n\nANNEXURE - detailed working\n"
+            + "row after row of annexure figures. " * 40)
+
+    def test_the_notices_own_header_does_not_defeat_the_boundary(self):
+        text = self.HEADER + self.BODY + self.TAIL
+        operative = defects.operative_region(text)
+        assert "ANNEXURE - detailed working" not in operative, (
+            "The header matched the boundary pattern at ~1% and suppressed "
+            "the real boundary further down. Every annexure then flowed into "
+            "the last limb."
+        )
+        assert "discrepancies" in operative
+
+    def test_a_boundary_that_would_gut_the_document_is_still_refused(self):
+        # The guard this fix must not remove: a short notice whose only
+        # boundary phrase sits near the top keeps its whole text.
+        text = ("Proper Officer\n" + "The single defect is stated here. " * 60)
+        assert defects.operative_region(text) == text
+
+    def test_text_with_no_boundary_is_returned_whole(self):
+        text = "A notice with no annexure boundary at all. " * 20
+        assert defects.operative_region(text) == text
+
+    def test_the_last_limb_does_not_absorb_the_annexure_figures(self):
+        # The failure in the terms that matter: the limb's own figure, not the
+        # annexure's much larger one.
+        text = (
+            self.HEADER
+            + "1. Interest payable on belated discharge of liability\n\n"
+              "   Interest is chargeable on the differential.\n\n"
+              "   Particulars          SGST      CGST     IGST    CESS     Total\n"
+              "   Difference          22.00     22.00     0.00    0.00     44.00\n\n"
+            + "Filler prose to carry the document past the boundary guard. " * 30
+            + "\n\nFor the above discrepancies, kindly substantiate your position.\n\n"
+              "ANNEXURE\n"
+              "   Particulars          SGST      CGST     IGST    CESS       Total\n"
+              "   Total demand   6200000.00 6200000.00     0.00    0.00 12400000.00\n"
+        )
+        found = defects.segment(text, gst.DEFECT_TYPES)
+        assert len(found) == 1
+        row = notice_tables.read_defect_amount(found[0]["notice_extract"])
+        assert row is not None
+        assert sum(row["amounts"].values()) == 44.00, (
+            "the interest limb absorbed the annexure total"
+        )

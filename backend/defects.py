@@ -563,13 +563,23 @@ def operative_region(text: str) -> str:
 
     Trimming is refused if it would remove most of the document — a short
     notice whose boundary phrase appears early would otherwise be gutted.
+
+    EVERY candidate boundary is considered, not just the first. One of the
+    boundary patterns is the repeated `GSTIN : ... Name : ...` block that heads
+    an annexure — and that is also the shape of the notice's OWN header, which
+    the portal prints in the first few lines. Testing only the first match
+    therefore found the header at around 1% of the document, declined to trim
+    on the "would gut it" guard, and returned the whole notice: the real
+    boundary further down was never reached, and the last limb went on to
+    absorb every annexure in the file. That is the failure that once read a
+    Rs. 44 interest limb as Rs. 1.24 crore, and it was live for any notice
+    carrying a standard portal header.
     """
-    match = ANNEXURE_BOUNDARY_RE.search(text or "")
-    if not match:
-        return text or ""
-    if match.start() < len(text) * 0.3:
-        return text or ""
-    return text[:match.start()]
+    text = text or ""
+    for match in ANNEXURE_BOUNDARY_RE.finditer(text):
+        if match.start() >= len(text) * 0.3:
+            return text[:match.start()]
+    return text
 
 
 def segment(text: str, catalogue: Iterable[Any]) -> List[Dict[str, Any]]:
