@@ -1,0 +1,77 @@
+{
+  "id": "gst-drc01-s74-suppression",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. Written so the extended-period allegation is the operative question, which is what a Section 74 notice actually turns on.",
+  "description": "A Section 74 demand alleging suppression. The turnover limb is substantially correct on the figures but the invocation of the extended period is not made out on the notice's own findings; the blocked-credit limb is a straightforward concession.",
+  "notice_text": "FORM GST DRC-01\n[See rule 142(1)(a)]\nSummary of Show Cause Notice\n\nReference No : ZD270625117733        Date : 20/06/2025\n\nGSTIN : 27AAGCK9182L1ZH\nName : M/s. KALPATARU TEXTILE MILLS PRIVATE LIMITED\nAddress : GALA 7, MIDC BUTIBORI, NAGPUR - 441122\n\nTax Period : FY 2019-20\nSection under which notice is issued : 74\nDate by which reply has to be submitted : 21/07/2025\n\nWhereas it appears that tax has not been paid by reason of wilful\nmisstatement and suppression of facts with intent to evade payment of\ntax, you are called upon to show cause why the amounts below should not\nbe demanded under Section 74 of the Act along with interest and penalty\nequal to the tax so determined.\n\nSummary of tax and other dues proposed\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Total demand                          356,250.00    356,250.00          0.00          0.00      712,500.00\n\n1. Difference in turnover suppressed from the returns\n\n   Turnover recorded in the books seized during the visit does not appear in the returns filed for the corresponding period. The omission is alleged to be wilful and Section 74 is invoked.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                            312,500.00    312,500.00          0.00          0.00      625,000.00\n\n2. Ineligible ITC availed on blocked credit under Section 17(5)\n\n   Credit has been availed on food and beverages and on club membership charges, both of which are blocked under Section 17(5).\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                             43,750.00     43,750.00          0.00          0.00       87,500.00\n\nYou may appear for a personal hearing on the date that will be\ncommunicated separately.\n\nProper Officer\nName : S V DESHPANDE\nDesignation : Deputy Commissioner of State Tax\nJurisdiction : NAGPUR DIVISION , NAGPUR , Maharashtra",
+  "intake": {
+    "client_name": "KALPATARU TEXTILE MILLS PRIVATE LIMITED",
+    "gstin": "27AAGCK9182L1ZH",
+    "notice_type": "DRC-01",
+    "state": "Maharashtra",
+    "tax_period": "FY 2019-20",
+    "section_invoked": "74",
+    "amount_disputed": 712500,
+    "notice_date": "2025-06-20",
+    "due_date": "2025-07-21",
+    "issues": "1. Difference in turnover suppressed from the returns\n2. Ineligible ITC availed on blocked credit under Section 17(5)",
+    "facts": "Textile mill. The turnover was recorded in the books throughout and was reported in the annual return, though omitted from the monthly returns of two quarters. The omission was disclosed by the taxpayer's own auditor before the visit. The blocked credit is admitted.",
+    "documents_available": "Audited accounts, annual return, monthly returns, auditor's qualification recording the omission, expense ledgers for the blocked credit",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Difference in turnover suppressed from the returns",
+        "type": "turnover_difference",
+        "amount_by_head": {
+          "cgst": 312500.0,
+          "sgst": 312500.0
+        }
+      },
+      {
+        "index": 2,
+        "heading": "Ineligible ITC availed on blocked credit under Section 17(5)",
+        "type": "itc_blocked_17_5",
+        "amount_by_head": {
+          "cgst": 43750.0,
+          "sgst": 43750.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "contest",
+    "position_keywords": [
+      "Section 74",
+      "suppression",
+      "extended period",
+      "Section 73"
+    ],
+    "issues_expected": [
+      "turnover suppression",
+      "blocked credit"
+    ],
+    "procedural_points": [
+      "74",
+      "73",
+      "penalty"
+    ],
+    "must_not_say": [
+      "admit suppression"
+    ],
+    "outcome": "Section 74 was held not to be made out. The demand was re-determined under Section 73 and penalty restricted accordingly.",
+    "notes": "Turnover disclosed in the books and in the annual return cannot found an allegation of suppression. Attacking the section, not the arithmetic, is what moves this matter."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "contested",
+      "required_evidence_that_was_missing": [
+        "The auditor's qualification and the working papers recording the omission before the departmental visit"
+      ]
+    },
+    {
+      "index": 2,
+      "posture": "agreed_paid"
+    }
+  ]
+}

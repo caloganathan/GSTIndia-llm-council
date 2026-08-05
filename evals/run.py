@@ -23,11 +23,27 @@ GOLDEN_DIR = ROOT / "golden"
 RESULTS_DIR = ROOT / "results"
 
 
+def _golden_paths() -> List[Path]:
+    """
+    Committed synthetic cases, then the firm's own private ones.
+
+    `golden/private/` is gitignored, and is where a case built from a real
+    client matter belongs. This harness costs money and is run deliberately by
+    a person on their own machine, so it reads both — a firm scoring the panel
+    wants its real matters in the run. The free scorer in
+    `tests/test_golden_set.py` reads only the top level, because that is what
+    CI has and the only thing that may ship.
+    """
+    paths = sorted(GOLDEN_DIR.glob("*.json"))
+    paths += sorted((GOLDEN_DIR / "private").glob("*.json"))
+    return paths
+
+
 def load_golden(only: str = None) -> List[Dict[str, Any]]:
     if not GOLDEN_DIR.is_dir():
         return []
     matters = []
-    for path in sorted(GOLDEN_DIR.glob("*.json")):
+    for path in _golden_paths():
         try:
             data = json.loads(path.read_text())
         except json.JSONDecodeError as e:

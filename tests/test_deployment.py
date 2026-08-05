@@ -10,6 +10,7 @@ a hosting platform rather than in development:
 """
 
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -184,3 +185,46 @@ class TestDeploymentFiles:
         ignore = (ROOT / ".dockerignore").read_text()
         assert "!README.md" in ignore, \
             "pyproject declares readme = README.md; excluding it breaks the build"
+
+
+class TestTheGoldenSetBoundary:
+    """
+    Two failure directions, and both have happened.
+
+    Ignoring the whole golden set kept client matters out but also kept the
+    synthetic cases out, so a fresh clone had no regression cover for the
+    catalogue patterns at all. Ignoring none of it would put a real matter in a
+    public repository the first time someone scored one.
+
+    The line is `evals/golden/private/`. These assertions hold it from both
+    sides, and they live here rather than in test_golden_set.py because that
+    module skips itself when the set is empty — which is exactly the state
+    these tests exist to detect.
+    """
+
+    def test_private_golden_cases_are_never_committed(self):
+        ignore = (ROOT / ".gitignore").read_text()
+        assert "evals/golden/private/" in ignore, (
+            "evals/golden/private/ is where a golden case built from a real "
+            "client matter goes. Removing it from .gitignore publishes the "
+            "next one committed."
+        )
+
+    def test_the_synthetic_golden_set_is_committed(self):
+        cases = sorted((ROOT / "evals" / "golden").glob("*.json"))
+        assert cases, (
+            "No golden cases are committed. The free scorer in "
+            "tests/test_golden_set.py skips itself when the set is empty, so "
+            "every catalogue pattern is unguarded and nothing says so."
+        )
+
+    def test_every_committed_case_is_marked_synthetic(self):
+        # test_golden_set.py asserts this too, but it skips when the directory
+        # is empty and it is the file someone would disable to make a failing
+        # case go away. A confidentiality boundary gets two locks.
+        for path in sorted((ROOT / "evals" / "golden").glob("*.json")):
+            case = json.loads(path.read_text())
+            assert case.get("synthetic") is True, (
+                f"{path.name} is committed but not marked synthetic. A case "
+                f"built from a client matter belongs in evals/golden/private/."
+            )

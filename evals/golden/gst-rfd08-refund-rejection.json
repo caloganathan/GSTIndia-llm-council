@@ -1,0 +1,75 @@
+{
+  "id": "gst-rfd08-refund-rejection",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. Two limbs of the same defect type on one form. This is the shape that breaks any harness keying figures by type rather than by index.",
+  "description": "A refund rejection proposed on two independent grounds. One is answerable on the law; the other is purely evidentiary and is lost without the realisation certificates.",
+  "notice_text": "FORM GST RFD-08\n[See rule 92(3)]\nNotice for rejection of application for refund\n\nReference No : ZR360425775410        Date : 08/04/2025\n\nGSTIN : 36AAJCS5528R1ZM\nName : M/s. SAHASRA EXPORTS PRIVATE LIMITED\nAddress : PLOT 9, IDA UPPAL, HYDERABAD - 500039\n\nTax Period : FY 2024-25\nSection under which notice is issued : 54\nDate by which reply has to be submitted : 23/04/2025\n\nARN of refund application : AA360425004417P\n\nThis is with reference to your refund application referred to above.\nOn scrutiny of the application the following grounds are proposed for\nrejection. You are directed to furnish a reply in FORM GST RFD-09.\n\n1. Refund claim is inadmissible to the extent of credit not in GSTR-2B\n\n   Part of the accumulated credit on which refund is claimed does not appear in the auto-generated statement for the refund period, and to that extent the claim is proposed to be rejected.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Amount proposed to be rejected              0.00          0.00    214,600.00          0.00      214,600.00\n\n2. Rejection of refund proposed for want of a valid Statement 3A\n\n   The statement of invoices filed with the application does not reconcile with the shipping bills, and the export realisation for two invoices is not evidenced.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Amount proposed to be rejected              0.00          0.00     68,400.00          0.00       68,400.00\n\nIf no reply is furnished within the time allowed, the application will\nbe disposed of on the basis of the record available.\n\nProper Officer\nName : P VENKATESHWARLU\nDesignation : Assistant Commissioner\nJurisdiction : UPPAL CIRCLE , HYDERABAD , Telangana",
+  "intake": {
+    "client_name": "SAHASRA EXPORTS PRIVATE LIMITED",
+    "gstin": "36AAJCS5528R1ZM",
+    "notice_type": "RFD-08",
+    "state": "Telangana",
+    "tax_period": "FY 2024-25",
+    "section_invoked": "54",
+    "amount_disputed": 283000,
+    "notice_date": "2025-04-08",
+    "due_date": "2025-04-23",
+    "issues": "1. Refund claim is inadmissible to the extent of credit not in GSTR-2B\n2. Rejection of refund proposed for want of a valid Statement 3A",
+    "facts": "Exporter of bulk drugs under LUT without payment of tax. The credit not appearing in the statement relates to invoices the suppliers reported one month late. Shipping bills exist for every invoice; realisation certificates for two invoices have been applied for but not received.",
+    "documents_available": "Shipping bills, export invoices, LUT, Statement 3A working, supplier invoices and the late-reporting extract",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Refund claim is inadmissible to the extent of credit not in GSTR-2B",
+        "type": "refund_rejection",
+        "amount_by_head": {
+          "igst": 214600.0
+        }
+      },
+      {
+        "index": 2,
+        "heading": "Rejection of refund proposed for want of a valid Statement 3A",
+        "type": "refund_rejection",
+        "amount_by_head": {
+          "igst": 68400.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "contest",
+    "position_keywords": [
+      "Rule 89",
+      "shipping bill",
+      "realisation"
+    ],
+    "issues_expected": [
+      "credit not in 2B",
+      "Statement 3A"
+    ],
+    "procedural_points": [
+      "54",
+      "92(3)",
+      "RFD-09"
+    ],
+    "must_not_say": [
+      "withdraw the refund application"
+    ],
+    "outcome": "Ground 1 dropped. Ground 2 sustained in part for the two invoices whose realisation was not evidenced.",
+    "notes": "The second ground is not an argument, it is a document. A panel that briefs law on it and does not call for the certificates has lost it."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "contested"
+    },
+    {
+      "index": 2,
+      "posture": "partial",
+      "required_evidence_that_was_missing": [
+        "Bank realisation certificates or FIRCs for the two export invoices identified in the annexure",
+        "Shipping bill to invoice reconciliation tying every invoice in Statement 3A to its shipping bill"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "id": "gst-drc01b-liability-difference",
+  "synthetic": true,
+  "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. Included because Rule 88C recovery runs under Section 79 without a further notice, which makes the reply window the whole matter.",
+  "description": "A Rule 88C liability difference caused by a credit note reported in the statement of outward supplies but adjusted a month later in the summary return. Explainable, and dangerous only if the window is missed.",
+  "notice_text": "FORM GST DRC-01B\n[See rule 88C]\nIntimation of difference in liability reported in the statement of\noutward supplies and that reported in the return\n\nReference No : ZD060225440915        Date : 05/02/2025\n\nGSTIN : 06AADCM4417Q1Z8\nName : M/s. MANGLAM AUTO COMPONENTS PRIVATE LIMITED\nAddress : PLOT 61, SECTOR 6 IMT MANESAR, GURUGRAM - 122052\n\nTax Period : FY 2024-25\nSection under which notice is issued : 75\nDate by which reply has to be submitted : 12/02/2025\n\nThe difference set out below has been observed for the tax period\nstated above. Pay the differential with interest through FORM GST\nDRC-03, or furnish an explanation in Part B within seven days.\n\n1. Difference in liability reported in GSTR-1 and discharged in GSTR-3B\n\n   The liability declared in the statement of outward supplies exceeds the liability discharged in the summary return for the said period by more than the limit prescribed under Rule 88C.\n\n   Particulars                                   CGST           SGST         IGST       CESS           Total\n   Difference                             74,300.00     74,300.00          0.00          0.00      148,600.00\n\nWhere neither is done, the amount shall be recoverable under Section\n79 without further notice, and the statement of outward supplies for\nthe succeeding period shall not be available for filing.\n\nProper Officer\nName : ANIL KHURANA\nDesignation : Excise and Taxation Officer\nJurisdiction : WARD 3 GURUGRAM EAST , GURUGRAM , Haryana",
+  "intake": {
+    "client_name": "MANGLAM AUTO COMPONENTS PRIVATE LIMITED",
+    "gstin": "06AADCM4417Q1Z8",
+    "notice_type": "DRC-01B",
+    "state": "Haryana",
+    "tax_period": "FY 2024-25",
+    "section_invoked": "75",
+    "amount_disputed": 148600,
+    "notice_date": "2025-02-05",
+    "due_date": "2025-02-12",
+    "issues": "1. Difference in liability reported in GSTR-1 and discharged in GSTR-3B",
+    "facts": "Auto components supplier. A credit note for a rejected consignment was reported in the statement of outward supplies for the month but the corresponding reduction was taken in the summary return of the following month. Net liability across the two months is nil.",
+    "documents_available": "Credit note with the customer's rejection memo, GSTR-1 and GSTR-3B for both months, ledger extract showing nil net effect",
+    "defects": [
+      {
+        "index": 1,
+        "heading": "Difference in liability reported in GSTR-1 and discharged in GSTR-3B",
+        "type": "outward_short_payment",
+        "amount_by_head": {
+          "cgst": 74300.0,
+          "sgst": 74300.0
+        }
+      }
+    ]
+  },
+  "expected": {
+    "position_taken": "explain",
+    "position_keywords": [
+      "Rule 88C",
+      "credit note",
+      "succeeding month"
+    ],
+    "issues_expected": [
+      "liability difference"
+    ],
+    "procedural_points": [
+      "88C",
+      "79"
+    ],
+    "must_not_say": [
+      "pay the differential"
+    ],
+    "outcome": "Explanation accepted in Part B.",
+    "notes": "Recovery under Section 79 follows automatically if nothing is filed. The deadline, not the argument, is what this case tests."
+  },
+  "expected_defects": [
+    {
+      "index": 1,
+      "posture": "explained"
+    }
+  ]
+}
