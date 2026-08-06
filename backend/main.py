@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import (APIRouter, Depends, FastAPI, File, Header, HTTPException,
-                     Response, UploadFile)
+                     Request, Response, UploadFile)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -156,16 +156,22 @@ async def readyz():
 
     Reports the things that make a deployment useless even though the process
     is alive: no API key, or state that cannot be persisted.
+
+    Deliberately terse. This endpoint is UNAUTHENTICATED, so it used to hand
+    an anonymous caller the deployment's filesystem layout and whether auth
+    was switched on at all — a map, and confirmation the door is open. The
+    named checks stay because an operator needs to know WHICH thing is
+    degraded; the paths and the auth posture move to the authenticated
+    /api/health, where they were already available.
     """
     checks = {
         "api_key_configured": bool(config.OPENROUTER_API_KEY),
         "state_writable": STATE_WRITABLE.get("ok"),
         "frontend_bundled": FRONTEND_DIST.is_dir(),
-        "auth_enabled": bool(config.APP_ACCESS_TOKEN) or users.user_count() > 0,
     }
     ready = bool(checks["api_key_configured"]) and checks["state_writable"] is not False
     return {"status": "ready" if ready else "degraded", "checks": checks,
-            "state_dir": config.STATE_DIR, "data_dir": config.DATA_DIR}
+            "version": config.VERSION}
 
 
 @router.get("/features")
@@ -201,9 +207,23 @@ async def auth_check(user: Dict[str, Any] = Depends(require_auth)):
 
 
 @app.post("/api/auth/login")
-async def login(request: LoginRequest):
-    """Exchange email + password for a session token."""
-    session = users.authenticate(request.email, request.password)
+async def login(request: LoginRequest, http_request: Request):
+    """
+    Exchange email + password for a session token.
+
+    Failed attempts are counted per email and per client address, and the
+    budget is spent on a 429 rather than a 401 — the caller needs to tell a
+    partner locked out on a deadline apart from one who mistyped.
+    """
+    client = http_request.client.host if http_request.client else ""
+    try:
+        session = users.authenticate(request.email, request.password, client)
+    except users.LockedOut as locked:
+        raise HTTPException(
+            status_code=429,
+            detail=str(locked),
+            headers={"Retry-After": str(locked.retry_after_seconds)},
+        )
     if session is None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return session
@@ -269,6 +289,11 @@ async def health():
         },
         "default_tier": config.DEFAULT_TIER,
         "zdr_enforced": config.ENFORCE_ZDR,
+        "version": config.VERSION,
+        # Moved off the unauthenticated /readyz, which was handing an
+        # anonymous caller the deployment's filesystem layout.
+        "state_dir": config.STATE_DIR,
+        "data_dir": config.DATA_DIR,
     }
 
 
@@ -560,7 +585,12 @@ async def estimate_panel_cost(
 @router.get("/matters/{matter_id}/computations")
 async def matter_computations(
     matter_id: str,
-    user: Dict[str, Any] = Depends(require_auth),
+    # Penalty stages, worst-case exposure and pre-deposit are internal working
+    # material — CLAUDE.md is explicit that a penalty computation shown to the
+    # officer volunteers an admission nobody asked for. Staff are denied the
+    # deliberation and the export for the same reason; this endpoint handed
+    # them the exposure arithmetic on an authenticated GET.
+    user: Dict[str, Any] = Depends(require_permission("view_deliberation")),
 ):
     """
     Interest, penalty stages, pre-deposit and amnesty position for a matter.
@@ -965,6 +995,15 @@ async def validate_models():
     for tier in config.TIERS.values():
         configured |= set(tier["models"].values())
         configured.add(tier["verifier"])
+        # The grounding model was omitted from this set, and it is the one
+        # whose staleness caused the documented outage: notice reading borrows
+        # it (intake.extract_fields_assisted -> tier["grounding"]), so a stale
+        # grounding ID broke intake while /api/health reported the tier clean.
+        # Two symptoms, one root cause, and the health check could not see it.
+        configured.add(tier.get("grounding"))
+    configured |= {config.GROUNDING_MODEL, config.DRAFT_GROUNDING_MODEL}
+    configured.discard(None)
+    configured.discard("")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(config.OPENROUTER_MODELS_URL)

@@ -52,7 +52,34 @@ ROLE_PERMISSIONS = {
 }
 
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "72"))
-_PBKDF2_ROUNDS = 240_000
+
+# OWASP's current floor for PBKDF2-HMAC-SHA256 is 600,000. The store held
+# hashes at 240,000, and `verify_password` accepted whatever round count was
+# embedded in the record — so a hash written at a weaker setting kept
+# verifying indefinitely. Rounds below the floor are now rejected outright and
+# the record is rehashed on the next successful login.
+_PBKDF2_ROUNDS = 600_000
+_PBKDF2_MINIMUM_ROUNDS = 200_000
+
+# Failed-login backoff. The store holds PBKDF2 hashes and live session tokens,
+# the bootstrap account has a predictable address, and each attempt costs a
+# 600k-round hash — so an unthrottled login is both a credential oracle and a
+# CPU amplifier. Counted per email AND per client address: per-email alone
+# lets one attacker lock a partner out of their own account, per-address alone
+# misses a distributed spray at one mailbox.
+LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.getenv("LOGIN_LOCKOUT_SECONDS", "900"))
+
+
+class LockedOut(Exception):
+    """Raised when the failed-attempt budget for an email or client is spent."""
+
+    def __init__(self, retry_after_seconds: int):
+        self.retry_after_seconds = max(int(retry_after_seconds), 1)
+        super().__init__(
+            f"Too many failed sign-in attempts. Try again in "
+            f"{max(self.retry_after_seconds // 60, 1)} minute(s)."
+        )
 
 
 def _store_path() -> str:
@@ -82,16 +109,17 @@ def _write_atomic(path: str, payload: Dict[str, Any]):
 def _load() -> Dict[str, Any]:
     path = _store_path()
     if not os.path.exists(path):
-        return {"users": [], "sessions": {}}
+        return {"users": [], "sessions": {}, "login_attempts": {}}
     try:
         with open(path) as f:
             data = json.load(f)
         data.setdefault("users", [])
         data.setdefault("sessions", {})
+        data.setdefault("login_attempts", {})
         return data
     except (json.JSONDecodeError, OSError) as e:
         print(f"users.json unreadable ({e}); starting from empty store")
-        return {"users": [], "sessions": {}}
+        return {"users": [], "sessions": {}, "login_attempts": {}}
 
 
 def _save(data: Dict[str, Any]):
@@ -107,9 +135,21 @@ def hash_password(password: str, salt: Optional[str] = None) -> str:
 
 
 def verify_password(password: str, stored: str) -> bool:
+    """
+    Check a password against a stored hash.
+
+    A record whose embedded round count is below the floor is REJECTED rather
+    than verified. Without that check the round count in the record is
+    attacker-controlled the moment the store is writable: a hash rewritten at
+    one round verifies in microseconds, and the work factor becomes advisory.
+    """
     try:
         scheme, rounds, salt, digest = stored.split("$")
         if scheme != "pbkdf2":
+            return False
+        if int(rounds) < _PBKDF2_MINIMUM_ROUNDS:
+            print("Rejected a password hash stored below the PBKDF2 floor "
+                  f"({rounds} rounds). Reset this account's password.")
             return False
         candidate = hashlib.pbkdf2_hmac(
             "sha256", password.encode(), salt.encode(), int(rounds)
@@ -117,6 +157,27 @@ def verify_password(password: str, stored: str) -> bool:
         return secrets.compare_digest(candidate, digest)
     except (ValueError, AttributeError):
         return False
+
+
+def _needs_rehash(stored: str) -> bool:
+    """True when a verified hash was written at fewer rounds than we now use."""
+    try:
+        _, rounds, _, _ = str(stored).split("$")
+        return int(rounds) < _PBKDF2_ROUNDS
+    except (ValueError, AttributeError):
+        return False
+
+
+def hash_token(token: str) -> str:
+    """
+    Session tokens are stored hashed, never in clear.
+
+    The store sat one directory traversal away from being readable, and a
+    plaintext token is a live credential the moment the file is: no password
+    needed, no lockout to trip, valid until it expires. A SHA-256 of a 256-bit
+    random token needs no salt or stretching — there is nothing to guess.
+    """
+    return hashlib.sha256((token or "").encode()).hexdigest()
 
 
 def _public(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -206,6 +267,18 @@ def update_user(user_id: str, *, role: str = None, active: bool = None,
             if len(password) < 8:
                 raise ValueError("Password must be at least 8 characters")
             user["password"] = hash_password(password)
+            # Every existing session for this user dies with the old password.
+            # A password is changed either because it may be known to someone
+            # else or because someone is being removed from a matter, and both
+            # reasons are defeated by a session that keeps working. The user
+            # signs in again with the new credential.
+            data["sessions"] = {
+                t: s for t, s in data["sessions"].items()
+                if s.get("user_id") != user_id
+            }
+            # A password reset also clears the failed-attempt record, so an
+            # account locked by an attacker is usable again immediately.
+            _clear_failures(data, _attempt_keys(user.get("email", "")))
         _save(data)
         return _public(user)
     raise ValueError("User not found")
@@ -228,21 +301,102 @@ def delete_user(user_id: str) -> bool:
     return True
 
 
-def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
-    """Verify credentials and issue a session token."""
+def _attempt_keys(email: str, client: str = "") -> List[str]:
+    keys = [f"email:{(email or '').strip().lower()}"]
+    if client:
+        keys.append(f"client:{client}")
+    return keys
+
+
+def _lockout_remaining(data: Dict[str, Any], keys: List[str]) -> int:
+    """Seconds until the earliest key unlocks, or 0 if none is locked."""
+    attempts = data.get("login_attempts") or {}
+    now = _now()
+    remaining = 0
+    for key in keys:
+        record = attempts.get(key) or {}
+        if record.get("count", 0) < LOGIN_MAX_ATTEMPTS:
+            continue
+        locked_until = record.get("locked_until")
+        if not locked_until:
+            continue
+        try:
+            until = datetime.fromisoformat(locked_until)
+        except (TypeError, ValueError):
+            continue
+        remaining = max(remaining, int((until - now).total_seconds()))
+    return max(remaining, 0)
+
+
+def _record_failure(data: Dict[str, Any], keys: List[str]):
+    attempts = data.setdefault("login_attempts", {})
+    now = _now()
+    for key in keys:
+        record = attempts.setdefault(key, {"count": 0, "locked_until": None})
+        # A lock that has expired resets the counter, so a legitimate user who
+        # mistyped twice last week does not start halfway to locked out.
+        locked_until = record.get("locked_until")
+        if locked_until:
+            try:
+                if datetime.fromisoformat(locked_until) <= now:
+                    record["count"] = 0
+                    record["locked_until"] = None
+            except (TypeError, ValueError):
+                record["count"] = 0
+                record["locked_until"] = None
+        record["count"] = record.get("count", 0) + 1
+        record["last_failure"] = now.isoformat()
+        if record["count"] >= LOGIN_MAX_ATTEMPTS:
+            record["locked_until"] = (
+                now + timedelta(seconds=LOGIN_LOCKOUT_SECONDS)).isoformat()
+
+
+def _clear_failures(data: Dict[str, Any], keys: List[str]):
+    attempts = data.get("login_attempts") or {}
+    for key in keys:
+        attempts.pop(key, None)
+
+
+def authenticate(email: str, password: str,
+                 client: str = "") -> Optional[Dict[str, Any]]:
+    """
+    Verify credentials and issue a session token.
+
+    Returns None on a bad credential and raises `LockedOut` once the attempt
+    budget is spent — the caller needs to distinguish them, because "wrong
+    password" and "locked for 15 minutes" are different things to tell a
+    partner who is trying to get into their own file on a deadline.
+    """
     data = _load()
     email = (email or "").strip().lower()
+    keys = _attempt_keys(email, client)
+
+    remaining = _lockout_remaining(data, keys)
+    if remaining:
+        raise LockedOut(remaining)
+
     user = next((u for u in data["users"] if u["email"].lower() == email), None)
 
     if user is None or not user.get("active", True):
         # Constant-ish work whether or not the user exists
         hash_password(password or "x")
+        _record_failure(data, keys)
+        _save(data)
         return None
     if not verify_password(password or "", user["password"]):
+        _record_failure(data, keys)
+        _save(data)
         return None
 
+    _clear_failures(data, keys)
+
+    # A hash written at an older, lower round count is upgraded here — the one
+    # moment the plaintext is available to rehash with.
+    if _needs_rehash(user.get("password", "")):
+        user["password"] = hash_password(password)
+
     token = secrets.token_urlsafe(32)
-    data["sessions"][token] = {
+    data["sessions"][hash_token(token)] = {
         "user_id": user["id"],
         "created_at": _now().isoformat(),
         "expires_at": (_now() + timedelta(hours=SESSION_TTL_HOURS)).isoformat(),
@@ -261,7 +415,7 @@ def resolve_session(token: str) -> Optional[Dict[str, Any]]:
     if not token:
         return None
     data = _load()
-    session = data["sessions"].get(token)
+    session = data["sessions"].get(hash_token(token))
     if not session:
         return None
     if session.get("expires_at", "") <= _now().isoformat():
@@ -274,8 +428,9 @@ def resolve_session(token: str) -> Optional[Dict[str, Any]]:
 
 def revoke_session(token: str):
     data = _load()
-    if token in data["sessions"]:
-        del data["sessions"][token]
+    hashed = hash_token(token)
+    if hashed in data["sessions"]:
+        del data["sessions"][hashed]
         _save(data)
 
 
