@@ -18,6 +18,7 @@ document must never take down the index.
 
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Document IDs become filenames. Anything outside this alphabet — a slash, a
+# "..", an encoded traversal — is a path, not an ID, and the user store
+# (password hashes and live session tokens) sits one directory above the
+# matters. The API's route pattern happens to block traversal today; that is
+# a property of the web server's URL decoding, not of this module, and any
+# future caller that takes an ID from a request body loses it. So it is
+# enforced here, at the only place paths are built.
+_DOCUMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _valid_id(name: Any) -> bool:
+    return bool(_DOCUMENT_ID_RE.match(str(name or "")))
+
+
 # ---------------------------------------------------------------------------
 # Document primitives
 #
@@ -43,6 +58,8 @@ def _now() -> str:
 
 def _write_document(directory: str, name: str, document: Dict[str, Any]) -> None:
     """Write one JSON document atomically, creating the directory if needed."""
+    if not _valid_id(name):
+        raise ValueError(f"Invalid document id: {name!r}")
     Path(directory).mkdir(parents=True, exist_ok=True)
     handle, staging_path = tempfile.mkstemp(
         dir=directory, prefix=".tmp-", suffix=".json"
@@ -63,6 +80,8 @@ def _write_document(directory: str, name: str, document: Dict[str, Any]) -> None
 def _read_document(directory: str, name: str,
                    label: str) -> Optional[Dict[str, Any]]:
     """Load one JSON document, or None if it is absent or unreadable."""
+    if not _valid_id(name):
+        return None
     path = os.path.join(directory, f"{name}.json")
     if not os.path.exists(path):
         return None
@@ -76,6 +95,8 @@ def _read_document(directory: str, name: str,
 
 def _remove_document(directory: str, name: str) -> bool:
     """Delete one document. True if it was there to delete."""
+    if not _valid_id(name):
+        return False
     path = os.path.join(directory, f"{name}.json")
     if not os.path.exists(path):
         return False
@@ -123,6 +144,8 @@ def ensure_data_dir() -> None:
 
 
 def get_conversation_path(conversation_id: str) -> str:
+    if not _valid_id(conversation_id):
+        raise ValueError(f"Invalid conversation id: {conversation_id!r}")
     return os.path.join(config.DATA_DIR, f"{conversation_id}.json")
 
 

@@ -73,3 +73,49 @@ def test_listing_sorted_newest_first(temp_data_dir):
         })
     listing = storage.list_conversations()
     assert [c["id"] for c in listing] == ["two", "one"]
+
+
+class TestDocumentIdValidation:
+    """
+    IDs become filenames, and the matters directory sits one level below the
+    user store (password hashes and live session tokens). An ID that is really
+    a path — "../users", an absolute path, an encoded traversal — must never
+    reach os.path.join. The API route pattern blocks this for URL callers
+    today, but that is the web server's property, not this module's, and the
+    guard belongs where the path is built.
+    """
+
+    BAD_IDS = ["../users", "../../etc/passwd", "a/b", "matters/../users",
+               "", ".", "..", "with space", "id.json", "a" * 65, "sub/dir/x"]
+    GOOD_IDS = ["abc", "a1b2c3d4-1111-2222-3333-444455556666",
+                "matter_01", "MATTER-01", "a" * 64]
+
+    def test_get_matter_rejects_a_traversal_id(self, temp_data_dir):
+        for bad in self.BAD_IDS:
+            assert storage.get_matter(bad) is None, bad
+
+    def test_delete_matter_rejects_a_traversal_id(self, temp_data_dir):
+        for bad in self.BAD_IDS:
+            assert storage.delete_matter(bad) is False, bad
+
+    def test_save_matter_rejects_a_traversal_id(self, temp_data_dir):
+        for bad in self.BAD_IDS:
+            with pytest.raises(ValueError):
+                storage.save_matter({"id": bad})
+
+    def test_a_traversal_delete_cannot_reach_a_sibling_file(self, tmp_path,
+                                                            monkeypatch):
+        """The concrete attack: delete_matter('../users') must not remove the
+        user store."""
+        monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
+        users_file = tmp_path / "users.json"
+        users_file.write_text('{"users": [], "sessions": {}}')
+        assert storage.delete_matter("../users") is False
+        assert users_file.exists()
+
+    def test_valid_ids_round_trip(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
+        for good in self.GOOD_IDS:
+            storage.save_matter({"id": good, "status": "draft"})
+            assert storage.get_matter(good)["id"] == good
+            assert storage.delete_matter(good) is True

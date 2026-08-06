@@ -115,6 +115,11 @@ async def build_briefing(
         max_tokens=config.role_max_tokens("briefing"),
         web_search=True,
         web_max_results=config.WEB_MAX_RESULTS,
+        # The briefing prompt carries the matter's issues and facts — client
+        # data on the pro tier — so it routes zero-retention exactly as the
+        # counsel calls do. On the anonymising tier the matter arrives here
+        # already scrubbed and ZDR is not the control being relied on.
+        zdr=config.ENFORCE_ZDR and not tier.get("anonymise"),
     )
 
     if not result.get("ok"):

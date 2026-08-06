@@ -314,8 +314,50 @@ EXPORT_PROVENANCE = os.getenv("EXPORT_PROVENANCE", "false").lower() in (
 # the user chose to anonymise.
 TIER_ALIASES = {"free": "draft"}
 
+# The fail-safe tier for anything that resolves to nothing: a typo, a stale
+# stored value, a case variant of a retired alias. It must be the ANONYMISING
+# tier — the failure mode of sending real identifiers is unrecoverable, the
+# failure mode of over-anonymising is a re-run.
+FAILSAFE_TIER = "draft"
 
-def get_tier(name: str) -> dict:
-    """Resolve a tier profile, falling back to the default."""
-    key = TIER_ALIASES.get(name or "", name)
-    return TIERS.get(key or DEFAULT_TIER, TIERS[DEFAULT_TIER])
+
+def _resolve_tier_key(name) -> str:
+    key = str(name or "").strip().lower()
+    return TIER_ALIASES.get(key, key)
+
+
+def is_known_tier(name) -> bool:
+    """True when the name resolves to a configured tier, aliases included."""
+    return _resolve_tier_key(name) in TIERS
+
+
+def get_tier(name: str = None) -> dict:
+    """
+    Resolve a tier profile.
+
+    An empty name takes the deployment default. A name that resolves to
+    NOTHING takes the fail-safe (anonymising) tier — never the default, which
+    is "pro": an unrecognised stored tier falling through to pro would send a
+    matter's real identifiers on a re-run of work the user chose to anonymise.
+    The API layer additionally rejects unknown tier names outright; this
+    fallback is the last line, not the interface.
+    """
+    key = _resolve_tier_key(name)
+    if key in TIERS:
+        return TIERS[key]
+    if not key:
+        default = _resolve_tier_key(DEFAULT_TIER)
+        if default in TIERS:
+            return TIERS[default]
+    return TIERS[FAILSAFE_TIER]
+
+
+# A misspelt DEFAULT_PANEL_TIER used to raise KeyError on EVERY get_tier call
+# — one typo in a dashboard environment variable turned every run and every
+# intake into an unhandled 500. Now it degrades to the fail-safe tier, loudly.
+if _resolve_tier_key(DEFAULT_TIER) not in TIERS:
+    print(
+        f"WARNING: DEFAULT_PANEL_TIER={DEFAULT_TIER!r} is not a configured "
+        f"tier ({', '.join(sorted(TIERS))}). Requests that do not name a tier "
+        f"will use the fail-safe '{FAILSAFE_TIER}' tier."
+    )

@@ -19,6 +19,8 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 
+from backend import config
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -228,3 +230,56 @@ class TestTheGoldenSetBoundary:
                 f"{path.name} is committed but not marked synthetic. A case "
                 f"built from a client matter belongs in evals/golden/private/."
             )
+
+
+class TestTierResolutionIsFailSafe:
+    """
+    The tier decides whether client identifiers are stripped before any
+    request leaves the machine. A tier name that resolves to NOTHING — a typo,
+    a stale stored value, a case variant of a retired alias — must never land
+    on the non-anonymising tier, and a misconfigured deployment default must
+    not turn every run into a 500.
+    """
+
+    def test_the_retired_free_tier_resolves_to_the_anonymising_tier(self):
+        tier = config.get_tier("free")
+        assert tier["key"] == "draft"
+        assert tier["anonymise"] is True
+        assert tier["watermark"]
+
+    def test_alias_resolution_is_case_and_space_insensitive(self):
+        for name in ("Free", "FREE", " free ", "  Free"):
+            assert config.get_tier(name)["key"] == "draft", name
+
+    def test_an_unknown_tier_never_falls_through_to_pro(self):
+        for name in ("typo", "gold", "premium", "PRO_"):
+            resolved = config.get_tier(name)
+            assert resolved["key"] == config.FAILSAFE_TIER
+            assert resolved["anonymise"] is True, (
+                f"{name!r} resolved to a non-anonymising tier — a re-run of "
+                "anonymised work would send real identifiers."
+            )
+
+    def test_the_failsafe_tier_anonymises(self):
+        assert config.TIERS[config.FAILSAFE_TIER]["anonymise"] is True
+
+    def test_empty_name_takes_the_deployment_default(self):
+        assert config.get_tier("")["key"] == config._resolve_tier_key(
+            config.DEFAULT_TIER)
+        assert config.get_tier(None)["key"] == config._resolve_tier_key(
+            config.DEFAULT_TIER)
+
+    def test_a_misconfigured_default_degrades_instead_of_raising(self, monkeypatch):
+        # A typo in DEFAULT_PANEL_TIER used to raise KeyError on EVERY call,
+        # including well-formed ones — one dashboard typo, every run a 500.
+        monkeypatch.setattr(config, "DEFAULT_TIER", "notatier")
+        assert config.get_tier("draft")["key"] == "draft"
+        assert config.get_tier("")["key"] == config.FAILSAFE_TIER
+        assert config.get_tier(None)["anonymise"] is True
+
+    def test_is_known_tier(self):
+        assert config.is_known_tier("draft")
+        assert config.is_known_tier("free")      # via the alias
+        assert config.is_known_tier(" PRO ")
+        assert not config.is_known_tier("typo")
+        assert not config.is_known_tier("")

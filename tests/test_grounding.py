@@ -109,6 +109,40 @@ class TestBuildBriefing:
         assert briefing["material_change"] is True
         assert usage["total_tokens"] == 500
 
+    async def test_pro_tier_grounding_routes_zero_retention(self, monkeypatch):
+        """The briefing prompt carries the matter's issues — client data on
+        the pro tier — so it must route ZDR exactly as the counsel calls do."""
+        captured = {}
+
+        async def fake_query(model, messages, **kwargs):
+            captured["zdr"] = kwargs.get("zdr")
+            return {"ok": True, "content": "x", "usage": None}
+
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", True)
+        monkeypatch.setattr(config, "ENFORCE_ZDR", True)
+        monkeypatch.setattr(grounding, "query_model", fake_query)
+
+        await grounding.build_briefing(
+            self.MATTER, gst, {"grounding": "some/model", "anonymise": False})
+        assert captured["zdr"] is True
+
+    async def test_anonymising_tier_grounding_does_not_force_zdr(self, monkeypatch):
+        """On the draft tier the matter arrives already scrubbed, so ZDR is
+        not the control being relied on and is not forced on."""
+        captured = {}
+
+        async def fake_query(model, messages, **kwargs):
+            captured["zdr"] = kwargs.get("zdr")
+            return {"ok": True, "content": "x", "usage": None}
+
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", True)
+        monkeypatch.setattr(config, "ENFORCE_ZDR", True)
+        monkeypatch.setattr(grounding, "query_model", fake_query)
+
+        await grounding.build_briefing(
+            self.MATTER, gst, {"grounding": "some/model", "anonymise": True})
+        assert captured["zdr"] is False
+
     async def test_nil_result_is_not_a_material_change(self, monkeypatch):
         async def fake_query(*args, **kwargs):
             return {"ok": True, "content": NO_CHANGE, "usage": None}

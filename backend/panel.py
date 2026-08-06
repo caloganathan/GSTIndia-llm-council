@@ -482,7 +482,7 @@ async def run_panel_stream(
     if not skip_verification:
         yield {"type": "verification_start"}
         verification, verify_usage = await verify_authorities(
-            determination, pack, tier["verifier"]
+            determination, pack, tier["verifier"], zdr=zdr,
         )
         yield {"type": "verification_complete", "data": verification}
 

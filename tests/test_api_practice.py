@@ -300,3 +300,44 @@ class TestLegacyTokenIsAnnounced:
 
         client.get("/api/matters", headers=HEADERS)
         assert "shared APP_ACCESS_TOKEN" not in capsys.readouterr().out
+
+
+class TestUnknownTierIsRejected:
+    """
+    A tier name that resolves to nothing is rejected at the boundary with a
+    400, rather than silently rerouted. The one exception is the deployment
+    default: a misconfigured default must degrade, not turn every request into
+    a 400. (config.get_tier is the last line; this is the interface.)
+    """
+
+    def test_panel_run_rejects_an_unknown_tier(self, client):
+        response = client.post(
+            "/api/panel/run",
+            json={"intake": {"notice_type": "ASMT-10"}, "tier": "premium"},
+            headers=HEADERS,
+        )
+        assert response.status_code == 400
+        assert "Unknown tier" in response.json()["detail"]
+
+    def test_extract_rejects_an_unknown_tier(self, client):
+        response = client.post(
+            "/api/panel/extract?tier=premium",
+            files={"file": ("n.txt", b"some notice text", "text/plain")},
+            headers=HEADERS,
+        )
+        assert response.status_code == 400
+
+    def test_a_known_alias_is_accepted(self, client, monkeypatch):
+        """'free' resolves to draft and must not be rejected."""
+        async def fake_stream(*args, **kwargs):
+            yield {"type": "summary", "data": {"determination": {"defects": []}},
+                   "metadata": {"tier": "draft"}}
+
+        from backend import main as main_module
+        monkeypatch.setattr(main_module, "run_panel_stream", fake_stream)
+        response = client.post(
+            "/api/panel/run",
+            json={"intake": {"notice_type": "ASMT-10"}, "tier": "free"},
+            headers=HEADERS,
+        )
+        assert response.status_code == 200

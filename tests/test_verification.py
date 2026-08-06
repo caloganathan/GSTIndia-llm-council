@@ -162,6 +162,27 @@ class TestVerifyAuthorities:
         assert result["summary"]["total"] == 0
         assert usage == []
 
+    async def test_zdr_is_passed_through_to_the_checker(self, monkeypatch):
+        """The check prompt carries every citation with its proposition —
+        client-derived on the pro tier — so it routes ZDR like every other
+        stage. The panel passes the run's tier down; verification honours it."""
+        captured = {}
+
+        async def query(model, messages, **kwargs):
+            captured["zdr"] = kwargs.get("zdr")
+            return {"ok": True, "usage": None,
+                    "content": '{"results": [{"index": 1, "status": "VERIFIED"}]}'}
+
+        monkeypatch.setattr(verification, "query_model", query)
+        determination = {
+            "authorities": [{"citation": "Section 73 CGST Act", "proposition": "x"}],
+        }
+        await verification.verify_authorities(determination, gst, "m", zdr=True)
+        assert captured["zdr"] is True
+
+        await verification.verify_authorities(determination, gst, "m", zdr=False)
+        assert captured["zdr"] is False
+
     async def test_checker_failure_marks_everything_unverified(self, monkeypatch):
         async def failing_query(*args, **kwargs):
             return {"ok": False, "error": "network down"}

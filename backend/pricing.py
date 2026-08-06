@@ -33,6 +33,8 @@ publish a precise figure derived from nothing.
 import os
 from typing import Any, Dict, Iterable, List, Optional
 
+from . import config
+
 # The conversion rate. A stated constant, not a live feed: a currency API is a
 # network dependency, a failure mode and a privacy question, in exchange for
 # precision this number does not need. Set it once a quarter.
@@ -127,10 +129,10 @@ def observed_rates(matters: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any
         limbs = matter.get("panel_defect_count") or matter.get("defect_count")
         if not limbs or limbs <= 0:
             continue
-        tier = matter.get("tier") or "pro"
-        # Matters created under the retired free tier were run on the draft
-        # models; their costs belong to that tier's history.
-        tier = "draft" if tier == "free" else tier
+        # Resolve through the one alias table config keeps — matters created
+        # under the retired free tier were run on the draft models, and any
+        # future alias must land here without a second hardcoded map.
+        tier = config.get_tier(matter.get("tier") or "pro")["key"]
         by_tier.setdefault(tier, []).append(float(cost) / float(limbs))
 
     result = {}
@@ -152,7 +154,7 @@ def estimate_run(defect_count: int, panel_count: int, tier: str,
     triage means most limbs do not, and estimating on the total would overstate
     a typical eight-limb notice by a factor of four.
     """
-    tier = "draft" if tier == "free" else (tier or "pro")
+    tier = config.get_tier(tier or "pro")["key"]
     rates = observed_rates(history or [])
     tier_history = rates.get(tier) or {}
 

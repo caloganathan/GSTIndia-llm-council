@@ -278,6 +278,31 @@ class TestPrivacy:
         assert "Acme Industries" in sent["prompt"]
         assert sent["zdr"] is True
 
+    async def test_free_tier_restores_identifiers_in_the_result(self, monkeypatch):
+        """The model reads scrubbed text and answers in scrubbed tokens; the
+        fields returned to the user must carry the real identifiers back, or
+        '[GSTIN-1]' and 'the Taxpayer' reach the matter and both exports."""
+        async def echo_placeholders(model, messages, **kwargs):
+            prompt = messages[0]["content"]
+            # The model can only echo tokens it actually saw. Pull the GSTIN
+            # placeholder out of the scrubbed prompt and answer with it.
+            import re
+            token = re.search(r"\[GSTIN-\d+\]", prompt)
+            gstin_token = token.group(0) if token else "[GSTIN-?]"
+            return {"ok": True, "usage": None, "content":
+                    '{"issues": "Excess ITC by the Taxpayer under ' +
+                    gstin_token + '", "facts": "the Taxpayer filed late."}'}
+
+        monkeypatch.setattr(intake, "query_model", echo_placeholders)
+        fields, _, _ = await intake.extract_fields_assisted(
+            NOTICE, gst, self.FREE)
+
+        blob = " ".join(fields.values())
+        assert "[GSTIN" not in blob, "a placeholder token reached the user"
+        assert "the Taxpayer" not in blob, "the placeholder name was not restored"
+        assert "29AAAPL1234C1ZV" in blob
+        assert "Acme Industries" in blob
+
     async def test_extraction_failure_is_reported_not_swallowed(self, monkeypatch):
         async def failing(*args, **kwargs):
             return {"ok": False, "error": "model unavailable"}

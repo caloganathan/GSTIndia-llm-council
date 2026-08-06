@@ -952,10 +952,16 @@ async def extract_fields_assisted(
         return {}, None, ["No text to read."]
 
     outgoing = text
+    # The replacement map is kept so the model's answer can be restored before
+    # it reaches the user: a discarded map meant the extracted issues carried
+    # "[GSTIN-1]" and "the Taxpayer" into the matter and then into both
+    # exported documents. The model still never sees the real values.
+    replacements: Dict[str, str] = {}
     if tier.get("anonymise"):
         # The entity name must be found before scrubbing, or the sanitiser has
         # nothing to match on and the company name goes out in clear.
-        outgoing = sanitizer.scrub_text(text, {}, client_name=find_entity_name(text))
+        outgoing = sanitizer.scrub_text(text, replacements,
+                                        client_name=find_entity_name(text))
         leaks = sanitizer.audit_leaks(outgoing[:MAX_MODEL_CHARS])
         if leaks:
             return {}, None, [
@@ -1002,6 +1008,9 @@ async def extract_fields_assisted(
             fields[key] = value
     if parsed.get("officer"):
         fields["issuing_officer"] = parsed["officer"].strip()
+
+    if replacements:
+        fields = sanitizer.restore_structure(fields, replacements)
 
     return fields, result.get("usage"), warnings
 
