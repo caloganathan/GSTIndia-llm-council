@@ -139,11 +139,25 @@ def redact_for_role(payload: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, 
     Staff get the determination and the verification trail — what they need to
     act — but not the firm's internal argument, which is privileged working
     material and easy to quote out of context.
-    """
-    if users.can(user, "view_deliberation"):
-        return payload
 
+    Run cost goes the same way for any role without `view_costs`. The matter
+    LISTING already stripped it, but a single-matter read carried
+    `metadata.usage` through untouched, so what the firm pays per run reached
+    a staff screen by the other route.
+    """
     redacted = dict(payload)
+
+    if not users.can(user, "view_costs"):
+        metadata = dict(redacted.get("metadata") or {})
+        if metadata:
+            metadata.pop("usage", None)
+            metadata.pop("cost", None)
+            redacted["metadata"] = metadata
+        redacted.pop("usage", None)
+
+    if users.can(user, "view_deliberation"):
+        return redacted
+
     result = dict(redacted.get("result") or {})
     if result:
         result["analyses"] = []

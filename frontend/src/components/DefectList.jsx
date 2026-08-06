@@ -33,11 +33,22 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
     onChange(defects.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   };
 
+  // Clearing a head must not write a zero. It did — `value === '' ? 0` —
+  // and the same call unconditionally set amount_unread: false, so typing a
+  // figure and then clearing it turned an honestly-unread limb into a limb
+  // worth nothing, the warning banner disappeared, and the zero travelled all
+  // the way to the export. A blank the reviewer can see is safe; a zero they
+  // cannot see is not.
   const updateHead = (index, head, value) => {
     const defect = defects[index];
     const amounts = { ...(defect.amount_by_head || {}) };
-    amounts[head] = value === '' ? 0 : Number(value);
-    update(index, { amount_by_head: amounts, amount_unread: false });
+    if (value === '' || value === null) {
+      delete amounts[head];
+    } else {
+      amounts[head] = Number(value);
+    }
+    const anyValue = TAX_HEADS.some((h) => Number(amounts[h]));
+    update(index, { amount_by_head: amounts, amount_unread: !anyValue });
   };
 
   const argued = defects.filter((d) => ARGUED_POSTURES.has(d.posture));
@@ -56,10 +67,25 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
       </div>
 
       {unread.length > 0 && (
-        <div className="alert alert-warning" style={{ marginBottom: 'var(--sp-3)' }}>
+        <div className="alert alert-warning" style={{ marginBottom: 'var(--sp-3)' }} role="alert">
           <strong>{unread.length} amount{unread.length > 1 ? 's' : ''} could not be
-          read</strong> from the notice annexure. Enter {unread.length > 1 ? 'them' : 'it'} below.
-          A blank you can see is safe; a wrong figure you cannot see is not.
+          read</strong> from the notice annexure. A blank you can see is safe; a
+          wrong figure you cannot see is not.
+          {/* Rows start collapsed, so "enter them below" left the reviewer
+              guessing which of eight to open. Name them, and open them. */}
+          <div style={{ marginTop: 'var(--sp-2)', display: 'flex',
+                        gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+            {unread.map((d) => (
+              <button
+                key={d.index}
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setOpen(defects.indexOf(d))}
+              >
+                Enter limb {d.index}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

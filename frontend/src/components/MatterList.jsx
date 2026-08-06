@@ -32,7 +32,11 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
     }
   };
 
-  if (error) return <div className="page"><div className="alert alert-danger">{error}</div></div>;
+  // Only a failed LOAD takes the page — a failed delete must not wipe the
+  // list the user is working from.
+  if (error && !matters) {
+    return <div className="page"><div className="alert alert-danger" role="alert">{error}</div></div>;
+  }
   if (!matters) return <div className="page"><Loading /></div>;
 
   const term = query.trim().toLowerCase();
@@ -57,6 +61,16 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
         </div>
         <button className="btn btn-primary" onClick={onNewMatter}>New matter</button>
       </div>
+
+      {error && (
+        <div className="alert alert-danger" role="alert"
+             style={{ marginBottom: 'var(--sp-4)', display: 'flex',
+                      justifyContent: 'space-between', gap: 'var(--sp-3)' }}>
+          <span>{error}</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setError('')}
+                  aria-label="Dismiss this message">Dismiss</button>
+        </div>
+      )}
 
       {matters.length > 0 && (
         <div style={{ marginBottom: 'var(--sp-4)', maxWidth: 340 }}>

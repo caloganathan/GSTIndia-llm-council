@@ -126,3 +126,56 @@ class TestStreamRedaction:
         text = _run(client, staff_headers)
         assert "model unavailable" in text
         assert PRIVILEGED not in text
+
+
+class TestCostRedaction:
+    """
+    Run cost is a partner/manager figure. The matter LISTING already stripped
+    it, but a single-matter read and the live stream carried
+    `metadata.usage` through untouched — so what the firm pays per run reached
+    a staff screen by two other routes.
+    """
+
+    def _fake_stream_with_cost(self, monkeypatch):
+        async def fake(*args, **kwargs):
+            yield {"type": "summary",
+                   "data": {"determination": {"recommended_position": "Contest.",
+                                              "defects": []},
+                            "analyses": [], "cross_exams": [],
+                            "verification": {}},
+                   "metadata": {"tier": "pro", "tier_label": "Pro Council",
+                                "usage": {"total_cost": 4.25,
+                                          "total_tokens": 120000}}}
+
+        from backend import main as main_module
+        monkeypatch.setattr(main_module, "run_panel_stream", fake)
+
+    def test_staff_stream_carries_no_cost(self, client, staff_headers, monkeypatch):
+        self._fake_stream_with_cost(monkeypatch)
+        text = _run(client, staff_headers)
+        assert "total_cost" not in text
+        assert "4.25" not in text
+        # The tier label is not a cost and must survive.
+        assert "Pro Council" in text
+
+    def test_partner_stream_carries_the_cost(self, client, monkeypatch):
+        self._fake_stream_with_cost(monkeypatch)
+        text = _run(client, PARTNER_HEADERS)
+        assert "total_cost" in text
+
+    def test_a_staff_matter_read_carries_no_cost(self, client, staff_headers,
+                                                 monkeypatch):
+        self._fake_stream_with_cost(monkeypatch)
+        matter_id = _matter_id(_run(client, staff_headers))
+        body = client.get(f"/api/matters/{matter_id}", headers=staff_headers).text
+        assert "total_cost" not in body
+
+    def test_a_partner_matter_read_still_carries_it(self, client, staff_headers,
+                                                    monkeypatch):
+        """Redaction is per reader: the matter a staff user ran must still
+        show its cost to the partner who reviews it."""
+        self._fake_stream_with_cost(monkeypatch)
+        matter_id = _matter_id(_run(client, staff_headers))
+        body = client.get(f"/api/matters/{matter_id}",
+                          headers=PARTNER_HEADERS).text
+        assert "total_cost" in body

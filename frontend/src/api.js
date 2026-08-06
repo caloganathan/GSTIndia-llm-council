@@ -41,6 +41,31 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server's error `detail`, or a status-only fallback.
+ *
+ * Shared so the streaming calls report what the API actually said. They built
+ * their own "(403)" message and threw the body away, which hid the one line
+ * that explains the failure — the tier that was rejected, the permission that
+ * was missing, the model ID that was stale.
+ */
+async function errorDetail(response, fallbackLabel) {
+  try {
+    const body = await response.json();
+    if (body?.detail) return body.detail;
+  } catch {
+    /* non-JSON error body */
+  }
+  return `${fallbackLabel} (${response.status})`;
+}
+
+/** The filename the server asked for, from Content-Disposition. */
+function filenameFromDisposition(response) {
+  const header = response.headers?.get?.('Content-Disposition') || '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+  return match ? decodeURIComponent(match[1].trim()) : '';
+}
+
 async function request(path, options = {}) {
   const response = await fetch(apiUrl(path), {
     ...options,
@@ -167,7 +192,13 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = window.document.createElement('a');
     link.href = url;
-    link.download = filename ||
+    // The backend computes a per-matter filename carrying the client and the
+    // notice (export.suggested_filename / file_note_filename). Discarding it
+    // for a constant meant a partner downloading five matters got
+    // Reply(1).docx … Reply(5).docx, with nothing on disk to say which was
+    // which — and the internal/filing distinction surviving only in the name
+    // is the one thing that must not blur.
+    link.download = filename || filenameFromDisposition(response) ||
       (document === 'file_note' ? 'File_Note_INTERNAL.docx' : 'Reply.docx');
     window.document.body.appendChild(link);
     link.click();
@@ -210,7 +241,8 @@ export const api = {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new ApiError(`Panel run failed (${response.status})`, response.status);
+      throw new ApiError(await errorDetail(response, 'Panel run failed'),
+                         response.status);
     }
     await consumeSSE(response, onEvent);
   },
@@ -246,7 +278,8 @@ export const api = {
       }
     );
     if (!response.ok) {
-      throw new ApiError(`Failed to send message (${response.status})`, response.status);
+      throw new ApiError(await errorDetail(response, 'Failed to send message'),
+                         response.status);
     }
     await consumeSSE(response, onEvent);
   },
