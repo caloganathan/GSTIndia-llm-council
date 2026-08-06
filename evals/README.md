@@ -16,8 +16,16 @@ you a scorecard for the judgement calls only a partner can make.
 
 ## What is scored automatically
 
+The first three are the ones that decide whether a reply is safe to file. A
+limb the panel never finds cannot be answered, and an unanswered limb is
+confirmed unopposed; a limb argued correctly and lost for want of one document
+is the failure this product was rebuilt around.
+
 | Metric | What it tells you | Target |
 |---|---|---|
+| **Defect coverage** | Did the panel answer EVERY limb the notice raises? | 100% — no exceptions |
+| **Evidence gap catch** | Did it demand the document whose absence actually loses the limb? | 100% |
+| **Posture accuracy** | Did it take the right position on each limb (explained / contested / paid)? | ≥ 70% |
 | **Citation integrity** | % of authorities that verified. `NOT_FOUND` means fabricated | 0 not-found, ever |
 | **Issue coverage** | Did the panel find the issues the notice actually raised? | ≥ 90% |
 | **Procedural catch** | Did Procedural Counsel spot the limitation / jurisdiction point you spotted? | ≥ 80% |
@@ -61,8 +69,16 @@ uv run pytest tests/test_golden_set.py
 ```
 
 Every case in the committed set must carry `"synthetic": true` and a
-`provenance` note. Two separate tests enforce it. A case built from a client
-matter goes in `private/`, which never leaves the machine.
+`provenance` note. Two separate tests enforce both halves —
+`tests/test_golden_set.py` and `tests/test_deployment.py`, deliberately
+duplicated because the first module skips itself when the directory is empty,
+which is exactly the state the second exists to detect. A case built from a
+real client matter goes in `private/`, which never leaves the machine.
+
+Each case also declares `expected_unread_limbs` (default 0) and, where the
+form carries no demand, `"no_notice_total": true`. Both exist so that a
+figure-reading regression FAILS the checksum test rather than silently
+skipping it.
 
 ## Setting up a golden set
 

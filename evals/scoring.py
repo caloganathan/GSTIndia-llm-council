@@ -99,7 +99,13 @@ def score_citation_integrity(verification: Dict[str, Any]) -> Dict[str, Any]:
         "verified_rate": round(verified / total, 3) if total else None,
         "fabricated": fabricated,
         "stale": stale,
-        "passed": not_found == 0 and superseded == 0,
+        # Unscorable when nothing was checked. A run where verification never
+        # happened has not demonstrated citation integrity — it has produced
+        # no evidence either way, and `passed: True` would count that absence
+        # as a pass. This is the same failure direction export.py already
+        # takes with `_is_filable`, which files nothing when the index is empty.
+        "passed": (None if not total
+                   else (not_found == 0 and superseded == 0)),
     }
 
 
@@ -165,6 +171,14 @@ def infer_position(determination: Dict[str, Any]) -> Optional[str]:
         return None
     contest = sum(text.count(m) for m in CONTEST_MARKERS)
     concede = sum(text.count(m) for m in CONCEDE_MARKERS)
+    if contest == 0 and concede == 0:
+        # No marker of either kind. This is UNSCORABLE, not a tie: returning
+        # "mixed" here scored a determination reading "File a detailed reply
+        # within the time allowed" as agreeing with whatever the golden case
+        # expected, because `score_position` treats "mixed" as agreement. A
+        # position the scorer cannot read must be excluded from the metric,
+        # not counted as a pass.
+        return None
     if contest == concede:
         return "mixed"
     return "contest" if contest > concede else "concede"
@@ -215,6 +229,33 @@ def score_determination_integrity(determination: Dict[str, Any]) -> Dict[str, An
     }
 
 
+def _match_defect(expected: Dict[str, Any],
+                  produced: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Find the produced limb answering an expected limb.
+
+    The department's numbering is authoritative, so the index is tried first;
+    a panel that renumbers is then matched on a distinctive fragment of the
+    heading. Shared by `score_defects` and `score_evidence_gaps` because they
+    MUST agree on which limb is which: when only the former had the heading
+    fallback, a renumbered limb scored as found for defect coverage and as a
+    false zero for `evidence_gap_catch` — the sharpest number on the
+    scorecard reporting a failure on a document that had in fact been
+    demanded.
+    """
+    by_index = {d.get("index"): d for d in produced}
+    actual = by_index.get(expected.get("index"))
+    if actual is not None:
+        return actual
+    needle = _normalise(expected.get("heading_contains", ""))
+    if not needle:
+        return None
+    return next(
+        (d for d in produced if needle in _normalise(d.get("heading", ""))),
+        None,
+    )
+
+
 def score_defects(determination: Dict[str, Any],
                   expected_defects: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -231,20 +272,10 @@ def score_defects(determination: Dict[str, Any],
 
     produced = [d for d in (determination.get("defects") or [])
                 if isinstance(d, dict)]
-    by_index = {d.get("index"): d for d in produced}
 
     missed, posture_errors, matched = [], [], 0
     for expected in expected_defects:
-        actual = by_index.get(expected.get("index"))
-        if actual is None:
-            # Fall back to a heading match — the department's numbering is
-            # authoritative but a panel may renumber.
-            needle = _normalise(expected.get("heading_contains", ""))
-            actual = next(
-                (d for d in produced
-                 if needle and needle in _normalise(d.get("heading", ""))),
-                None,
-            )
+        actual = _match_defect(expected, produced)
         if actual is None:
             missed.append(expected.get("heading_contains")
                           or expected.get("index"))
@@ -297,12 +328,12 @@ def score_evidence_gaps(determination: Dict[str, Any],
         return {"expected": 0, "found": 0, "rate": None, "missed": [],
                 "passed": None}
 
-    produced = {d.get("index"): d for d in (determination.get("defects") or [])
-                if isinstance(d, dict)}
+    produced = [d for d in (determination.get("defects") or [])
+                if isinstance(d, dict)]
 
     found, missed = 0, []
     for expected, item in targets:
-        actual = produced.get(expected.get("index")) or {}
+        actual = _match_defect(expected, produced) or {}
         haystack = "\n".join(str(x) for x in (
             list(actual.get("evidence_required") or [])
             + list(actual.get("evidence_gap") or [])

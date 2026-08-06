@@ -123,18 +123,22 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "Short payment of tax on outward",
       "posture": "explained"
     },
     {
       "index": 2,
+      "heading_contains": "Difference in turnover",
       "posture": "explained"
     },
     {
       "index": 3,
+      "heading_contains": "Credit notes",
       "posture": "explained"
     },
     {
       "index": 4,
+      "heading_contains": "Excess input tax credit",
       "posture": "partial",
       "required_evidence_that_was_missing": [
         "Supplier-wise reconciliation of GSTR-2B against the credit availed in GSTR-3B, month by month"
@@ -142,14 +146,17 @@
     },
     {
       "index": 5,
+      "heading_contains": "blocked credit",
       "posture": "contested"
     },
     {
       "index": 6,
+      "heading_contains": "Late fee",
       "posture": "agreed_paid"
     },
     {
       "index": 7,
+      "heading_contains": "e-invoicing",
       "posture": "contested",
       "required_evidence_that_was_missing": [
         "The first e-invoice issued for the month of August 2023, with its Invoice Reference Number",
@@ -158,6 +165,7 @@
     },
     {
       "index": 8,
+      "heading_contains": "Interest payable",
       "posture": "agreed_paid"
     }
   ]

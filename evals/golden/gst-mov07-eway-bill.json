@@ -52,6 +52,7 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "E-way bill",
       "posture": "agreed_paid"
     }
   ]

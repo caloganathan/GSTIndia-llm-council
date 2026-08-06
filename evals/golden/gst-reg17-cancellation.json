@@ -1,6 +1,7 @@
 {
   "id": "gst-reg17-cancellation",
   "synthetic": true,
+  "no_notice_total": true,
   "provenance": "Synthetic. Written for this repository from the published structure of the form and the ordinary shape of departmental practice. No client matter, no real GSTIN, no real taxpayer, officer or reference number. Carries no head-wise table at all. The correct extraction here is an unread amount, not a zero — this case exists to hold that line.",
   "description": "A cancellation notice with suspension already in force and no money in issue. What matters is the seven-day window and the revocation route, not a demand.",
   "notice_text": "FORM GST REG-17\n[See rule 22(1)]\nShow Cause Notice for cancellation of registration\n\nReference No : ZA070325882014        Date : 03/03/2025\n\nGSTIN : 07AAHCN2276J1ZF\nName : M/s. NIRMAAN INTERIORS PRIVATE LIMITED\nAddress : 214 OKHLA INDUSTRIAL ESTATE PHASE III, NEW DELHI - 110020\n\nTax Period : FY 2024-25\nSection under which notice is issued : 29\nDate by which reply has to be submitted : 10/03/2025\n\nWhereas on the basis of the record it appears that your registration\nis liable to be cancelled for the reason stated below, you are hereby\ndirected to show cause in FORM GST REG-18 within seven working days.\n\n1. Cancellation of registration proposed under Section 29(2)(c)\n\n   The returns for a continuous period of six months have not been furnished. You are called upon to show cause why the registration should not be cancelled.\n\nYou are further directed to appear before the undersigned on the date\nthat will be intimated. If no reply is furnished within the time\nallowed, the case will be decided ex parte on the basis of the record.\n\nPlease note that your registration stands suspended with effect from\nthe date of this notice.\n\nProper Officer\nName : MEENAKSHI ARORA\nDesignation : Goods and Services Tax Officer\nJurisdiction : WARD 84 , SOUTH DELHI , Delhi",
@@ -48,6 +49,7 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "Cancellation of registration",
       "posture": "explained"
     }
   ]

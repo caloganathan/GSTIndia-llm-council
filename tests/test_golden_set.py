@@ -26,12 +26,19 @@ model can be measured on.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from backend import defects, intake
 from backend.domains import get_pack
+
+
+def _normalise(text: str) -> str:
+    """Same normalisation the scorers use, so a fragment asserted here is a
+    fragment that will match there."""
+    return re.sub(r"\s+", " ", (text or "").lower())
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "evals" / "golden"
 
@@ -68,6 +75,42 @@ class TestTheSetIsWellFormed:
         # note is what keeps that decision visible rather than assumed.
         assert case.get("synthetic") is True, f"{name}: not marked synthetic"
         assert case.get("provenance"), f"{name}: no provenance note"
+
+    @pytest.mark.parametrize("name,case", GOLDEN, ids=[n for n, _ in GOLDEN])
+    def test_every_expected_defect_carries_a_heading_fragment(self, name, case):
+        """
+        `heading_contains` is what lets the scorers find a limb the chairman
+        renumbered. Every entry was `null` once, which left `defect_coverage`
+        and `evidence_gap_catch` wholly dependent on the panel preserving the
+        department's numbering, and printed bare integers instead of limb
+        names in the scorecard's MISSED line.
+        """
+        for expected in case["expected_defects"]:
+            fragment = expected.get("heading_contains")
+            assert fragment and str(fragment).strip(), (
+                f"{name}: expected defect {expected.get('index')} has no "
+                "heading_contains fragment"
+            )
+
+    @pytest.mark.parametrize("name,case", WITH_TEXT, ids=[n for n, _ in WITH_TEXT])
+    def test_heading_fragments_resolve_to_exactly_one_limb(self, name, case):
+        """A fragment that matches nothing is dead; one that matches two limbs
+        would silently score the wrong limb."""
+        pack = get_pack("gst")
+        found = intake.extract_defects(case["notice_text"], pack)
+        headings = {d["index"]: d.get("heading", "") for d in found}
+        for expected in case["expected_defects"]:
+            fragment = _normalise(expected["heading_contains"])
+            hits = [i for i, h in headings.items() if fragment in _normalise(h)]
+            assert len(hits) == 1, (
+                f"{name}: heading_contains {expected['heading_contains']!r} "
+                f"matched {len(hits)} limbs ({hits}), expected exactly one"
+            )
+            assert hits[0] == expected["index"], (
+                f"{name}: heading_contains {expected['heading_contains']!r} "
+                f"matched limb {hits[0]}, but the entry is indexed "
+                f"{expected['index']}"
+            )
 
     @pytest.mark.parametrize("name,case", GOLDEN, ids=[n for n, _ in GOLDEN])
     def test_expected_postures_are_real_postures(self, name, case):
@@ -207,16 +250,47 @@ class TestFigureReading:
         """
         declared = case["intake"].get("amount_disputed")
         if not declared:
-            pytest.skip("no notice-level total to reconcile against")
+            assert case.get("no_notice_total") is True, (
+                f"{name}: no amount_disputed to reconcile against. If that is "
+                "deliberate, mark the case \"no_notice_total\": true so the "
+                "skip is a recorded decision rather than a silent gap."
+            )
+            pytest.skip("case is flagged as carrying no notice-level total")
 
         pack = get_pack("gst")
         found = intake.extract_defects(case["notice_text"], pack)
-        if any(d.get("amount_unread") for d in found):
-            pytest.skip("a limb was correctly reported unread")
+
+        # This test used to SKIP whenever any limb came back unread, which
+        # meant an extraction regression removed the guard instead of tripping
+        # it — the one check that needs no ground truth, disabled by exactly
+        # the failure it exists to catch. Now each case declares how many
+        # limbs are legitimately unread, and the limbs that WERE read must
+        # still reconcile to the notice total net of them.
+        unread = [d for d in found if d.get("amount_unread")]
+        expected_unread = case.get("expected_unread_limbs", 0)
+        assert len(unread) == expected_unread, (
+            f"{name}: {len(unread)} limb(s) came back unread "
+            f"(indices {[d.get('index') for d in unread]}), but the case "
+            f"declares expected_unread_limbs={expected_unread}. Either "
+            "extraction regressed, or update the case if this is intended."
+        )
 
         total = sum(
             sum((d.get("amount_by_head") or {}).values()) for d in found
         )
+        if unread:
+            # With a limb unread the printed total cannot be met exactly. The
+            # read limbs must still not EXCEED it — overshoot is the signature
+            # of a limb absorbing a neighbour's figure, which is the failure
+            # this checksum exists to catch.
+            assert total <= declared + 2.0, (
+                f"{name}: limbs read total {total:,.2f}, which exceeds the "
+                f"notice total of {declared:,.2f} while "
+                f"{len(unread)} limb(s) were unread — a limb has absorbed a "
+                "figure belonging to another."
+            )
+            return
+
         assert abs(total - declared) <= 2.0, (
             f"{name}: limbs total {total:,.2f} against a notice total of "
             f"{declared:,.2f}"

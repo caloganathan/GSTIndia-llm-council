@@ -52,6 +52,7 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "Difference in input tax credit",
       "posture": "explained",
       "required_evidence_that_was_missing": [
         "Month-by-month working showing the credit reversing in the succeeding tax period"
