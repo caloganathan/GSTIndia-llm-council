@@ -432,6 +432,32 @@ against OpenRouter's catalogue at startup; check the logs or `GET /api/health`
 for warnings about stale IDs. **A stale grounding ID breaks notice reading**,
 because the reader borrows it.
 
+### Checking the model roster
+
+Model IDs on OpenRouter churn, and a stale one fails at the moment you need it.
+The doctor checks every slot against the live catalogue and proposes
+replacements — run it before a deploy rather than discovering the problem after
+one:
+
+```bash
+python -m backend.cli check-models            # what is stale
+python -m backend.cli check-models --suggest  # and what to put in its place
+```
+
+It needs outbound access to `openrouter.ai` and no API key. Run it locally, or
+from the Render service's **Shell** tab, where it also picks up the live
+configuration.
+
+It checks more than existence, because the slots are not interchangeable: the
+verifier and grounding slots need room for injected search results on top of
+their prompt, the chairman writes the longest output in the product against a
+16,000-token ceiling, and a draft-tier seat that is not materially cheaper than
+Pro defeats the point of having two tiers. Suggestions prefer the same vendor
+as the stale ID, so fixing a typo does not quietly reshuffle which model argues
+which side — and they are candidates, not decisions. `--suggest` prints
+paste-ready environment variables; **every model is env-overridable, so a
+stale roster is fixed without a code change.**
+
 ## Running with Docker
 
 ```bash
