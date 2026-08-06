@@ -392,8 +392,22 @@ DEFECT_TYPES = [
             "Section 16(5) relief applies directly.",
             "Where registration was cancelled and restored: the cancellation "
             "and revocation orders, for Section 16(6).",
+            "On a reverse-charge limb: the date of the SELF-INVOICE under "
+            "Section 31(3)(f), which is the year from which the Section 16(4) "
+            "clock runs per Circular 211/5/2024-GST — not the date of supply.",
         ],
         authority_tags=["itc_time_limit"],
+        drafting_note="Know which of two matters this is. For FY 2017-18 to "
+                      "2020-21 the answer is Section 16(5)/16(6) and it is "
+                      "complete — plead the statute and stop. OUTSIDE those "
+                      "years, do NOT attack the vires of Section 16(4): it has "
+                      "been upheld (Patna in Gobinda Construction, Andhra "
+                      "Pradesh in Thirumalakonda Plywoods) and credit is held "
+                      "to be a statutory concession. Contest the FACTS instead "
+                      "— when availment actually occurred, the return in which "
+                      "it was taken, the 30 November outer date, and on an RCM "
+                      "limb the self-invoice year under Circular "
+                      "211/5/2024-GST.",
     ),
     DefectType(
         "itc_supplier_default",

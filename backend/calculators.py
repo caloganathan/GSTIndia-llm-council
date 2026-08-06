@@ -197,7 +197,44 @@ def interest_on_defect(
 # these because they are date-driven and the dates are not in the notice — they
 # are computed from it.
 
+    # Section 74A, inserted by the Finance (No. 2) Act 2024, governs FY 2024-25
+    # onwards and replaces the s.73/s.74 split with one scheme carrying two
+    # tracks. Two things differ and both cost money if missed: the concession
+    # windows are SIXTY days, not thirty, and the post-order concession on the
+    # fraud track (50% within 60 days of the order) has no s.73 equivalent.
+    # These notices are arriving now, and a s.74A matter routed through the
+    # s.74 table is advised on the wrong deadline.
 PENALTY_STAGES = {
+    "74A_non_fraud": [
+        ("before_notice", 0.0,
+         "Section 74A(8)(i): tax and interest paid before issue of the notice "
+         "— no penalty is leviable in a case not involving fraud, wilful "
+         "misstatement or suppression."),
+        ("within_60_days", 0.0,
+         "Section 74A(8)(i): tax and interest paid within SIXTY days of issue "
+         "of the notice — no penalty is payable and proceedings are deemed "
+         "concluded. Note the window is sixty days under Section 74A, not the "
+         "thirty days that applied under Section 73."),
+        ("on_order", 10.0,
+         "Section 74A(5)(i): penalty of 10% of tax, or Rs. 10,000, whichever "
+         "is higher, on determination by order."),
+    ],
+    "74A_fraud": [
+        ("before_notice", 15.0,
+         "Section 74A(9)(i): tax, interest and penalty at 15% paid before "
+         "issue of the notice — proceedings are deemed concluded."),
+        ("within_60_days", 25.0,
+         "Section 74A(9)(ii): tax, interest and penalty at 25% paid within "
+         "SIXTY days of the notice — proceedings are deemed concluded."),
+        ("within_60_days_of_order", 50.0,
+         "Section 74A(9)(iii): penalty reduced to 50% of the tax where the "
+         "tax, interest and penalty are paid within sixty days of "
+         "communication of the order. There is no equivalent concession on the "
+         "non-fraud track — check this before advising that an order is final."),
+        ("on_order", 100.0,
+         "Section 74A(5)(ii): penalty equal to the tax determined by order, "
+         "where fraud, wilful misstatement or suppression is established."),
+    ],
     "73": [
         ("before_notice", 0.0,
          "Section 73(5)/(6): tax and interest paid before issue of the notice — "
@@ -225,63 +262,128 @@ PENALTY_STAGES = {
 }
 
 PENALTY_MINIMUM_73 = 10000.0
+PENALTY_MINIMUM_74A = 10000.0
+
+# Concession window per scheme, in days. s.74A doubled it to sixty.
+CONCESSION_DAYS = {"73": 30, "74": 30, "74A_non_fraud": 60, "74A_fraud": 60}
+
+
+def _penalty_scheme(section: str, fraud: Optional[bool] = None) -> Optional[str]:
+    """
+    Which penalty table governs.
+
+    74A is tested BEFORE 74, because `startswith("74")` matches "74A" and
+    silently routed a Section 74A notice — FY 2024-25 onwards, which is what is
+    being issued now — through the Section 74 table: right rates on the fraud
+    track by coincidence, wrong deadline by thirty days.
+    """
+    section = str(section or "").strip().upper().replace(" ", "")
+    if section.startswith("74A"):
+        # The section carries both tracks. Absent an established finding of
+        # fraud the non-fraud track is the correct default: the ingredients
+        # must be alleged AND established, and assuming them against the
+        # taxpayer is not this module's call to make.
+        return "74A_fraud" if fraud is True else "74A_non_fraud"
+    if section.startswith("74"):
+        return "74"
+    if section.startswith("73"):
+        return "73"
+    return None
 
 
 def penalty_options(section: str, tax: float,
-                    notice_date: Any = None) -> Dict[str, Any]:
+                    notice_date: Any = None,
+                    fraud: Optional[bool] = None) -> Dict[str, Any]:
     """
     What penalty is payable at each stage, and by when.
 
     The deadline attached to each stage is the whole value of this function.
     "25% if paid within 30 days" is not actionable; "25% (Rs. 79,362) if paid
     by 14.08.2026, 9 days from today" is.
+
+    `fraud` selects the Section 74A track and is tri-state: None means nobody
+    has established which, and the non-fraud track is used rather than
+    assuming the ingredients of fraud against the taxpayer.
     """
     section = str(section or "").strip()
-    key = "74" if section.startswith("74") else "73" if section.startswith("73") else None
+    key = _penalty_scheme(section, fraud)
     if key is None:
         return {
             "computed": False,
-            "reason": f"Penalty stages are defined for Sections 73 and 74. "
-                      f"Section {section or '(not stated)'} is determined on its "
-                      "own terms — see Section 122 for the offence-wise table.",
+            "reason": f"Penalty stages are defined for Sections 73, 74 and "
+                      f"74A. Section {section or '(not stated)'} is determined "
+                      "on its own terms — see Section 122 for the offence-wise "
+                      "table.",
         }
     if not tax or tax <= 0:
         return {"computed": False,
                 "reason": "No tax amount to compute penalty on."}
 
+    window = CONCESSION_DAYS[key]
     issued = _as_date(notice_date)
-    deadline = issued + timedelta(days=30) if issued else None
+    deadline = issued + timedelta(days=window) if issued else None
+    concession_stage = f"within_{window}_days"
 
     stages = []
     for stage, rate, note in PENALTY_STAGES[key]:
         penalty = tax * (rate / 100.0)
-        if key == "73" and stage == "on_order":
-            # s.73(9) is the higher of 10% and Rs. 10,000 — on a small limb the
-            # floor governs, and a computed 10% understates it.
-            penalty = max(penalty, PENALTY_MINIMUM_73)
+        if stage == "on_order" and key in ("73", "74A_non_fraud"):
+            # s.73(9) and s.74A(5)(i) are both the HIGHER of 10% and
+            # Rs. 10,000 — on a small limb the floor governs and a computed
+            # 10% understates it.
+            penalty = max(penalty, PENALTY_MINIMUM_73 if key == "73"
+                          else PENALTY_MINIMUM_74A)
         stages.append({
             "stage": stage,
             "rate": rate,
             "amount": round(penalty, 2),
             "note": note,
             "deadline": deadline.isoformat()
-            if deadline and stage == "within_30_days" else None,
+            if deadline and stage == concession_stage else None,
         })
+
+    caveats = [
+        f"Penalty stages are driven by the date of payment. Confirm the date "
+        f"of service of the notice — not its date of issue — before relying on "
+        f"the {window}-day window."
+    ]
+    if not issued:
+        caveats.append(
+            f"The date of the notice is not on file, so the {window}-day "
+            "concession deadline could not be computed. Enter it before "
+            "advising on this."
+        )
+    if key.startswith("74A"):
+        caveats.append(
+            "Section 74A governs FY 2024-25 onwards; Sections 73 and 74 "
+            "continue to govern periods up to FY 2023-24. Confirm the period "
+            "in issue selects the right scheme."
+        )
+        caveats.append(
+            "The concession window under Section 74A is SIXTY days, not the "
+            "thirty days that applied under Sections 73 and 74."
+        )
+    if key == "74A_non_fraud" and fraud is None:
+        caveats.append(
+            "Computed on the NON-FRAUD track, because no finding of fraud, "
+            "wilful misstatement or suppression has been established on the "
+            "file. If the department has alleged and made out those "
+            "ingredients the fraud track applies and the figures are higher — "
+            "and if it has merely alleged them, contest the characterisation, "
+            "because it is what selects this table."
+        )
 
     return {
         "computed": True,
         "section": key,
+        "scheme": "74A" if key.startswith("74A") else key,
+        "track": ("fraud" if key == "74A_fraud"
+                  else "non_fraud" if key == "74A_non_fraud" else None),
         "tax": round(float(tax), 2),
         "stages": stages,
+        "concession_days": window,
         "concession_deadline": deadline.isoformat() if deadline else None,
-        "caveats": [
-            "Penalty stages are driven by the date of payment. Confirm the date "
-            "of service of the notice — not its date of issue — before relying "
-            "on the 30-day window."
-        ] + ([] if issued else [
-            "The date of the notice is not on file, so the 30-day concession "
-            "deadline could not be computed. Enter it before advising on this."
-        ]),
+        "caveats": caveats,
     }
 
 
@@ -369,8 +471,35 @@ def predeposit(disputed_tax: float, forum: str = "107",
 # Limitation — Sections 73(10), 74(10), 107(1), 112(1)
 # ---------------------------------------------------------------------------
 
-APPEAL_WINDOW_DAYS_107 = 90          # 3 months
-APPEAL_CONDONABLE_DAYS_107 = 30      # 1 further month, on sufficient cause
+# Section 107 speaks in MONTHS, and a month is a calendar month under section
+# 3(35) of the General Clauses Act 1897, not thirty days. Computing 90 + 30
+# days instead moved the deadline by up to two days at the margins, in both
+# directions — enough to report an in-time appeal as condonable, or a
+# condonable one as time-barred, which is the class of advice a firm is sued
+# over. The day counts are still reported, because that is what a reviewer
+# checks against a diary; they are no longer what the dates are computed from.
+APPEAL_WINDOW_MONTHS_107 = 3
+APPEAL_CONDONABLE_MONTHS_107 = 1
+
+
+def _add_months(start: date, months: int) -> date:
+    """
+    The same day of the month, `months` later, clamped to the month's end.
+
+    Clamping is the rule the courts apply to a period expressed in months
+    where the target month is shorter: an order communicated on 31 March gives
+    30 June, not 1 July. Getting this wrong lengthens limitation by a day at
+    exactly the boundary where it is argued.
+    """
+    month_index = start.month - 1 + months
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    if month == 12:
+        last_day = 31
+    else:
+        last_day = (date(year + (month == 12), month % 12 + 1, 1)
+                    - timedelta(days=1)).day
+    return date(year, month, min(start.day, last_day))
 
 
 def appeal_limitation(order_date: Any, as_on: Any = None) -> Dict[str, Any]:
@@ -389,8 +518,8 @@ def appeal_limitation(order_date: Any, as_on: Any = None) -> Dict[str, Any]:
                           "to compute limitation."}
 
     today = _as_date(as_on) or date.today()
-    ordinary = served + timedelta(days=APPEAL_WINDOW_DAYS_107)
-    condonable = ordinary + timedelta(days=APPEAL_CONDONABLE_DAYS_107)
+    ordinary = _add_months(served, APPEAL_WINDOW_MONTHS_107)
+    condonable = _add_months(ordinary, APPEAL_CONDONABLE_MONTHS_107)
     days_left = (ordinary - today).days
 
     if today <= ordinary:
@@ -425,7 +554,9 @@ def appeal_limitation(order_date: Any, as_on: Any = None) -> Dict[str, Any]:
         "days_remaining": days_left,
         "basis": "Section 107(1) — three months from the date on which the "
                  "order is communicated; Section 107(4) — one further month on "
-                 "sufficient cause.",
+                 "sufficient cause. Computed in calendar months per section "
+                 "3(35) of the General Clauses Act, 1897, not as 90 and 30 "
+                 "days.",
         "caveats": [
             "Time runs from COMMUNICATION of the order, not from its date. "
             "Where the order was uploaded to the portal without separate "
@@ -461,7 +592,20 @@ def amnesty_128a(section: str, tax_period: str,
     reasons: List[str] = []
     eligible = True
 
-    if section.startswith("74"):
+    if section.replace(" ", "").upper().startswith("74A"):
+        # Reached the same wrong branch as the penalty table did: "74A"
+        # startswith "74". The outcome (ineligible) was right, the reason given
+        # to the client was not, and a wrong reason on an eligibility question
+        # is what gets argued back.
+        eligible = False
+        reasons.append(
+            "Section 128A covers demands under Section 73 for FY 2017-18 to "
+            "2019-20. This demand is under Section 74A, which governs FY "
+            "2024-25 onwards — the waiver cannot reach it on either the "
+            "section or the year, and no re-characterisation argument is "
+            "available here."
+        )
+    elif section.startswith("74"):
         eligible = False
         reasons.append(
             "Section 128A applies only to demands under Section 73. This "
@@ -570,7 +714,8 @@ def matter_computations(matter: Dict[str, Any]) -> Dict[str, Any]:
         tax_total = float(intake.get("amount_disputed") or 0)
 
     computations: Dict[str, Any] = {
-        "penalty": penalty_options(section, tax_total, notice_date),
+        "penalty": penalty_options(section, tax_total, notice_date,
+                                   fraud=intake.get("fraud_established")),
         "amnesty_128a": amnesty_128a(section, period,
                                      intake.get("tax_paid")),
     }

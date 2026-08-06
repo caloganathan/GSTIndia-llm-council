@@ -738,3 +738,75 @@ class TestUnallocatedAmountDisplay:
         text = _all_text(_filing(matter))
         assert "Rs. 4,81,548." in text
         assert "Rs. 4,81,548 (4,81,548)" not in text
+
+
+class TestAnUnreadAmountIsNeverAZero:
+    """
+    CLAUDE.md gotcha 7: "Extraction that cannot read a figure must report it
+    unread. Never fill it with a zero." Every render site printed
+    `defect_total()` regardless, which returns 0 for an unread limb — so the
+    defect register showed "0" and the hearing brief "Rs. 0.00", and a
+    reviewer reads that as "nothing in issue on this limb". `amount_note`,
+    which the chairman is explicitly instructed to fill for exactly this case,
+    was rendered nowhere at all. The whole path had no test.
+    """
+
+    def _matter(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        limb = matter["result"]["determination"]["defects"][1]
+        limb["amount_by_head"] = {}
+        limb["amount_unread"] = True
+        limb["amount_note"] = ("The figure sits in Annexure B, which did not "
+                               "extract; take it from the department's table.")
+        return matter
+
+    def test_the_file_note_does_not_print_a_zero_for_an_unread_limb(self):
+        text = _all_text(_note(self._matter()))
+        register_zero = "GSTR-1 late fee\n0" in text or "\t0\t" in text
+        assert not register_zero, "an unread limb was rendered as 0"
+        assert "Not read from the notice" in text
+
+    def test_the_amount_note_reaches_the_reviewer(self):
+        text = _all_text(_note(self._matter()))
+        assert "Annexure B" in text, (
+            "amount_note is the chairman's explanation of what must be taken "
+            "off the annexure, and it was rendered nowhere"
+        )
+
+    def test_an_unread_limb_is_a_filing_blocker(self):
+        text = _all_text(_note(self._matter()))
+        assert "the amount could not be read from the notice" in text
+        # Level-1 headings render uppercase.
+        assert "BEFORE THIS REPLY CAN BE FILED" in text
+
+    def test_the_hearing_brief_does_not_print_rupees_zero(self):
+        text = _all_text(_note(self._matter()))
+        assert "Rs. 0.00" not in text
+
+    def test_the_file_note_marks_the_matter_total_incomplete(self):
+        text = _all_text(_note(self._matter()))
+        assert "INCOMPLETE" in text
+        assert "1 limb(s)" in text
+
+    def test_the_filing_document_quotes_the_departments_own_total(self):
+        """The limb sum understates when a limb is unread. Quoting the short
+        figure to the officer states a wrong number in the taxpayer's favour;
+        the notice's own declared total is the department's figure."""
+        matter = self._matter()
+        matter["intake"]["amount_disputed"] = 4122300.0
+        text = _all_text(_filing(matter))
+        assert "41,22,300" in text
+
+    def test_the_filing_document_never_admits_the_figure_was_unreadable(self):
+        """The officer is not told we could not read their own annexure —
+        that is an internal problem and an unnecessary admission."""
+        text = _all_text(_filing(self._matter()))
+        assert "Not read from the notice" not in text
+        assert "INCOMPLETE" not in text
+
+    def test_a_fully_read_matter_is_unaffected(self):
+        note, filing = _all_text(_note()), _all_text(_filing())
+        assert "Not read from the notice" not in note
+        assert "INCOMPLETE" not in note
+        assert "INCOMPLETE" not in filing

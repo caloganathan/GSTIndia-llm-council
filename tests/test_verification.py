@@ -348,3 +348,59 @@ class TestSupersededStatus:
             {"authorities": [{"citation": "Section 73", "proposition": "x"}],
              "draft_reply": ""}, gst, "m")
         assert "remain good law" in result["note"]
+
+
+class TestTheCuratedLibraryIsNotAHazard:
+    """
+    The library is briefed to counsel as a starting point, so an entry that is
+    wrong is worse than no entry: it is a wrong authority carrying the firm's
+    own imprimatur. Two entries were removed after being checked against
+    reported sources, and these assertions stop them coming back.
+    """
+
+    def test_gobinda_construction_is_not_in_the_library(self):
+        """
+        It was carried as Orissa HC for "s.16(4) is procedural rather than
+        substantive". It is CWJC 9108/2021, PATNA High Court, 08.09.2023, and
+        it UPHELD s.16(4), dismissed the writ, and held ITC to be a statutory
+        concession — the opposite of the proposition it was cited for.
+        """
+        citations = " ".join(a.citation for a in gst.AUTHORITIES).lower()
+        assert "gobinda" not in citations
+
+    def test_orissa_concrete_is_not_in_the_library(self):
+        """Orissa Concrete & Allied Industries is a 1998 CALCUTTA excise
+        matter, not an Orissa HC ruling on s.17(5)(d). The genuine Orissa
+        authority on that point is Safari Retreats, already held."""
+        citations = " ".join(a.citation for a in gst.AUTHORITIES).lower()
+        assert "orissa concrete" not in citations
+
+    def test_safari_retreats_carries_the_finance_act_2025_caution(self):
+        """
+        Section 119 of the Finance Act 2025 substituted "plant and machinery"
+        into s.17(5)(d) retrospectively from 01.07.2017, expressly to
+        neutralise this ruling. Citing it unqualified reads as current law.
+        """
+        safari = next(a for a in gst.AUTHORITIES
+                      if "Safari Retreats" in a.citation)
+        assert "Finance Act 2025" in safari.note
+        assert "01.07.2017" in safari.note
+        assert safari.note.strip(), "a caution that is empty is not a caution"
+
+    def test_the_time_limit_tag_still_returns_usable_authority(self):
+        """Removing the bad entry must not leave the limb with nothing: the
+        statutory relief is the real answer and has to be reachable."""
+        held = gst.authorities_for_tags(["itc_time_limit"])
+        assert held, "itc_time_limit has no authority at all"
+        joined = " ".join(a["citation"] for a in held)
+        assert "16(5)" in joined and "16(6)" in joined
+
+    def test_the_rcm_self_invoice_circular_is_tagged_to_both_limbs(self):
+        held = {a["citation"] for a in gst.authorities_for_tags(["rcm"])}
+        assert any("211/5/2024" in c for c in held)
+
+    def test_every_entry_has_a_proposition_and_at_least_one_tag(self):
+        for authority in gst.AUTHORITIES:
+            assert authority.proposition.strip(), \
+                f"{authority.citation}: no proposition"
+            assert authority.tags, f"{authority.citation}: no tags"
