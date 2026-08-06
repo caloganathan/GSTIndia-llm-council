@@ -36,7 +36,19 @@ export function CapabilityWarning({ title, children }) {
 }
 
 export function StatusBadge({ status }) {
-  const meta = STATUS_META[status] || STATUS_META.UNVERIFIED;
+  // An unrecognised status must not be presented as a known, milder one.
+  // Falling back to UNVERIFIED meant a future or malformed value rendered as
+  // "To be confirmed" — a reviewer reading a definite state that was never
+  // asserted. Unknown is shown as unknown, in the danger styling, because a
+  // verification status nobody can interpret is not a reassuring one.
+  const meta = STATUS_META[status];
+  if (!meta) {
+    return (
+      <span className="badge badge-danger" title={`Unrecognised status: ${status}`}>
+        Unknown status
+      </span>
+    );
+  }
   return <span className={`badge ${meta.cls}`}>{meta.label}</span>;
 }
 

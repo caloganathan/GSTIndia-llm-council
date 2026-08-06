@@ -298,6 +298,19 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(58, 107, 165, 0.16);
 }
 
+/* Focus was styled for inputs only, so a keyboard user had no visible
+   position anywhere in the chrome — not on a button, a nav item, a tab, or a
+   table row. :focus-visible keeps it off mouse clicks. */
+button:focus-visible,
+a:focus-visible,
+tr:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--navy-500);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 input:disabled,
 select:disabled,
 textarea:disabled {
@@ -590,7 +603,9 @@ tbody tr:last-child td {
 .btn-secondary {
   background: var(--surface-2);
   border-color: var(--border);
-  color: var(--text-primary);
+  /* Was var(--text-primary), which is not a declared token — the property
+     was dropped and the button inherited whatever it sat in. */
+  color: var(--text);
 }
 
 .btn-secondary:hover:not(:disabled) {

@@ -104,6 +104,7 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
             <thead>
               <tr>
                 <th>Client</th>
+                <th>Status</th>
                 <th>Reply due</th>
                 <th>Notice</th>
                 <th>State</th>
@@ -121,10 +122,26 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
                 return (
                   <tr
                     key={matter.id}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Open matter for ${matter.client_name || 'unnamed client'}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); onOpenMatter(matter.id); }
+                    }}
                     onClick={() => onOpenMatter(matter.id)}
                     style={{ cursor: 'pointer' }}
                   >
                     <td style={{ fontWeight: 500 }}>{matter.client_name || 'Unnamed'}</td>
+                    <td>
+                      {/* An abandoned or crashed run leaves the matter in
+                          "draft" for ever, and it looked identical to a
+                          completed one but for two empty cells. */}
+                      {matter.status === 'complete' ? (
+                        <span className="badge badge-success">Complete</span>
+                      ) : (
+                        <span className="badge badge-warning">Not completed</span>
+                      )}
+                    </td>
                     <td><DeadlineBadge matter={matter} /></td>
                     <td><span className="badge">{matter.notice_type || '—'}</span></td>
                     <td>{matter.state || '—'}</td>
@@ -156,8 +173,9 @@ export default function MatterList({ user, onOpenMatter, onNewMatter, onAuthErro
                           className="btn btn-ghost btn-sm"
                           onClick={(e) => remove(e, matter.id)}
                           title="Delete matter"
+                          aria-label={`Delete the matter for ${matter.client_name || 'unnamed client'}`}
                         >
-                          ×
+                          <span aria-hidden="true">×</span>
                         </button>
                       </td>
                     )}
