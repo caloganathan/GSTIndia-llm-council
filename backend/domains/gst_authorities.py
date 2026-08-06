@@ -88,8 +88,20 @@ AUTHORITIES: List[Authority] = [
         "functional test of business use governs Section 17(5)(d).",
         ["itc_blocked_17_5", "works_contract"],
         forum="Supreme Court", certainty=FILED,
-        note="Cited in this form in a reply accepted by the proper officer on "
-             "the Section 17(5) limb.",
+        note="SUPERSEDED BY STATUTE FOR MOST PURPOSES — DO NOT CITE WITHOUT "
+             "READING THIS. The ruling turned on Section 17(5)(d) reading "
+             "'plant OR machinery' where Section 17(5)(c) reads 'plant AND "
+             "machinery', and the Court held the former took its ordinary "
+             "commercial meaning rather than the Explanation. Section 119 of "
+             "the Finance Act 2025 substituted 'plant and machinery' in "
+             "Section 17(5)(d) WITH RETROSPECTIVE EFFECT FROM 01.07.2017, "
+             "expressly to neutralise that construction. The judgment stands "
+             "(the review petition was dismissed in May 2025) and remains good "
+             "authority on the functional test and on ITC for a building let "
+             "out; it no longer carries the 'plant or machinery' argument for "
+             "any period. Confirm the position for the period in issue on "
+             "every use, and never advance this as though the statute were "
+             "unchanged.",
     ),
     Authority(
         "CBIC Circular No. 172/04/2022-GST dated 06.07.2022",
@@ -121,13 +133,21 @@ AUTHORITIES: List[Authority] = [
         ["itc_blocked_17_5"],
         kind=STATUTE, certainty=FILED,
     ),
-    Authority(
-        "Orissa Concrete & Allied Industries v. Commissioner, 2023 SCC OnLine Ori",
-        "The plant-and-machinery exception in Section 17(5)(d) takes a liberal "
-        "construction.",
-        ["itc_blocked_17_5"],
-        forum="Orissa High Court",
-    ),
+    # REMOVED: "Orissa Concrete & Allied Industries v. Commissioner, 2023 SCC
+    # OnLine Ori", carried for a liberal construction of the Section 17(5)(d)
+    # plant-and-machinery exception.
+    #
+    # It does not exist in that form. Orissa Concrete & Allied Industries Ltd.
+    # v. Union of India is a CALCUTTA High Court matter from 1998, on central
+    # excise, on an unrelated question. The genuine Orissa High Court authority
+    # reading down Section 17(5)(d) is Safari Retreats itself (2019), which is
+    # already in this library and went on to the Supreme Court — so the entry
+    # was a conflation of two different cases that happened to share a State
+    # name, offering an authority that a verifier would trace to nothing.
+    #
+    # Do not restore it. If a judicial authority on the plant-and-machinery
+    # exception is wanted, cite Safari Retreats with the Finance Act 2025
+    # caution attached above.
 
     # -- ITC against 2A/2B and supplier default ---------------------------
     Authority(
@@ -202,17 +222,47 @@ AUTHORITIES: List[Authority] = [
         "(No. 2) Act, 2024)",
         "Retrospective relief from the Section 16(4) time bar for FY 2017-18 "
         "to FY 2020-21, and for registrations cancelled and subsequently "
-        "restored. This is the primary answer to a legacy time-bar demand.",
+        "restored. Where the period in issue falls in those years this is the "
+        "COMPLETE answer to a legacy time-bar demand and no judicial authority "
+        "is needed. Lead with it.",
         ["itc_time_limit"],
-        kind=STATUTE,
+        kind=STATUTE, certainty=FILED,
     ),
     Authority(
-        "Gobinda Construction v. Union of India, 2023 SCC OnLine Ori 2023",
-        "The Section 16(4) time limit is procedural rather than substantive; a "
-        "substantive right to credit is not defeated by a technicality.",
-        ["itc_time_limit"],
-        forum="Orissa High Court",
+        "CBIC Circular No. 211/5/2024-GST dated 26.06.2024",
+        "For a supply received under reverse charge from an UNREGISTERED "
+        "person, the relevant financial year for the Section 16(4) time limit "
+        "is the year in which the RECIPIENT issued its self-invoice under "
+        "Section 31(3)(f) — not the year of the supply. A demand that runs the "
+        "16(4) clock from the date of supply on an RCM limb is computed on the "
+        "wrong year.",
+        ["itc_time_limit", "rcm"],
+        kind=CIRCULAR, forum="CBIC",
+        note="Binds the department. Note the corollary the circular also "
+             "states: a self-invoice issued late attracts interest on the "
+             "delayed tax and may attract Section 122 — so establish the "
+             "self-invoice date before relying on this.",
     ),
+    # REMOVED: "Gobinda Construction v. Union of India, 2023 SCC OnLine Ori
+    # 2023", carried for "the Section 16(4) time limit is procedural rather
+    # than substantive".
+    #
+    # It is wrong in both the forum and the holding. Gobinda Construction is
+    # CWJC No. 9108 of 2021, decided 08.09.2023 by the PATNA High Court, and it
+    # UPHELD the constitutional validity of Section 16(4), dismissed the writ,
+    # and held expressly that input tax credit is a statutory CONCESSION rather
+    # than a right, to be availed on the conditions the Act imposes. As drafted
+    # the entry cited a taxpayer-adverse judgment for the taxpayer-favourable
+    # proposition it rejected — the precise failure this product exists to
+    # prevent, sitting in the library the panel is briefed from.
+    #
+    # Do not replace it with another case. The judicial landscape on Section
+    # 16(4) is adverse (Patna in Gobinda; Andhra Pradesh in Thirumalakonda
+    # Plywoods), so curating a taxpayer-favourable authority here means
+    # curating a weak or misdescribed one. For FY 2017-18 to 2020-21 the
+    # statutory relief above is complete; outside those years the argument is
+    # on the FACTS of when availment occurred, not on the vires of the
+    # provision. See the drafting note on `itc_time_limit`.
 
     # -- Credit notes and outward side ------------------------------------
     Authority(

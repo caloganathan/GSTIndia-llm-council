@@ -153,7 +153,11 @@ class TestAppealLimitation:
         order = date.today() - timedelta(days=30)
         result = calculators.appeal_limitation(order.isoformat())
         assert result["status"] == "in_time"
-        assert result["days_remaining"] == 60
+        # Deliberately NOT asserted as 60. Section 107 runs in calendar
+        # months, so the remaining days depend on which months the period
+        # spans — asserting a fixed 60 was what encoded the 90-day bug this
+        # class now tests against.
+        assert 58 <= result["days_remaining"] <= 63
 
     def test_between_three_and_four_months_is_condonable_not_barred(self):
         order = date.today() - timedelta(days=100)
@@ -261,3 +265,141 @@ class TestMatterComputations:
     def test_the_output_states_it_was_not_produced_by_a_model(self):
         result = calculators.matter_computations(self._matter())
         assert "not by a model" in result["note"]
+
+
+class TestLimitationRunsInCalendarMonths:
+    """
+    Section 107 speaks in months, and a month is a calendar month under
+    section 3(35) of the General Clauses Act — not thirty days. The module
+    computed 90 + 30 days, which moved the deadline by up to two days at the
+    margins in BOTH directions. Reporting an in-time appeal as condonable
+    invites an unnecessary condonation application; reporting a condonable one
+    as time-barred tells a client to abandon a live remedy. Each case below is
+    a date pair where the two methods disagree.
+    """
+
+    def test_three_months_lands_on_the_same_day_of_the_month(self):
+        result = calculators.appeal_limitation("2026-05-30", as_on="2026-06-01")
+        # 90 days from 30 May is 28 August. Three calendar months is 30 August.
+        assert result["ordinary_deadline"] == "2026-08-30"
+        assert result["condonable_deadline"] == "2026-09-30"
+
+    def test_a_short_target_month_clamps_to_its_last_day(self):
+        """31 November does not exist: three months from 31 August is 30
+        November, and inventing 1 December would lengthen limitation."""
+        result = calculators.appeal_limitation("2026-08-31", as_on="2026-09-01")
+        assert result["ordinary_deadline"] == "2026-11-30"
+
+    def test_february_clamps_in_a_non_leap_year(self):
+        result = calculators.appeal_limitation("2026-11-30", as_on="2026-12-01")
+        assert result["ordinary_deadline"] == "2027-02-28"
+
+    def test_february_clamps_in_a_leap_year(self):
+        result = calculators.appeal_limitation("2027-11-30", as_on="2027-12-01")
+        assert result["ordinary_deadline"] == "2028-02-29"
+
+    def test_a_period_spanning_a_year_end(self):
+        result = calculators.appeal_limitation("2026-11-15", as_on="2026-12-01")
+        assert result["ordinary_deadline"] == "2027-02-15"
+        assert result["condonable_deadline"] == "2027-03-15"
+
+    def test_an_appeal_the_day_count_would_have_called_late_is_in_time(self):
+        """The failure that matters: on the old arithmetic 29 August was past
+        the 90-day deadline of 28 August and reported as condonable. It is in
+        fact the last day but one of the three-month period."""
+        result = calculators.appeal_limitation("2026-05-30", as_on="2026-08-29")
+        assert result["status"] == "in_time"
+        assert result["days_remaining"] == 1
+
+    def test_the_last_day_of_the_period_is_still_in_time(self):
+        result = calculators.appeal_limitation("2026-05-30", as_on="2026-08-30")
+        assert result["status"] == "in_time"
+        assert result["days_remaining"] == 0
+
+    def test_the_day_after_is_condonable(self):
+        result = calculators.appeal_limitation("2026-05-30", as_on="2026-08-31")
+        assert result["status"] == "condonable"
+
+    def test_the_basis_records_the_general_clauses_act(self):
+        result = calculators.appeal_limitation("2026-01-01", as_on="2026-02-01")
+        assert "General Clauses Act" in result["basis"]
+
+
+class TestSection74A:
+    """
+    Section 74A governs FY 2024-25 onwards and these notices are arriving now.
+    `startswith("74")` matched "74A" and routed them through the Section 74
+    table — which gets the fraud-track rates right by coincidence and the
+    deadline wrong by thirty days, on the one number the taxpayer acts on.
+    """
+
+    def test_74a_is_not_routed_through_the_section_74_table(self):
+        result = calculators.penalty_options("74A", 100000,
+                                             notice_date="2026-01-10")
+        assert result["computed"] is True
+        assert result["scheme"] == "74A"
+        assert result["concession_days"] == 60
+
+    def test_the_concession_deadline_is_sixty_days_not_thirty(self):
+        result = calculators.penalty_options("74A", 100000,
+                                             notice_date="2026-01-10")
+        assert result["concession_deadline"] == "2026-03-11"
+
+    def test_section_74_keeps_its_thirty_day_window(self):
+        result = calculators.penalty_options("74", 100000,
+                                             notice_date="2026-01-10")
+        assert result["concession_days"] == 30
+        assert result["concession_deadline"] == "2026-02-09"
+
+    def test_the_non_fraud_track_is_the_default_where_fraud_is_not_established(self):
+        result = calculators.penalty_options("74A", 100000)
+        assert result["track"] == "non_fraud"
+        assert any("NON-FRAUD track" in c for c in result["caveats"])
+
+    def test_the_non_fraud_track_carries_no_penalty_inside_the_window(self):
+        result = calculators.penalty_options("74A", 100000)
+        stages = {s["stage"]: s for s in result["stages"]}
+        assert stages["before_notice"]["amount"] == 0.0
+        assert stages["within_60_days"]["amount"] == 0.0
+
+    def test_the_non_fraud_order_penalty_respects_the_ten_thousand_floor(self):
+        """10% of a small limb is less than the statutory minimum."""
+        result = calculators.penalty_options("74A", 20000)
+        stages = {s["stage"]: s for s in result["stages"]}
+        assert stages["on_order"]["amount"] == 10000.0
+
+    def test_the_fraud_track_carries_the_fifteen_and_twenty_five_stages(self):
+        result = calculators.penalty_options("74A", 100000, fraud=True)
+        stages = {s["stage"]: s for s in result["stages"]}
+        assert result["track"] == "fraud"
+        assert stages["before_notice"]["amount"] == 15000.0
+        assert stages["within_60_days"]["amount"] == 25000.0
+
+    def test_the_fraud_track_carries_the_post_order_concession(self):
+        """50% within sixty days of the ORDER has no Section 73 equivalent and
+        is the stage most often missed once an order has issued."""
+        result = calculators.penalty_options("74A", 100000, fraud=True)
+        stages = {s["stage"]: s for s in result["stages"]}
+        assert stages["within_60_days_of_order"]["amount"] == 50000.0
+        assert stages["on_order"]["amount"] == 100000.0
+
+    def test_the_caveats_name_the_years_each_scheme_governs(self):
+        result = calculators.penalty_options("74A", 100000)
+        assert any("FY 2024-25 onwards" in c for c in result["caveats"])
+
+    def test_amnesty_gives_74a_its_own_reason_not_the_section_74_one(self):
+        result = calculators.amnesty_128a("74A", "FY 2024-25")
+        assert result["eligible"] is False
+        reasons = " ".join(result["reasons"])
+        assert "74A" in reasons
+        # The s.74 reason offers re-characterisation to s.73 as a route back
+        # into the waiver. That route does not exist under s.74A — the year
+        # alone puts the matter outside 128A — so the reason must say the
+        # route is unavailable rather than hold it out.
+        assert "no re-characterisation argument is available" in reasons
+        assert "FY 2024-25" in reasons
+
+    def test_section_74_keeps_its_recharacterisation_reason(self):
+        result = calculators.amnesty_128a("74", "FY 2018-19")
+        assert result["eligible"] is False
+        assert any("re-characterisation" in r for r in result["reasons"])

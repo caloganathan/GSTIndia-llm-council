@@ -1145,10 +1145,23 @@ async def read_notice_set(
         fields["defects"] = found_defects
         sources["defects"] = "notice-ocr" if any_scanned else "notice"
         summary = defects.triage(found_defects)
-        fields["amount_disputed"] = summary["total_amount"]
-        sources["amount_disputed"] = "defects"
-
         unread = [d["heading"] for d in found_defects if d.get("amount_unread")]
+
+        # With every limb read, the sum of the limbs is the better figure — it
+        # is built from the department's own head-wise annexure. With a limb
+        # UNREAD the sum understates, so a total the notice printed for itself
+        # is preferred over our incomplete arithmetic. Overwriting it with the
+        # short sum stated a definite, wrong, taxpayer-favourable number and
+        # showed it to the reviewer as read "from defects".
+        if unread and fields.get("amount_disputed"):
+            fields["amount_disputed_from_limbs"] = summary["total_amount"]
+            sources["amount_disputed_from_limbs"] = "defects-incomplete"
+        else:
+            fields["amount_disputed"] = summary["total_amount"]
+            sources["amount_disputed"] = (
+                "defects-incomplete" if unread else "defects")
+        fields["amount_incomplete"] = bool(unread)
+
         if unread:
             warnings.append(
                 "The amount could not be read for "

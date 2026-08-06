@@ -807,8 +807,67 @@ def _default_relief(defect: Dict[str, Any]) -> str:
             f"{defect.get('heading', '')}{tail}.")
 
 
+UNREAD_LABEL = "Not read from the notice"
+
+
+def _defect_amount_cell(defect: Dict[str, Any]) -> str:
+    """
+    A limb's amount for a table, or an honest blank.
+
+    A limb whose figure could not be read carries `amount_unread`, and every
+    render site printed `defects.defect_total()` regardless — which returns 0,
+    so an unread figure appeared as "Rs. 0" or "0" in the defect register and
+    the hearing brief. A zero is a figure; the reviewer reads it as "nothing in
+    issue on this limb" and moves on, which is the one conclusion that is
+    certainly wrong. `amount_note` — which the chairman is instructed to fill
+    for exactly this case — was rendered nowhere at all.
+    """
+    if defect.get("amount_unread"):
+        note = (defect.get("amount_note") or "").strip()
+        return f"{UNREAD_LABEL} — {note}" if note else UNREAD_LABEL
+    return defects.indian_number(defects.defect_total(defect))
+
+
+def _matter_amount_is_partial(defect_list) -> bool:
+    """True when any limb's figure is unread, so the limb sum understates."""
+    return any(d.get("amount_unread") for d in (defect_list or [])
+               if isinstance(d, dict))
+
+
+def _file_note_amount(defect_list, intake) -> Optional[str]:
+    """
+    The matter total for the file note, marked incomplete where it is.
+
+    The filing document quotes the department's own total; the reviewer needs
+    to know when our arithmetic could not reach it, because the gap is the
+    measure of what still has to be taken off the annexure.
+    """
+    shown = _rupees(_matter_amount(defect_list, intake))
+    if not _matter_amount_is_partial(defect_list):
+        return shown
+    unread = sum(1 for d in defect_list
+                 if isinstance(d, dict) and d.get("amount_unread"))
+    marker = (f"INCOMPLETE — {unread} limb(s) carry no figure that could be "
+              "read from the notice")
+    return f"{shown} ({marker})" if shown else marker
+
+
 def _matter_amount(defect_list, intake) -> Optional[float]:
+    """
+    The amount in dispute across the matter.
+
+    Where a limb's figure could not be read, the sum of the limbs is an
+    UNDERSTATEMENT — `defect_total` returns 0 for an unread limb. Quoting that
+    understated figure back to the department as "Amount in dispute" states a
+    number that is wrong and in the taxpayer's favour, which is exactly the
+    kind of error that costs credibility on the limbs that matter. So when any
+    limb is unread the notice's own declared total is preferred: it is the
+    department's figure, not ours.
+    """
     if defect_list:
+        if _matter_amount_is_partial(defect_list) and \
+                intake.get("amount_disputed"):
+            return intake["amount_disputed"]
         return defects.matter_total(defect_list)
     return intake.get("amount_disputed")
 
@@ -861,7 +920,7 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
         ("Reference", intake.get("notice_reference")),
         ("Jurisdiction", intake.get("state")),
         ("Tax period", intake.get("tax_period")),
-        ("Amount in dispute", _rupees(_matter_amount(defect_list, intake))),
+        ("Amount in dispute", _file_note_amount(defect_list, intake)),
         ("Reply due", _date(intake.get("due_date"))),
         ("Prepared on", datetime.now(timezone.utc).strftime("%d %B %Y")),
         ("Matter reference", str(matter.get("id", ""))[:8].upper()),
@@ -879,6 +938,21 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
     for gap in _prose_citation_gaps(determination, defect_list, verified, pack):
         if gap["citation"] not in recorded:
             blockers.append(gap["message"])
+
+    # An unread figure is a blocker in its own right. It reached the reviewer
+    # as "Rs. 0" in the defect register before this, which reads as "nothing in
+    # issue on this limb" — the one conclusion that is certainly wrong.
+    for defect in defect_list:
+        if not defect.get("amount_unread"):
+            continue
+        note = (defect.get("amount_note") or "").strip()
+        blockers.append(
+            f"Limb {defect.get('index')} ({defect.get('heading') or 'unheaded'}"
+            "): the amount could not be read from the notice. Take it from the "
+            "department's annexure and enter it before filing — the reply "
+            "currently answers this limb without stating a figure."
+            + (f" Panel note: {note}" if note else "")
+        )
     _heading(doc, "1.  Before this reply can be filed", 1)
     if blockers:
         _para(doc, f"{len(blockers)} matter(s) must be resolved before filing.",
@@ -920,7 +994,7 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
               ["Sl.", "Defect", "Amount (Rs.)", "Posture", "Strength"],
               [[str(d.get("index", "")),
                 d.get("heading", ""),
-                defects.indian_number(defects.defect_total(d)),
+                _defect_amount_cell(d),
                 defects.POSTURE_LABEL.get(d.get("posture"), d.get("posture", "")),
                 STRENGTH_LABEL.get((d.get("strength") or "").lower(),
                                    d.get("strength") or "—")]
@@ -1189,7 +1263,11 @@ def _hearing_brief_section(doc: Document, matter: Dict[str, Any],
         posture = defect.get("posture") or "undecided"
         _particulars(doc, [
             ("Our position", defects.POSTURE_LABEL.get(posture, posture)),
-            ("Amount", _rupees(defects.defect_total(defect))),
+            ("Amount", UNREAD_LABEL + (
+                f" — {defect['amount_note']}" if defect.get("amount_note")
+                else " — take it from the annexure before the hearing")
+             if defect.get("amount_unread")
+             else _rupees(defects.defect_total(defect))),
             ("In one line", (defect.get("our_position") or "").strip()[:400]),
         ])
 
