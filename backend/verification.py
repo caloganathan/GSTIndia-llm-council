@@ -239,9 +239,14 @@ async def verify_authorities(
     determination: Dict[str, Any],
     pack,
     verifier_model: str,
+    zdr: bool = False,
 ) -> Tuple[Dict[str, Any], List[Optional[Dict[str, Any]]]]:
     """
     Check every authority in the determination against live sources.
+
+    `zdr` mirrors the tier the run used: the check prompt carries every
+    citation with the proposition it is cited for, which on the pro tier is
+    client-derived material and routes zero-retention like the other stages.
 
     Returns (verification_payload, usage_list).
     """
@@ -265,6 +270,7 @@ async def verify_authorities(
         # Lookup and comparison, not legal reasoning — do not pay for effort here.
         effort=config.role_effort("verifier"),
         max_tokens=config.role_max_tokens("verifier"),
+        zdr=zdr,
     )
     usage = [result.get("usage") if result.get("ok") else None]
 

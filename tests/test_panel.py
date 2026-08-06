@@ -472,7 +472,7 @@ class TestFiledTextBlockers:
             return {"ok": True, "content": '{"defects": []}', "usage": None,
                     "model": model}
 
-        async def fake_verify(determination, pack, verifier):
+        async def fake_verify(determination, pack, verifier, **kwargs):
             return {
                 "checked": True,
                 "authorities": [

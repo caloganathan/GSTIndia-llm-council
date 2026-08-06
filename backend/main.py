@@ -123,6 +123,26 @@ class PanelRunRequest(BaseModel):
     skip_verification: bool = False
 
 
+def _require_known_tier(tier: str) -> str:
+    """
+    Reject a tier name that resolves to nothing, at the boundary.
+
+    `config.get_tier` falls back to the anonymising tier on an unknown name,
+    which is the right last line of defence — but a user who typed or stored
+    a tier that does not exist should be TOLD, not silently rerouted. The one
+    exception is the deployment default itself: if DEFAULT_PANEL_TIER is
+    misconfigured, requests that never named a tier must degrade to the
+    fail-safe rather than all turning into 400s.
+    """
+    if tier and tier != config.DEFAULT_TIER and not config.is_known_tier(tier):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown tier '{tier}'. Configured tiers: "
+                   f"{', '.join(sorted(config.TIERS))}.",
+        )
+    return tier
+
+
 @app.get("/healthz")
 async def healthz():
     """Unauthenticated liveness probe (used by the hosting platform)."""
@@ -420,6 +440,7 @@ async def extract_notice(
     a proposal the user confirms before the panel runs. Uploaded files are
     parsed in memory and never written to disk.
     """
+    _require_known_tier(tier)
     try:
         pack = get_pack(domain)
     except ValueError as e:
@@ -469,6 +490,7 @@ async def upload_reconciliation(
     row data is never sent to a model and is never written to disk — only the
     aggregate summary is returned, and only that reaches the panel.
     """
+    _require_known_tier(tier)
     try:
         pack = get_pack(domain)
     except ValueError as e:
@@ -559,6 +581,7 @@ async def run_panel_endpoint(
     user: Dict[str, Any] = Depends(require_auth),
 ):
     """Create a matter and stream the panel deliberation as SSE."""
+    _require_known_tier(request.tier)
     matter_id = str(uuid.uuid4())
     intake = request.intake or {}
     storage.create_matter(matter_id, intake, request.domain, request.tier, user)
