@@ -55,8 +55,15 @@ than once, and not sooner than a month.
 the NOTICE file here to reflect it. That is also the moment — and only then
 — to mention what you built, briefly, if the conversation invites it.
 
-**If he never responds**, the fallback is straightforward: the surviving
-upstream code is roughly three hundred lines of ordinary plumbing
-(HTTP calls, JSON writes, route scaffolding). Rewriting it removes the
-dependency entirely and leaves the project wholly owned. Nothing about the
-compliance layer is affected either way.
+**The fallback has since been exercised, so this request is now a courtesy
+rather than a necessity.** The inherited implementation has been rewritten:
+the transport layer, the storage layer, the deliberation prompts and the
+request schema were each reimplemented. What remains in common is function
+signatures, dictionary keys, imports and framework idiom — the shape the
+libraries impose, not anyone's authorship. The project is wholly owned and
+licensed under Apache 2.0 either way.
+
+The acknowledgement in NOTICE is not conditional on any of that and stays
+permanently: the idea — several models answering, refereeing one another
+blind, and a chair settling it — is Andrej Karpathy's, and a rewrite changes
+whose lines are in the file, not whose insight started this.

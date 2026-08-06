@@ -150,9 +150,11 @@ an uploaded notice is no less private than a typed one. The uploaded file is
 parsed in memory and never written to disk.
 
 Everything extracted is a **proposal**, shown with its source, for the user to
-correct before the panel runs. Scanned notices with no text layer are reported
-honestly rather than guessed at — OCR is deliberately out of scope, because a
-wrong OCR read is worse than an empty field.
+correct before the panel runs. Scanned notices with no text layer are read by
+the optional local OCR engine (see "Scanned notices" above) and everything it
+reads is marked as machine-read all the way to the review screen. Without that
+extra installed the application says so plainly and asks for the text — it
+never guesses, because a wrong OCR read is worse than an empty field.
 
 ### Reconciliation ingestion (2A/2B vs 3B)
 
@@ -328,6 +330,13 @@ sign, and authorities shown as *To be confirmed* or *Not traced* in the
 Schedule of Authorities are to be verified against the reported text before
 filing. That is a working-paper control, and it stays.
 
+## General Council — the heritage mode
+
+**Off by default.** Set `ENABLE_GENERAL_COUNCIL=true` to show it. It is the
+upstream project this one grew out of, it still works, and no client
+engagement uses it — left visible it doubles the navigation a new user has to
+understand and invites the question "so is this a chatbot?".
+
 Instead of asking a question to a single LLM provider, group the frontier models into your "LLM Council". This web app looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, asks them to review and rank each other's work (anonymized, and never their own), and finally a Chairman LLM produces the final response.
 
 What happens when you submit a query:
@@ -339,6 +348,25 @@ What happens when you submit a query:
 A per-message **Quick mode** skips Stage 2 for faster, cheaper answers (individual responses + synthesis only). Every exchange reports its **token usage and dollar cost**.
 
 ## Features
+
+### Compliance Panel
+
+- Defect-wise intake: a notice is segmented into its limbs, each with the
+  department's own heading and head-wise figures, and answered one at a time
+- Four adversarial counsel plus a chairman, organised by role in the argument
+- Every citation checked against live sources; nothing unverified reaches the
+  filing document
+- Two documents, never merged: the filing reply and the internal file note
+- Statutory arithmetic in Python — s.50 interest, the s.73/74/74A penalty
+  stages with their concession deadlines, s.107/112 pre-deposit, appeal
+  limitation in calendar months, s.128A eligibility — each carrying its working
+- 2A/2B-vs-3B reconciliation bucketed locally; only the aggregate reaches a
+  model, never the invoice rows
+- Draft and Pro tiers as risk tiers, with enforced anonymisation on Draft
+- Reply-deadline tracking with an iCalendar export
+- Role-based access: partner / manager / staff
+
+### General Council (heritage mode, off by default)
 
 - Multi-turn conversations — the whole council sees the conversation history
 - Self-vote-free anonymized peer review with normalized aggregate rankings
@@ -380,21 +408,29 @@ Open http://localhost:5173. With no `APP_ACCESS_TOKEN` set, auth is disabled loc
 
 ## Configuration
 
-Everything is configurable via environment variables (or `.env`) — no code edits needed:
+Everything is configurable via environment variables (or `.env`) — no code
+edits needed. **[`.env.example`](.env.example) is the complete list**, grouped
+and commented, and the values shown there are the real defaults. These six are
+the ones a deployment must actually decide:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENROUTER_API_KEY` | — | Required |
-| `COUNCIL_MODELS` | `openai/gpt-5.5,google/gemini-3.1-pro-preview,anthropic/claude-opus-4.8,x-ai/grok-4.3` | Comma-separated council roster |
-| `CHAIRMAN_MODEL` | `google/gemini-3.1-pro-preview` | Synthesizes the final answer |
-| `REASONING_EFFORT` | `medium` | `low`/`medium`/`high`/`none` |
-| `REQUEST_TIMEOUT` | `180` | Seconds per model call |
-| `MAX_RETRIES` | `2` | Retries on transient failures |
-| `HISTORY_MAX_TURNS` | `6` | Prior exchanges sent as context |
-| `APP_ACCESS_TOKEN` | *(unset = auth off)* | Shared secret for the login screen |
-| `DATA_DIR` | `data/conversations` | Conversation storage path |
+| `OPENROUTER_API_KEY` | — | Required. Nothing runs without it. |
+| `APP_ACCESS_TOKEN` | *(unset = auth off)* | Shared secret for the login screen. **Never deploy publicly without this or a user account.** |
+| `STATE_DIR` | parent of `DATA_DIR` | Matters, user accounts and sessions. Must sit inside the mounted volume. |
+| `DATA_DIR` | `data/conversations` | Conversation storage path. |
+| `DEFAULT_PANEL_TIER` | `pro` | `draft` (anonymising) or `pro`. |
+| `ENABLE_GENERAL_COUNCIL` | `false` | Show the heritage chat mode. |
 
-Configured model IDs are validated against OpenRouter's catalog at startup; check the logs or `GET /api/health` for warnings about stale IDs.
+Everything else — the per-seat model IDs for each tier, reasoning effort and
+output ceilings per role, ZDR routing, OCR tuning, firm identity on the export,
+upload limits, session lifetime — has a working default and is documented in
+`.env.example`.
+
+Configured model IDs, including each tier's grounding model, are validated
+against OpenRouter's catalogue at startup; check the logs or `GET /api/health`
+for warnings about stale IDs. **A stale grounding ID breaks notice reading**,
+because the reader borrows it.
 
 ## Running with Docker
 
@@ -500,7 +536,7 @@ that starts and reports the problem.
 uv run pytest
 ```
 
-475 tests. The suites that matter most: the sanitizer (identifier leaks —
+The suites that matter most: the sanitizer (identifier leaks —
 a failure there is a confidentiality breach, not a bug), citation verification
 and its never-upgrade rule, reply-pack formatting (Arial-only, monochrome-only,
 no machine vocabulary in the deliverable), reconciliation ingestion (proof
@@ -513,7 +549,8 @@ and state paths that can never resolve outside the volume).
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
 - **Frontend:** React + Vite, react-markdown for rendering
 - **Reconciliation:** openpyxl for xlsx, csv.Sniffer for delimiter detection — parsed in memory, never written to disk
-- **Storage:** JSON files in `data/conversations/` (atomic writes)
+- **Storage:** JSON files, atomic writes — conversations in `DATA_DIR`, and
+  matters, user accounts and sessions in `STATE_DIR`
 - **Packaging:** uv for Python, npm for JavaScript, multi-stage Dockerfile
 
 ## Licence and attribution

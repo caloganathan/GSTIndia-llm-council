@@ -1,8 +1,11 @@
 [project]
-name = "llm-council"
-version = "0.1.0"
-description = "Your LLM Council"
+name = "gstindia-llm-council"
+version = "0.2.0"
+description = "Compliance Panel — an adversarial multi-model panel for Indian GST notice work, with citation verification and a two-document reply pack"
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "CA Loganathan Anandan" }]
+keywords = ["gst", "india", "tax", "compliance", "llm"]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",

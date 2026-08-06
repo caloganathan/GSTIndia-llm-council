@@ -1,16 +1,49 @@
-# React + Vite
+# Frontend — Compliance Panel
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite. The API is same-origin by default: the dev server proxies
+`/api` to the backend on **:8001** (see `vite.config.js`), and in a
+single-service deployment the backend serves this bundle itself.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev      # UI on :5173, proxying /api to :8001
+npm run lint
+npm run build    # emits dist/, which the backend serves when present
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Run the backend alongside it with `uv run python -m backend.main` from the
+repository root, or use `./start.sh` to bring both up.
 
-## React Compiler
+## Split deployment
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+To serve the bundle from a static host with the API elsewhere, bake the API's
+public URL in at build time:
 
-## Expanding the ESLint configuration
+```bash
+VITE_API_BASE_URL=https://your-api.onrender.com npm run build
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The API must then allow that origin (`CORS_ORIGINS`), and it exposes
+`Content-Disposition` so exported documents keep the per-matter filename the
+server chose. Leave `VITE_API_BASE_URL` unset for the single-service
+deployment, where CORS never applies.
+
+## Conventions worth knowing
+
+- **Design tokens live in `src/theme.css`** (light/dark via `data-theme` on
+  `<html>`). Components must not hardcode colours.
+- **`src/format.js` holds helpers and constants** separately from
+  `shared.jsx`, so React Fast Refresh works. `POSTURES`, `STATUS_META` and
+  friends live there for that reason.
+- **`formatCurrency` abbreviates (₹1.23 L) and `formatRupeesExact` does not.**
+  Any screen whose purpose is checking a figure against the department's
+  annexure must use the exact one — an abbreviation cannot be reconciled.
+- **A blank is never a zero.** An amount that could not be read carries
+  `amount_unread`; clearing an input deletes the key rather than writing `0`.
+
+## Views
+
+`Dashboard` · `PanelWorkspace` (multi-file intake → defect review → live
+deliberation) · `DefectList` · `MatterList` · `MatterDetail` (two separate
+downloads: the filing reply and the internal file note, never merged) ·
+`AdminPanel` · `GeneralCouncil` (heritage mode, off by default).

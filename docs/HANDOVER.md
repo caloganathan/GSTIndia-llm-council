@@ -1,11 +1,20 @@
-# Handover — MVP testing round
+# Handover — MVP testing round (HISTORICAL)
 
-Read this file first. It is written so a fresh session does not have to
-re-derive any of it from the diff.
+> **Superseded. Read [`review-2026-08-05-action-plan.md`](review-2026-08-05-action-plan.md)
+> first for the current state.**
+>
+> This file records the state of the MVP testing round. The branch it
+> describes (`claude/tax-consulting-ai-review-c6fjvu`) was merged in
+> `bad8fa5` and no longer exists, so §3's resume recipe and §7's merge
+> instructions no longer apply. §9 (Landmines) and §4 (the corpus loop)
+> remain accurate and are the reason this file is kept rather than deleted.
+>
+> Current suite: run `uv run pytest`, and expect zero failures. CI runs it on
+> every push and pull request (`.github/workflows/test.yml`); the four OCR
+> end-to-end tests skip without `uv sync --extra ocr` and are forced to run in
+> CI via `OCR_REQUIRED=1`.
 
-**Branch:** `claude/tax-consulting-ai-review-c6fjvu` — 7 commits ahead of
-`master`, **not merged**, clean fast-forward (master has not moved).
-**Suite:** 760 passed, 1 skipped (with the OCR extra; 5 skips without it).
+Written so a fresh session did not have to re-derive any of it from the diff.
 
 ---
 
@@ -47,11 +56,13 @@ command inside it was verified to resolve and import.
 
 ## 3. Resume from a fresh session
 
+> The branch below was merged and deleted. Work from `master`.
+
 ```bash
 git fetch origin
-git checkout claude/tax-consulting-ai-review-c6fjvu
+git checkout master
 uv sync --extra ocr
-uv run pytest                    # expect 760 passed, 1 skipped
+uv run pytest                    # expect zero failures
 ```
 
 If OCR will not install, `uv sync` alone works — 5 tests skip, nothing fails,
@@ -144,13 +155,9 @@ guards were added after real failures — do not remove either:
 - `MAX_ROW_SPAN` requires a head-wise row to have been printed as a row; four
   numbers scattered through prose will occasionally sum to a fifth
 
-## 7. Merge and deploy
+## 7. Merge and deploy (the merge itself is done; the deploy notes still hold)
 
-Test first. The branch is a clean fast-forward, so waiting costs nothing, and
-testing is what should decide whether it merges.
-
-1. Merge the branch to `master` (no PR has been opened — the standing rule here
-   is not to open one unless asked).
+1. ~~Merge the branch to `master`~~ — done in `bad8fa5`.
 2. Render rebuilds from `master`. The Dockerfile now installs the OCR extra by
    default (~250 MB). If the image is too large for the plan, rebuild with
    `--build-arg INSTALL_OCR=false`; the app then degrades honestly and shows a
@@ -191,9 +198,9 @@ From `docs/product-review-and-dev-plan.md`, still open:
 
 ## 10. Two loose ends
 
-- Remote branches `claude/review` and `claude/vercel-deploy` exist and have
-  never been inspected in these sessions. If either touches extraction it will
-  conflict with this work — check before merging anything.
+- ~~Remote branches `claude/review` and `claude/vercel-deploy`~~ — neither
+  exists any longer; `git branch -a` shows only `master` and the current
+  working branch. Nothing outstanding here.
 - The golden set is synthetic and was authored alongside the code it tests. It
   is a genuine regression harness but **not independent validation**. In one
   case (`gst-adt02-audit-findings`) the synthetic wording was changed rather

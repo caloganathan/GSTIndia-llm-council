@@ -68,6 +68,15 @@ council.
 
 ## 4. Development plan
 
+> **Status as at 6 August 2026.** P0.1 and P0.3–P0.6, plus P1.2 and P1.4, have
+> shipped — nine synthetic golden cases are committed, the free scorer runs in
+> CI, and the items below still written as instructions are in the code. Read
+> them as the reasoning behind what was built rather than as an open backlog.
+> The current open list is
+> [`review-2026-08-05-action-plan.md`](review-2026-08-05-action-plan.md); the
+> only item there still outstanding is verifying the default model IDs against
+> OpenRouter's live catalogue.
+
 Phases are ordered by what they unblock. P0 is what makes the planned
 real-data testing meaningful; P1 is market fit; P2 is distribution. Within a
 phase, items are independent unless noted.
@@ -100,7 +109,8 @@ phase, items are independent unless noted.
   headings and figures against source text without opening the PDF separately.
 
 **P0.3 — Committable golden eval set.**
-- `evals/golden/` currently holds only the template. The real reference case
+- `evals/golden/` now holds nine committed synthetic cases (this
+paragraph originally read "only the template"). The real reference case
   cannot ship (client confidentiality — correct), which means `defect_coverage`
   and `evidence_gap_catch` cannot be run by CI or by any other developer.
 - Instruction: author 8–10 **synthetic but realistic** golden cases across the

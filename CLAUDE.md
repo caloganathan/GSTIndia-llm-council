@@ -163,7 +163,14 @@ a refund on two grounds came back as one limb with both figures.
 4. The sanitizer leak test is sacred. A failure there is a confidentiality breach, not a bug.
 5. **Departmental PDFs do not emit in reading order.** The first limb's table is extracted ABOVE its own bullet heading, which is why `segment()` gives the FIRST defect a `preamble` and only the first — so no later limb can be handed a figure belonging to its neighbour.
 6. **Bound the last defect.** Without `ANNEXURE_BOUNDARY_RE` the final limb absorbs every annexure in the document; a Rs. 44 interest limb once read Rs. 1.24 crore. **`operative_region()` must scan every candidate boundary, not just the first.** One of the patterns is the repeated `GSTIN : … Name : …` block heading an annexure — which is also the shape of the notice's OWN header, printed in the first few lines. Testing only the first match found the header at ~1%, declined to trim on the "would gut the document" guard, and returned the whole notice, so the real boundary below was never reached and the bound silently did nothing on any notice with a standard portal header. The whole path had no test; it has four now, in `TestTheAnnexureBoundary`.
-7. Extraction that cannot read a figure must report it unread. `amount_unread` surfaces in the UI as an empty field to fill. Never fill it with a zero.
+7. Extraction that cannot read a figure must report it unread. `amount_unread` surfaces in the UI as an empty field to fill. Never fill it with a zero — not in the UI, not in either exported document, not in the matter total. An unread limb is a filing blocker, and the filing document quotes the department's own declared total rather than our short sum.
+8. **The scrub covers the defect text, and the leak probe is the rendered prompt.** `sanitize_matter` scrubs `defects[*]` headings and contentions — the notice's own prose, where the GSTIN and trade name actually live — and `run_panel_stream` audits `format_matter()` output rather than a hand-listed field subset. A probe narrower than the prompt cannot see the leak it exists to catch.
+9. **An unknown tier resolves to `draft`, never to the default.** `pro` is the non-anonymising tier, so a typo or a stale stored value must never land there (`config.FAILSAFE_TIER`). The API rejects unknown names outright.
+10. **Session tokens are stored hashed and die with a password change.** A plaintext token is a live credential the moment the store is readable.
+11. **A citation inside filed PROSE cannot be withheld the way a table entry can.** It becomes a filing blocker and stamps the exported reply until a reviewer confirms or strikes it — `panel.filed_text_blockers`, `export._prose_citation_gaps`.
+12. **Section 74A is not Section 74.** `startswith("74")` matches "74A", and routing a 74A notice through the 74 table gets the concession deadline wrong by thirty days. Match 74A first, everywhere.
+13. **Limitation runs in calendar months**, not 90+30 days — s.3(35), General Clauses Act. Day counts are for display only.
+14. **Redaction is per reader, never per matter.** The stored record is always complete; `redact_for_role` AND the live SSE stream strip the deliberation and the cost for roles without the grant.
 
 ### Frontend
 Design tokens in `theme.css` (light/dark via `data-theme` on `<html>`); components never hardcode colours. `format.js` holds helpers/constants separately from `shared.jsx` so React Fast Refresh works — `POSTURES` and friends live there for the same reason. Views: Dashboard, PanelWorkspace (multi-file intake + defect review + live deliberation), DefectList, MatterList, MatterDetail (two separate downloads), AdminPanel, GeneralCouncil.
@@ -189,7 +196,10 @@ now holds both sides: the private directory stays ignored, the synthetic set
 stays committed and stays marked `synthetic`. `evals/run.py` reads both
 directories; the free scorer reads only the committed top level.
 
-**`tests/test_golden_set.py` — free, runs on every push.** Segmentation and
+**`tests/test_golden_set.py` — free, runs on every push** (really: CI is
+`.github/workflows/test.yml`, which runs `uv sync --extra ocr && uv run
+pytest` plus the frontend lint and build on every push and pull request. For a
+long time this claim was aspirational and nothing enforced it). Segmentation and
 figure reading are decided in Python, so they are scored without a single model
 call: every limb must be found, every head-wise amount must match the annexure,
 and the limbs must reconcile to the notice's own printed total. This is where
@@ -271,20 +281,16 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - Stream errors mark the message with an inline error instead of deleting the exchange
 - Conversation delete with confirm dialog
 
-**`components/ChatInterface.jsx`**
-- **Input is always visible** — multi-turn conversations are supported (the original app hid the input after one exchange)
-- Per-message options: Full council / Quick select, Web search checkbox
-- `FailureNotice` shows per-model failures; `UsageLine` shows cost/tokens/mode
-- Enter to send, Shift+Enter for new line
+**`components/GeneralCouncil.jsx`** — the whole heritage chat surface: input
+always visible (multi-turn), per-message Full/Quick and web-search options,
+per-model failure notices, and the cost line. Off unless
+`ENABLE_GENERAL_COUNCIL` is set.
 
-**`components/Stage2.jsx`**
-- Tab view of RAW evaluation text; de-anonymization happens CLIENT-SIDE for display
-- "Extracted Ranking" shown below each evaluation so users can validate parsing
-- Aggregate rankings display normalized `score` (0=best, 1=worst) with review counts
-
-**`components/Stage3.jsx`** — final synthesized answer, green-tinted (#f0fff0)
-
-**Styling** — light mode, primary #4a90e2; all ReactMarkdown wrapped in `.markdown-content` (defined in `index.css`)
+(Earlier revisions of this file documented `ChatInterface.jsx`, `Stage2.jsx`,
+`Stage3.jsx` and an `index.css`. None of them exist — the chat surface was
+consolidated into `GeneralCouncil.jsx` and styling moved to `theme.css` plus
+`components/components.css`. See the `### Frontend` section above, which is
+the accurate one.)
 
 ## Key Design Decisions
 
