@@ -314,6 +314,22 @@ EXPORT_PROVENANCE = os.getenv("EXPORT_PROVENANCE", "false").lower() in (
 # the user chose to anonymise.
 TIER_ALIASES = {"free": "draft"}
 
+# The running build, surfaced on /readyz and /api/health. A deployment that
+# reports "degraded" is only diagnosable if you can also tell which build is
+# running — with several environments on the same blueprint, "it works on
+# staging" otherwise has nowhere to go.
+try:  # pragma: no cover - trivial, and depends on install mode
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    try:
+        VERSION = _pkg_version("gstindia-llm-council")
+    except PackageNotFoundError:
+        try:
+            VERSION = _pkg_version("llm-council")
+        except PackageNotFoundError:
+            VERSION = "unknown"
+except Exception:  # pragma: no cover
+    VERSION = "unknown"
+
 # The fail-safe tier for anything that resolves to nothing: a typo, a stale
 # stored value, a case variant of a retired alias. It must be the ANONYMISING
 # tier — the failure mode of sending real identifiers is unrecoverable, the
