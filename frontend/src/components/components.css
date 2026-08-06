@@ -89,6 +89,23 @@
   color: var(--text-inverse);
 }
 
+/* A stage that failed. Without this the spinner on the running stage simply
+   kept turning after an error event, so a dead run looked like a slow one. */
+.stage-step.failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.stage-step.failed .stage-dot {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .stage-step.failed .stage-dot {
+  color: var(--text-inverse);
+}
+
 /* ---------- Counsel tabs ---------- */
 
 .counsel-tabs {

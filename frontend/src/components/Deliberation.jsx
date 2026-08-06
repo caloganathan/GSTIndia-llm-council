@@ -143,7 +143,7 @@ function Authorities({ verification }) {
   );
 }
 
-export default function Deliberation({ result, metadata, user, onExport }) {
+export default function Deliberation({ result, metadata, user }) {
   const determination = result?.determination;
   // Fail closed: the deliberation is privileged working material, so it is
   // shown only on a positive grant. Both auth paths (accounts and the legacy
@@ -152,6 +152,7 @@ export default function Deliberation({ result, metadata, user, onExport }) {
   // redacts the stream and the stored matter for staff regardless; this
   // check only decides what the UI offers to render.
   const canSeeDeliberation = user?.permissions?.view_deliberation === true;
+  const canSeeCosts = user?.permissions?.view_costs === true;
 
   if (!determination) {
     return canSeeDeliberation ? (
@@ -167,9 +168,14 @@ export default function Deliberation({ result, metadata, user, onExport }) {
   return (
     <>
       {metadata?.watermark && (
-        <div className="alert alert-warning" style={{ marginBottom: 'var(--sp-5)' }}>
-          <strong>{metadata.watermark}</strong> — this run used free endpoints in
-          anonymised mode. Use the Pro tier to produce an exportable reply pack.
+        <div className="alert alert-warning" style={{ marginBottom: 'var(--sp-5)' }} role="alert">
+          {/* The old copy said this run "used free endpoints" and told the
+              user to switch tiers "to produce an exportable reply pack".
+              Both were false: the free tier was retired, and the draft tier
+              exports — every page stamped with the line below. */}
+          <strong>{metadata.watermark}</strong> — prepared on anonymised facts.
+          This exports, and every page carries that stamp. Re-run on the Pro
+          tier for a document intended for filing.
         </div>
       )}
 
@@ -196,11 +202,11 @@ export default function Deliberation({ result, metadata, user, onExport }) {
           </div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <ConfidenceBadge value={determination.confidence} />
-            {onExport && (
-              <button className="btn btn-primary btn-sm" onClick={onExport}>
-                Export reply pack
-              </button>
-            )}
+            {/* There is deliberately no export button here. The matter
+                produces TWO documents with two audiences — the filing reply
+                and the internal file note — and a single "Export reply pack"
+                is the merge the whole export design exists to prevent. Both
+                downloads live on the matter page, separately labelled. */}
           </div>
         </div>
 
@@ -339,8 +345,12 @@ export default function Deliberation({ result, metadata, user, onExport }) {
 
       {metadata?.usage && (
         <div className="muted" style={{ fontSize: 'var(--text-sm)', textAlign: 'right' }}>
-          {metadata.tier_label} · {formatCost(metadata.usage.total_cost)} ·{' '}
-          {(metadata.usage.total_tokens || 0).toLocaleString()} tokens
+          {metadata.tier_label}
+          {/* The listing and the dashboard strip cost for roles without
+              view_costs; this line rendered it unconditionally, so what the
+              firm pays per run reached a staff screen by another route. */}
+          {canSeeCosts && <> · {formatCost(metadata.usage.total_cost)} ·{' '}
+            {(metadata.usage.total_tokens || 0).toLocaleString()} tokens</>}
           {metadata.anonymised && ' · client identifiers were anonymised'}
         </div>
       )}

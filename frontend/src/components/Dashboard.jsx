@@ -32,8 +32,13 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
   if (!data) return <div className="page"><Loading /></div>;
 
   const { verification } = data;
+  // SUPERSEDED was in neither the sum nor a tile, so "of N checked"
+  // undercounted and the status format.js says must be surfaced "as loudly as
+  // a fabrication" was invisible on the one screen a partner scans daily.
+  const superseded = verification.superseded || 0;
   const checked =
-    verification.verified + verification.unverified + verification.not_found;
+    (verification.verified || 0) + superseded +
+    (verification.unverified || 0) + (verification.not_found || 0);
   const deadlines = data.deadlines || { counts: {}, upcoming: [] };
   const staleModels = health?.model_validation?.unknown_models || [];
   const ocrMissing = health?.ocr && health.ocr.available === false;
@@ -120,6 +125,12 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
           accent="warning"
         />
         <Stat
+          label="Superseded"
+          value={superseded}
+          hint="no longer good law — replace"
+          accent={superseded > 0 ? 'danger' : undefined}
+        />
+        <Stat
           label="Not found"
           value={verification.not_found}
           hint="remove before filing"
@@ -143,11 +154,25 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
         />
       </div>
 
-      {verification.not_found > 0 && (
-        <div className="alert alert-danger" style={{ marginBottom: 'var(--sp-5)' }}>
-          <strong>{verification.not_found} authority(ies) could not be located.</strong>{' '}
-          A citation that cannot be found must be treated as fabricated until
-          proven otherwise. Review the affected matters before anything is filed.
+      {(verification.not_found > 0 || superseded > 0) && (
+        <div className="alert alert-danger" style={{ marginBottom: 'var(--sp-5)' }} role="alert">
+          {verification.not_found > 0 && (
+            <div>
+              <strong>{verification.not_found} authority(ies) could not be located.</strong>{' '}
+              A citation that cannot be found must be treated as fabricated
+              until proven otherwise.
+            </div>
+          )}
+          {superseded > 0 && (
+            <div style={{ marginTop: verification.not_found > 0 ? 6 : 0 }}>
+              <strong>{superseded} authority(ies) are no longer good law.</strong>{' '}
+              These read as sound authority to a reviewer, which is what makes
+              them more dangerous than a citation that plainly does not exist.
+            </div>
+          )}
+          <div style={{ marginTop: 6 }}>
+            Review the affected matters before anything is filed.
+          </div>
         </div>
       )}
 

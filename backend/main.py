@@ -56,6 +56,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Content-Disposition is not CORS-safelisted. Without this the split
+    # deployment (UI on a static host, API elsewhere) cannot read the filename
+    # the server chose, and every export silently saves as "Reply.docx" —
+    # which is also the one place the internal/filing distinction survives on
+    # a partner's disk.
+    expose_headers=["Content-Disposition"],
 )
 
 # All /api routes require the access token (no-op when APP_ACCESS_TOKEN unset)
@@ -622,8 +628,16 @@ async def run_panel_endpoint(
     # have hidden. The full record is persisted regardless — redaction is per
     # viewer, never per matter.
     can_see_deliberation = users.can(user, "view_deliberation")
+    can_see_costs = users.can(user, "view_costs")
 
     def _redact_event(event):
+        if event.get("type") == "summary" and not can_see_costs:
+            # The stored matter is stripped on read; the live stream has to be
+            # stripped too, or the cost simply arrives a few seconds earlier.
+            metadata = dict(event.get("metadata") or {})
+            metadata.pop("usage", None)
+            metadata.pop("cost", None)
+            event = {**event, "metadata": metadata}
         if can_see_deliberation:
             return event
         if event.get("type") in ("stage1_complete", "stage2_complete"):
@@ -689,7 +703,7 @@ async def dashboard(user: Dict[str, Any] = Depends(require_auth)):
 
     total_cost = 0.0
     total_tokens = 0
-    verified = unverified = not_found = 0
+    verified = unverified = not_found = superseded = 0
     by_state: Dict[str, int] = {}
     by_notice: Dict[str, int] = {}
     by_confidence: Dict[str, int] = {}
@@ -704,6 +718,11 @@ async def dashboard(user: Dict[str, Any] = Depends(require_auth)):
         verified += summary.get("verified", 0)
         unverified += summary.get("unverified", 0)
         not_found += summary.get("not_found", 0)
+        # SUPERSEDED was aggregated nowhere, so the dashboard undercounted
+        # what had been checked AND never showed the status that format.js
+        # says must be surfaced "as loudly as a fabrication" — a withdrawn
+        # circular reads exactly like sound authority.
+        superseded += summary.get("superseded", 0)
 
         if matter.get("state"):
             by_state[matter["state"]] = by_state.get(matter["state"], 0) + 1
@@ -722,6 +741,7 @@ async def dashboard(user: Dict[str, Any] = Depends(require_auth)):
             "verified": verified,
             "unverified": unverified,
             "not_found": not_found,
+            "superseded": superseded,
         },
         "by_state": by_state,
         "by_notice_type": by_notice,

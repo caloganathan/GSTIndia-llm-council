@@ -119,6 +119,18 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
     setMetadata(null);
 
     let matterId = null;
+    // Tracked here rather than read back off `error`: that binding is the one
+    // captured when this closure was created, so it is always the value from
+    // before the run started. An errored run therefore navigated to the matter
+    // page as though it had succeeded, and a run started after ANY earlier
+    // error never navigated at all.
+    let streamError = null;
+    // An SSE `error` event and a thrown request failure both leave the same
+    // stage spinning, so both end here.
+    const markRunningStagesFailed = () =>
+      setStages((s) => Object.fromEntries(
+        Object.entries(s).map(([k, v]) => [k, v === 'running' ? 'failed' : v])
+      ));
     try {
       await api.runPanel(
         { intake: recon ? { ...form, reconciliation: recon } : form,
@@ -164,16 +176,20 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
               setMetadata(event.metadata);
               break;
             case 'error':
+              streamError = event.message;
               setError(event.message);
+              markRunningStagesFailed();
               break;
             default:
               break;
           }
         }
       );
-      if (matterId && !error) onComplete(matterId);
+      if (matterId && !streamError) onComplete(matterId);
     } catch (err) {
+      streamError = err.message;
       if (!onAuthError(err)) setError(err.message);
+      markRunningStagesFailed();
     } finally {
       setRunning(false);
     }
@@ -195,8 +211,8 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           <div className="stage-track">
             {Object.entries(STAGE_LABELS).map(([key, label]) => (
               <div key={key} className={`stage-step ${stages[key] || 'pending'}`}>
-                <span className="stage-dot">
-                  {stages[key] === 'done' ? '✓' : stages[key] === 'running' ? '' : ''}
+                <span className="stage-dot" aria-hidden="true">
+                  {stages[key] === 'done' ? '✓' : stages[key] === 'failed' ? '!' : ''}
                 </span>
                 <span>{label}</span>
                 {stages[key] === 'running' && <div className="spinner" />}
@@ -338,7 +354,13 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
               id: field.key,
               value: form[field.key] ?? '',
               onChange: (e) => setField(field.key, e.target.value),
-              disabled: field.sensitive && tierMeta.anonymise ? false : false,
+              // No `disabled` key. A sensitive field stays editable on the
+              // anonymising tier BY DESIGN: the value is stripped before the
+              // request leaves and restored locally afterwards, so the partner
+              // reads real names the model never saw. The badge on the label is
+              // what tells the user; greying the input would imply the field is
+              // not wanted, which is the opposite of true. (The old expression
+              // read `cond ? false : false` — always false, condition discarded.)
             };
             const wide = field.type === 'textarea';
             return (
