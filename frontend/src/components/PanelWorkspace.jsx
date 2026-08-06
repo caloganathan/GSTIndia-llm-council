@@ -41,6 +41,21 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
     })();
   }, [onAuthError]);
 
+  // A run takes two to four minutes and the SSE generator is cancelled if the
+  // tab goes: the models have been paid for, and storage.complete_matter never
+  // fires, so the matter stays "draft" for ever. The browser prompt is the
+  // only thing that can intervene.
+  useEffect(() => {
+    if (!running) return undefined;
+    const warn = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [running]);
+
   // What this run will cost, before it is run. Re-estimated whenever the
   // limbs or the tier change, because both drive it — triage means most limbs
   // never convene counsel, so the cost tracks the argued limbs and not the
@@ -74,7 +89,40 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
 
   const required = schema.fields.filter((f) => f.required);
   const missing = required.filter((f) => !String(form[f.key] || '').trim());
-  const canRun = missing.length === 0 && !running;
+
+  // Blockers the run must not proceed over. A figure the panel argues from is
+  // a figure that reaches a filed reply, so a limb with no amount is not a
+  // detail to fix later; and a GSTIN or a date order that is wrong on its face
+  // gets the reply rejected on its face.
+  const unreadLimbs = (form.defects || []).filter((d) => d.amount_unread);
+  const unnamedLimbs = (form.defects || []).filter(
+    (d) => !String(d.heading || '').trim());
+  const gstin = String(form.gstin || '').trim().toUpperCase();
+  const gstinLooksWrong =
+    gstin.length > 0 && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]{3}$/.test(gstin);
+  const datesOutOfOrder =
+    form.notice_date && form.due_date && form.due_date < form.notice_date;
+
+  const blockers = [
+    ...(unreadLimbs.length
+      ? [`${unreadLimbs.length} limb(s) carry no amount. Take the figures from ` +
+         'the notice annexure — an unread figure must never be filed as a zero.']
+      : []),
+    ...(unnamedLimbs.length
+      ? [`${unnamedLimbs.length} limb(s) have no heading. Use the department's ` +
+         'own wording, since the officer disposes of each limb by its heading.']
+      : []),
+    ...(gstinLooksWrong
+      ? ['The GSTIN is not 15 characters in the statutory format. A reply ' +
+         'carrying a wrong GSTIN is rejected on its face.']
+      : []),
+    ...(datesOutOfOrder
+      ? ['The reply due date is before the date of the notice. Check both ' +
+         'against the notice before running.']
+      : []),
+  ];
+
+  const canRun = missing.length === 0 && blockers.length === 0 && !running;
 
   const onFiles = async (fileList) => {
     const files = Array.from(fileList || []);
@@ -94,6 +142,29 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
       setReading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
+  };
+
+  // A limb the reviewer adds by hand starts UNDECIDED and UNREAD: it convenes
+  // counsel until someone decides otherwise, and it carries no figure until
+  // one is taken off the annexure. Both defaults are the safe direction.
+  const addDefect = () => {
+    setForm((f) => {
+      const existing = f.defects || [];
+      return {
+        ...f,
+        defects: [...existing, {
+          index: existing.length + 1,
+          type: 'other',
+          heading: '',
+          posture: 'undecided',
+          amount_by_head: {},
+          amount_unread: true,
+          source: 'manual',
+          evidence_required: [],
+          evidence_gap: [],
+        }],
+      };
+    });
   };
 
   const onReconFile = async (file) => {
@@ -275,6 +346,8 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
         <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
           <input
             ref={fileRef}
+            id="notice-files"
+            aria-label="Notice documents to upload (PDF, Word or text)"
             type="file"
             multiple
             accept=".pdf,.docx,.txt"
@@ -328,23 +401,44 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
         )}
       </div>
 
-      {form.defects?.length > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+      {/* Rendered even with no defects. When segmentation finds nothing the
+          intake tells the user to "add them by hand — a reply that answers a
+          multi-limb notice as one issue concedes ground it need not concede",
+          and until now there was no way to do that: the card was hidden and
+          DefectList returned null, so the only route was prose in the issues
+          box, which is the exact failure the instruction warns against. */}
+      <div className="card card-pad" style={{ marginBottom: 'var(--sp-5)' }}>
+        <div className="row" style={{ justifyContent: 'space-between',
+                                      alignItems: 'flex-start',
+                                      gap: 'var(--sp-3)' }}>
           <div className="section-title">Defects raised by the notice</div>
-          <div className="field-help" style={{ marginBottom: 'var(--sp-3)' }}>
-            The department raises these separately and will dispose of them
-            separately — so the reply answers them one at a time. Check each
-            figure against the notice annexure and set the position before
-            running the panel. Only the limbs marked <em>Argued</em> convene
-            counsel; the rest are answered by arithmetic, documents or a
-            payment.
-          </div>
+          <button type="button" className="btn btn-sm" onClick={addDefect}>
+            Add defect
+          </button>
+        </div>
+        <div className="field-help" style={{ marginBottom: 'var(--sp-3)' }}>
+          The department raises these separately and will dispose of them
+          separately — so the reply answers them one at a time. Check each
+          figure against the notice annexure and set the position before
+          running the panel. Only the limbs marked <em>Argued</em> convene
+          counsel; the rest are answered by arithmetic, documents or a
+          payment.
+        </div>
+        {form.defects?.length > 0 ? (
           <DefectList
             defects={form.defects}
             onChange={(defects) => setField('defects', defects)}
           />
-        </div>
-      )}
+        ) : (
+          <div className="alert alert-warning" role="alert">
+            <strong>No defects were read from this notice.</strong> A reply that
+            answers a multi-limb notice as a single issue concedes ground it
+            need not concede — and an unanswered limb is confirmed unopposed.
+            Add each limb the notice raises, with its own heading and its
+            head-wise figures from the annexure.
+          </div>
+        )}
+      </div>
 
       <div className="card card-pad">
         <div className="section-title">Notice particulars</div>
@@ -421,6 +515,8 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
         <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
           <input
             ref={reconRef}
+            id="reconciliation-file"
+            aria-label="Reconciliation workbook to upload (xlsx or csv)"
             type="file"
             accept=".xlsx,.xlsm,.csv"
             onChange={(e) => onReconFile(e.target.files?.[0])}
@@ -478,7 +574,20 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           <div className="muted" style={{ fontSize: 'var(--text-sm)' }}>
             {missing.length > 0
               ? `Required: ${missing.map((f) => f.label).join(', ')}`
-              : 'Ready. Expect two to four minutes for a full deliberation.'}
+              : blockers.length > 0
+                ? null
+                : 'Ready. Expect two to four minutes for a full deliberation. '
+                  + 'Keep this tab open — a run does not survive it closing.'}
+            {/* Say WHICH thing blocks the run. A disabled button with no
+                reason reads as a broken page. */}
+            {missing.length === 0 && blockers.length > 0 && (
+              <div role="alert">
+                <strong>Not ready to run:</strong>
+                <ul style={{ margin: '4px 0 0', paddingLeft: '1.1rem' }}>
+                  {blockers.map((b, i) => <li key={i}>{b}</li>)}
+                </ul>
+              </div>
+            )}
             {estimate && missing.length === 0 && (
               <div style={{ marginTop: 4 }}>
                 Estimated cost <strong>{estimate.label}</strong>

@@ -143,7 +143,7 @@ export default function App() {
               }`}
               onClick={() => setView(item.key)}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
               {item.label}
             </button>
           ))}
@@ -151,7 +151,7 @@ export default function App() {
 
         <div className="sidebar-footer">
           <button className="theme-toggle" onClick={toggle} title="Toggle theme">
-            <span>{theme === 'dark' ? '☀' : '☾'}</span>
+            <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
             {theme === 'dark' ? 'Light mode' : 'Dark mode'}
           </button>
 

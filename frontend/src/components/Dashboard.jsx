@@ -185,7 +185,15 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
             <div className="section-title">Replies due — worst first</div>
             <button
               className="btn btn-secondary"
-              onClick={() => api.downloadCalendar()}
+              onClick={async () => {
+                // An unhandled rejection here produced a button that
+                // visibly did nothing on a 401 or a 500.
+                try {
+                  await api.downloadCalendar();
+                } catch (err) {
+                  if (!onAuthError(err)) setError(err.message);
+                }
+              }}
               title="Opens in Outlook, Google Calendar or Apple Calendar"
             >
               Add to calendar
@@ -206,6 +214,12 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
                 {deadlines.upcoming.map((matter) => (
                   <tr
                     key={matter.id}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Open matter for ${matter.client_name || 'unnamed client'}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); onOpenMatter(matter.id); }
+                    }}
                     onClick={() => onOpenMatter(matter.id)}
                     style={{ cursor: 'pointer' }}
                   >
@@ -268,6 +282,12 @@ export default function Dashboard({ user, onOpenMatter, onNewMatter, onAuthError
                 {data.recent.map((matter) => (
                   <tr
                     key={matter.id}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Open matter for ${matter.client_name || 'unnamed client'}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); onOpenMatter(matter.id); }
+                    }}
                     onClick={() => onOpenMatter(matter.id)}
                     style={{ cursor: 'pointer' }}
                   >

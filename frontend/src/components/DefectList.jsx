@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  ARGUED_POSTURES, POSTURES, TAX_HEADS, formatCurrency, headTotal, postureLabel,
+  ARGUED_POSTURES, POSTURES, TAX_HEADS, formatRupeesExact, headTotal, postureLabel,
 } from '../format';
 
 /**
@@ -19,7 +19,7 @@ import {
 function headSummary(amounts) {
   const parts = TAX_HEADS
     .filter((h) => Number(amounts?.[h]))
-    .map((h) => `${h === 'unallocated' ? '' : h.toUpperCase() + ' '}${formatCurrency(amounts[h])}`);
+    .map((h) => `${h === 'unallocated' ? '' : h.toUpperCase() + ' '}${formatRupeesExact(amounts[h])}`);
   return parts.join(' + ');
 }
 
@@ -61,7 +61,7 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
       <div className="row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap',
                                     marginBottom: 'var(--sp-3)' }}>
         <span className="badge">{defects.length} defects</span>
-        <span className="badge">{formatCurrency(total)} in dispute</span>
+        <span className="badge">{formatRupeesExact(total)} in dispute</span>
         <span className="badge badge-warning">{argued.length} argued</span>
         <span className="badge badge-info">{settled.length} settled on documents or payment</span>
       </div>
@@ -98,13 +98,37 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
             <div key={defect.index ?? index} className="card card-pad defect-row">
               <div
                 className="row"
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                aria-label={`Limb ${defect.index}: ${defect.heading || 'untitled'}`}
                 style={{ justifyContent: 'space-between', gap: 'var(--sp-3)',
                          alignItems: 'flex-start', cursor: 'pointer' }}
                 onClick={() => setOpen(expanded ? null : index)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setOpen(expanded ? null : index);
+                  }
+                }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
-                    <strong>{defect.index}. {defect.heading}</strong>
+                    <strong>
+                      {defect.index}. {defect.heading || (
+                        <span className="muted">Untitled limb — open and name it</span>
+                      )}
+                    </strong>
+                    {/* Anything read by OCR is machine-read and must be
+                        checked against the notice. The flag was set on the
+                        record and rendered nowhere, so the figures a reviewer
+                        most needs to verify looked identical to figures read
+                        from a clean text layer. */}
+                    {defect.from_scan && (
+                      <span className="badge badge-warning">
+                        Read by OCR — check against the notice
+                      </span>
+                    )}
                     {ARGUED_POSTURES.has(defect.posture) && (
                       <span className="badge badge-warning">Argued</span>
                     )}
@@ -126,7 +150,7 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <div><strong>{amount ? formatCurrency(amount) : '—'}</strong></div>
+                  <div><strong>{amount ? formatRupeesExact(amount) : '—'}</strong></div>
                   <div className="muted" style={{ fontSize: 'var(--text-sm)' }}>
                     {postureLabel(defect.posture)}
                   </div>
@@ -138,8 +162,29 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
                   {!readOnly && (
                     <>
                       <div className="field">
-                        <label className="field-label">Position on this defect</label>
+                        <label className="field-label" htmlFor={`heading-${index}`}>
+                          Heading, as the notice words it
+                        </label>
+                        <input
+                          id={`heading-${index}`}
+                          type="text"
+                          value={defect.heading || ''}
+                          placeholder="e.g. Excess input tax credit availed against GSTR-2B"
+                          onChange={(e) => update(index, { heading: e.target.value })}
+                        />
+                        <div className="field-help">
+                          Use the department's own wording. The reply answers
+                          each limb under the heading the notice gave it, and
+                          the officer disposes of them by that heading.
+                        </div>
+                      </div>
+
+                      <div className="field">
+                        <label className="field-label" htmlFor={`posture-${index}`}>
+                          Position on this defect
+                        </label>
                         <select
+                          id={`posture-${index}`}
                           value={defect.posture || 'undecided'}
                           onChange={(e) => update(index, { posture: e.target.value })}
                         >

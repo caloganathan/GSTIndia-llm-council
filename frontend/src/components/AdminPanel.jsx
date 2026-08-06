@@ -122,8 +122,9 @@ function Users({ onAuthError }) {
         <form onSubmit={create}>
           <div className="form-grid">
             <div className="field">
-              <label>Email</label>
+              <label htmlFor="admin-email">Email</label>
               <input
+                id="admin-email"
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -131,16 +132,18 @@ function Users({ onAuthError }) {
               />
             </div>
             <div className="field">
-              <label>Name</label>
+              <label htmlFor="admin-name">Name</label>
               <input
+                id="admin-name"
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
             <div className="field">
-              <label>Temporary password</label>
+              <label htmlFor="admin-password">Temporary password</label>
               <input
+                id="admin-password"
                 type="text"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -150,8 +153,9 @@ function Users({ onAuthError }) {
               <div className="field-help">At least 8 characters.</div>
             </div>
             <div className="field">
-              <label>Role</label>
+              <label htmlFor="admin-role">Role</label>
               <select
+                id="admin-role"
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
               >
@@ -291,12 +295,13 @@ function Account({ onAuthError }) {
       <div className="section-title">Change your password</div>
       <form onSubmit={submit}>
         <div className="field">
-          <label>Current password</label>
-          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+          <label htmlFor="current-password">Current password</label>
+          <input id="current-password" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
         </div>
         <div className="field">
-          <label>New password</label>
+          <label htmlFor="new-password">New password</label>
           <input
+            id="new-password"
             type="password"
             value={next}
             onChange={(e) => setNext(e.target.value)}

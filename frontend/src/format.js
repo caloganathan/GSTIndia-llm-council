@@ -26,6 +26,14 @@ export const ROLE_COLOUR = {
   chairman: 'var(--role-chairman)',
 };
 
+/**
+ * Abbreviated rupees — for dashboard tiles, where the shape of a number
+ * matters more than its digits.
+ *
+ * NOT for any screen whose purpose is checking a figure against a document.
+ * `₹1.23 L` cannot be tied to the department's annexure, and the defect
+ * review screen exists for precisely that comparison — see `formatRupeesExact`.
+ */
 export function formatCurrency(value) {
   if (value === null || value === undefined || value === '') return '—';
   const number = Number(value);
@@ -33,6 +41,20 @@ export function formatCurrency(value) {
   if (number >= 10_000_000) return `₹${(number / 10_000_000).toFixed(2)} Cr`;
   if (number >= 100_000) return `₹${(number / 100_000).toFixed(2)} L`;
   return `₹${number.toLocaleString('en-IN')}`;
+}
+
+/**
+ * Exact rupees in Indian grouping — ₹41,20,000, never ₹41.20 L.
+ *
+ * Used wherever a figure is meant to be reconciled against the notice. A
+ * reviewer comparing the screen to the annexure cannot do it against an
+ * abbreviation, and that comparison is the whole job of the defect screen.
+ */
+export function formatRupeesExact(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  if (Number.isNaN(number)) return String(value);
+  return `₹${number.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
 export function formatDate(value) {
