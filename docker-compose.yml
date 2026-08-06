@@ -7,6 +7,11 @@ services:
       - .env
     environment:
       - DATA_DIR=/app/data/conversations
+      # Stated rather than inferred, per the README: a deployment that
+      # writes user accounts outside the volume loses every account on
+      # redeploy. The Dockerfile bakes this in too; being explicit here
+      # means the compose file does not depend on that.
+      - STATE_DIR=/app/data
     volumes:
       - council-data:/app/data
     restart: unless-stopped
