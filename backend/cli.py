@@ -13,13 +13,19 @@ account, or reset an existing one, on demand.
     python -m backend.cli create-admin --email you@firm.in --password ...
     python -m backend.cli reset-password --email you@firm.in --password ...
     python -m backend.cli list-users
+
+It also carries the model doctor, which is not about users at all but belongs
+to the same category of thing: something you need to run against a live
+deployment from a shell.
+
+    python -m backend.cli check-models [--suggest]
 """
 
 import argparse
 import getpass
 import sys
 
-from . import config, users
+from . import config, models_doctor, users
 
 
 def _read_password(explicit: str = "") -> str:
@@ -95,6 +101,10 @@ def cmd_set_role(args) -> int:
     return 0
 
 
+def cmd_check_models(args) -> int:
+    return models_doctor.report(show_suggestions=args.suggest)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m backend.cli",
@@ -129,13 +139,30 @@ def build_parser() -> argparse.ArgumentParser:
     listing = subparsers.add_parser("list-users", help="List all users")
     listing.set_defaults(func=cmd_list_users)
 
+    doctor = subparsers.add_parser(
+        "check-models",
+        help="Check every configured model ID against OpenRouter's catalogue",
+    )
+    doctor.add_argument(
+        "--suggest", action="store_true",
+        help="Also propose replacements for any slot that fails, and print "
+             "paste-ready environment variables",
+    )
+    doctor.set_defaults(func=cmd_check_models)
+
     return parser
+
+
+# Commands that do not touch the user store, and so must not print a banner
+# about it — `check-models` needs no volume and is routinely run from a laptop.
+_STORE_FREE_COMMANDS = {"check-models"}
 
 
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    print(f"Operating on user store at: {config.STATE_DIR}")
+    if args.command not in _STORE_FREE_COMMANDS:
+        print(f"Operating on user store at: {config.STATE_DIR}")
     return args.func(args)
 
 
