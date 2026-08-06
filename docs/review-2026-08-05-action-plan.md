@@ -26,6 +26,45 @@ hygiene. Each item names the files; line numbers are as of this branch.
 
 ---
 
+## STATUS — 6 August 2026: everything below is closed except one item
+
+| PR | Package | Merged |
+|---|---|---|
+| #19 | P0.1–P0.4 — the wall and the scrub | yes |
+| #20 | P0.5–P0.8 — tier and transport safety | yes |
+| #21 | P1.8–P1.11 — CI and eval-harness honesty | yes |
+| #22 | P1.1–P1.4 — statute pack | yes |
+| #23 | P1.7 + half of P1.6 — auth hardening | yes |
+| #24 | P1.5, P2 — frontend correctness | yes |
+| #25 | P2 — workflow gaps and accessibility | yes |
+| #26 | P3 — documentation | yes |
+
+Suite: 789 → **916 passing**. CI (`.github/workflows/test.yml`) now runs it on
+every push and pull request, which it did not when this review was written.
+
+**The one item still open: P1.6, the default model IDs.** The sandbox this
+work was done in denies `openrouter.ai` by network policy, so the slugs could
+not be checked against the live catalogue — and guessing at them is the exact
+failure the item exists to fix. On the current defaults a fresh install fails
+on **both** tiers. Anyone with catalogue access should pin them and add the
+test. The validation half shipped in #23: startup now checks each tier's
+`grounding` model, whose omission caused the original silent notice-reading
+outage.
+
+Two findings turned out to be **worse** than this document recorded, and the
+fixes went further than what is written below:
+
+- *Orissa Concrete & Allied Industries* was not merely an incomplete citation.
+  It is a **1998 Calcutta High Court excise matter**, not an Orissa ruling on
+  s.17(5)(d) at all — the genuine Orissa authority on that point is Safari
+  Retreats, already held. It was removed rather than verified.
+- Session tokens were stored **in clear** as the dict key in `users.json`, and
+  survived a password change. That is a live credential the moment the store
+  is readable, needing no password and tripping no lockout. Not in the
+  original P1.7 list; fixed in #23.
+
+---
+
 ## P0 — Confidentiality and filing integrity
 
 ### P0.1 The draft tier's anonymisation does not cover defect text, and the abort gate cannot see the leak
