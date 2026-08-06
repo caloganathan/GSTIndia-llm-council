@@ -61,10 +61,12 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "inadmissible",
       "posture": "contested"
     },
     {
       "index": 2,
+      "heading_contains": "Statement 3A",
       "posture": "partial",
       "required_evidence_that_was_missing": [
         "Bank realisation certificates or FIRCs for the two export invoices identified in the annexure",

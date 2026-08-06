@@ -83,14 +83,17 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "Common credit",
       "posture": "partial"
     },
     {
       "index": 2,
+      "heading_contains": "Reverse charge",
       "posture": "agreed_paid"
     },
     {
       "index": 3,
+      "heading_contains": "180 days",
       "posture": "explained",
       "required_evidence_that_was_missing": [
         "Bank statements across all three accounts evidencing payment to each supplier within one hundred and eighty days of the invoice date"
@@ -98,6 +101,7 @@
     },
     {
       "index": 4,
+      "heading_contains": "Classification",
       "posture": "contested",
       "required_evidence_that_was_missing": [
         "Product literature and the process flow chart establishing the degree of processing the goods undergo"

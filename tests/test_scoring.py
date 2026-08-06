@@ -471,3 +471,110 @@ class TestScorecardSurfacesWhatItScores:
         text = self._scorecard(tmp_path)
         assert "Late fee" in text
         assert "agreed_paid" in text
+
+
+class TestTheScorerCannotReportFalseComfort:
+    """
+    Three ways this scorer used to score an absence of evidence as a pass.
+    Each one made a prompt regression invisible, which is worse than a scorer
+    that is merely crude — a crude signal is discounted, a false green is
+    acted on.
+    """
+
+    def test_an_unreadable_position_is_unscorable_not_agreement(self):
+        """
+        `infer_position` returned "mixed" when it found NO marker of either
+        kind, and `score_position` treats "mixed" as agreement — so a
+        determination reading like a covering letter scored 100% against
+        whatever position the golden case recorded.
+        """
+        determination = {
+            "recommended_position": "File a detailed reply within the time "
+                                    "allowed and place the records before the "
+                                    "officer.",
+            "lead_argument": "",
+        }
+        assert infer_position(determination) is None
+
+        scored = score_position(determination, {"position_taken": "concede"})
+        assert scored["agrees"] is None, (
+            "an unreadable position must be excluded from the metric, not "
+            "counted as agreeing with the golden case"
+        )
+
+    def test_a_genuine_tie_is_still_mixed(self):
+        """The fix must not swallow a real tie, which is a different state
+        from 'no markers at all'."""
+        determination = {
+            "recommended_position": "We contest the ITC limb and concede the "
+                                    "late fee limb.",
+            "lead_argument": "",
+        }
+        assert infer_position(determination) == "mixed"
+
+    def test_citation_integrity_is_unscorable_when_nothing_was_checked(self):
+        """
+        `passed` was True on an empty verification: no fabricated citations
+        found, because none were looked for. Same failure direction as
+        `export._is_filable`, which files nothing when the index is empty.
+        """
+        result = score_citation_integrity({
+            "summary": {"verified": 0, "unverified": 0, "not_found": 0,
+                        "total": 0},
+            "authorities": [],
+        })
+        assert result["passed"] is None
+        assert result["verified_rate"] is None
+
+    def test_evidence_gap_catch_survives_a_renumbered_limb(self):
+        """
+        `score_defects` had an index-or-heading fallback and
+        `score_evidence_gaps` did not, so a chairman that renumbered the limb
+        scored as found for coverage and as a FALSE ZERO for the sharpest
+        number on the scorecard — a failure reported on a document that had
+        actually been demanded.
+        """
+        expected = [{
+            "index": 7,
+            "heading_contains": "E-invoicing",
+            "posture": "contested",
+            "required_evidence_that_was_missing": [
+                "IRP portal data report for tax period 08/2023 listing every "
+                "B2B invoice with its IRN and status"
+            ],
+        }]
+        # Same limb, renumbered 7 -> 1 by the chairman.
+        determination = {"defects": [{
+            "index": 1,
+            "heading": "E-invoicing non-compliance under Rule 48(4)",
+            "posture": "contested",
+            "evidence_required": [
+                "IRP portal data report for 08/2023 with the IRN and status "
+                "of every B2B invoice"
+            ],
+        }]}
+
+        coverage = score_defects(determination, expected)
+        gaps = score_evidence_gaps(determination, expected)
+
+        assert coverage["passed"] is True, "coverage already had the fallback"
+        assert gaps["found"] == 1
+        assert gaps["passed"] is True, (
+            "the gap scorer must resolve the limb the same way the coverage "
+            "scorer does, or the two disagree about which limb is which"
+        )
+
+    def test_a_genuinely_missing_limb_still_fails_both(self):
+        """The fallback must not make everything match."""
+        expected = [{
+            "index": 7,
+            "heading_contains": "E-invoicing",
+            "required_evidence_that_was_missing": ["IRP portal data report"],
+        }]
+        determination = {"defects": [{
+            "index": 1,
+            "heading": "Excess input tax credit against GSTR-2B",
+            "evidence_required": ["Month-wise GSTR-2B"],
+        }]}
+        assert score_defects(determination, expected)["passed"] is False
+        assert score_evidence_gaps(determination, expected)["passed"] is False

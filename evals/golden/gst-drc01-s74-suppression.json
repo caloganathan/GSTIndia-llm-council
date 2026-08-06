@@ -64,6 +64,7 @@
   "expected_defects": [
     {
       "index": 1,
+      "heading_contains": "Difference in turnover",
       "posture": "contested",
       "required_evidence_that_was_missing": [
         "The auditor's qualification and the working papers recording the omission before the departmental visit"
@@ -71,6 +72,7 @@
     },
     {
       "index": 2,
+      "heading_contains": "blocked credit",
       "posture": "agreed_paid"
     }
   ]

@@ -230,6 +230,15 @@ class TestTheGoldenSetBoundary:
                 f"{path.name} is committed but not marked synthetic. A case "
                 f"built from a client matter belongs in evals/golden/private/."
             )
+            # The provenance note is the other half of the flag: `synthetic:
+            # true` on its own is an assertion, the note is the reasoning
+            # behind it. test_golden_set.py checks both, but it skips itself
+            # when the directory is empty — so the second lock has to check
+            # both too, or provenance has one lock rather than two.
+            assert case.get("provenance"), (
+                f"{path.name} is marked synthetic but carries no provenance "
+                "note saying how it was built."
+            )
 
 
 class TestTierResolutionIsFailSafe:

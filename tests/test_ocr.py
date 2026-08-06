@@ -14,12 +14,25 @@ absence, so they run everywhere.
 """
 
 import io
+import os
 
 import pytest
 
 from backend import intake, ocr
 
 ENGINE_READY = ocr.available()[0]
+
+# With the extra installed a skip here means the engine is BROKEN, not absent —
+# and these four tests are the only ones that prove OCR actually reads a page.
+# CI sets OCR_REQUIRED=1 after `uv sync --extra ocr`, which turns a skip into a
+# failure. Locally, without the extra, they still skip.
+OCR_REQUIRED = os.getenv("OCR_REQUIRED", "").lower() in ("1", "true", "yes")
+if OCR_REQUIRED and not ENGINE_READY:
+    raise RuntimeError(
+        "OCR_REQUIRED=1 but the OCR engine is unavailable: "
+        f"{ocr.available()[1]}. Install it with `uv sync --extra ocr`."
+    )
+
 needs_engine = pytest.mark.skipif(
     not ENGINE_READY, reason="OCR extra not installed (uv sync --extra ocr)")
 
