@@ -65,6 +65,11 @@ MATTER = {
                     "amount_by_head": {"cgst": 2060000.0, "sgst": 2060000.0},
                     "department_contention": "Excess credit of Rs. 41,20,000.",
                     "our_position": "The conditions in Section 16(2) stand satisfied.",
+                    "client_response":
+                        "The credit relates to 41 supplier invoices for "
+                        "FY 2019-20 that were received, paid and recorded. "
+                        "The suppliers filed their GSTR-1 late, so the "
+                        "invoices reached 2B in the following month.",
                     "facts": "1.  The credit was availed against valid invoices.",
                     "legal_framework": [
                         {"provision": "Section 16(2), CGST Act, 2017",
@@ -810,3 +815,92 @@ class TestAnUnreadAmountIsNeverAZero:
         assert "Not read from the notice" not in note
         assert "INCOMPLETE" not in note
         assert "INCOMPLETE" not in filing
+
+
+class TestAReplyThatAnswersNothing:
+    """
+    The failure this class exists for shipped, and was found by a partner
+    reading the output rather than by any test here.
+
+    A Tamil Nadu ASMT-10 that did not segment produced an empty defect list.
+    Sections B through E of the filing reply and sections 3 and 10 of the file
+    note are each gated on that list, so all six vanished at once and what
+    exported was a well-formed document: cause title, particulars table,
+    preliminary submissions, prayer for a hearing, signature block. Nothing on
+    its face said it answered no limb of the notice, and the file note it came
+    with said "no structural blockers were identified" — because
+    `validate_all([])` was `[]`.
+
+    Every assertion below is about making that state loud.
+    """
+
+    def _empty(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        matter["result"]["determination"]["defects"] = []
+        matter["result"]["determination"]["filing_blockers"] = []
+        matter["intake"]["defects"] = []
+        return matter
+
+    def test_the_reply_is_stamped_not_for_filing(self):
+        header = _filing(self._empty()).sections[0].header.paragraphs[0].text
+        assert "NOT FOR FILING" in header
+        assert "ANSWERS NO LIMB" in header
+
+    def test_the_reply_says_so_in_its_own_body(self):
+        text = _all_text(_filing(self._empty()))
+        assert "NO LIMB OF THE NOTICE HAS BEEN ANSWERED" in text
+
+    def test_the_file_note_leads_with_it_as_a_blocker(self):
+        text = _all_text(_note(self._empty()))
+        assert "answers nothing" in text
+        assert "No structural blockers were identified" not in text
+
+
+class TestTheClientsFactualCase:
+    """
+    The reply is filed over the client's signature and states the client's
+    case. Where the client has not given one, the panel has no facts — and a
+    model asked for facts it does not have writes plausible ones.
+
+    So the gap is printed where the facts would have gone. A blank the
+    reviewer can see is safe; a fluent paragraph of invented facts filed over
+    the client's signature is not.
+    """
+
+    def _without_client_response(self):
+        import copy
+        matter = copy.deepcopy(MATTER)
+        del matter["result"]["determination"]["defects"][0]["client_response"]
+        return matter
+
+    def test_the_reply_is_stamped(self):
+        header = _filing(
+            self._without_client_response()).sections[0].header.paragraphs[0].text
+        assert "NOT FOR FILING" in header
+        assert "CLIENT'S FACTUAL RESPONSE IS OUTSTANDING" in header
+
+    def test_the_panels_facts_are_withheld_from_the_document(self):
+        """
+        The chairman's `facts` field is populated in the fixture. Without a
+        client account behind it, it must not reach the officer.
+        """
+        text = _all_text(_filing(self._without_client_response()))
+        assert "The credit was availed against valid invoices" not in text
+        assert "CLIENT INPUT REQUIRED" in text
+
+    def test_a_client_account_clears_the_stamp(self):
+        header = _filing().sections[0].header.paragraphs[0].text
+        assert "CLIENT'S FACTUAL RESPONSE" not in header
+
+    def test_a_paid_limb_is_not_held_up_for_one(self):
+        """Limb 2 is agreed and paid and carries no client response. It is
+        answered by its DRC-03 reference and asks nothing of the client."""
+        assert not export._client_input_missing(
+            MATTER["result"]["determination"]["defects"][1])
+
+    def test_the_file_note_names_what_to_ask_the_client(self):
+        text = _all_text(_note(self._without_client_response())).lower()
+        assert "outstanding from the client" in text
+        assert "client's factual response" in text
+        assert "excess input tax credit against gstr-2b" in text

@@ -516,9 +516,9 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           <input
             ref={reconRef}
             id="reconciliation-file"
-            aria-label="Reconciliation workbook to upload (xlsx or csv)"
+            aria-label="Reconciliation workbook to upload (xlsx, csv, docx or pdf)"
             type="file"
-            accept=".xlsx,.xlsm,.csv"
+            accept=".xlsx,.xlsm,.csv,.docx,.pdf"
             onChange={(e) => onReconFile(e.target.files?.[0])}
             disabled={reconciling}
             style={{ width: 'auto', flex: 1, minWidth: 240 }}
@@ -530,9 +530,11 @@ export default function PanelWorkspace({ user, onComplete, onAuthError }) {
           )}
         </div>
         <div className="field-help">
-          Your 2A/3B working, as Excel or CSV. Parsed and bucketed on this
-          machine — only the totals reach the panel, never the rows. A remarks
-          column describing each difference gives a materially better result.
+          Your 2A/3B working, as Excel, CSV, Word or PDF. Parsed and bucketed
+          on this machine — only the totals reach the panel, never the rows. A
+          remarks column describing each difference gives a materially better
+          result. Word and PDF are read for their tables: a scanned PDF has no
+          table to read and is refused rather than guessed at.
         </div>
 
         {recon && (

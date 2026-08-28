@@ -50,10 +50,18 @@ def _failed(model: str, reason: str) -> Dict[str, Any]:
 def _succeeded(model: str, message: Dict[str, Any],
                body: Dict[str, Any]) -> Dict[str, Any]:
     meter = body.get("usage") or {}
+    choice = (body.get("choices") or [{}])[0]
     return {
         "ok": True,
         "model": model,
         "content": message.get("content") or "",
+        # Why the model stopped. "length" means the answer was cut off at the
+        # token ceiling — which for a caller parsing JSON is the difference
+        # between "the model cannot produce this" and "the model was not given
+        # room to finish it". Those need opposite responses, and without this
+        # they were indistinguishable: both arrived as unparseable text.
+        "finish_reason": (choice.get("finish_reason")
+                          or choice.get("native_finish_reason") or ""),
         "reasoning_details": message.get("reasoning_details"),
         "usage": {
             "prompt_tokens": meter.get("prompt_tokens"),

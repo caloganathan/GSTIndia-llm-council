@@ -310,6 +310,25 @@ def _unpack(matter: Dict[str, Any]):
     return intake, determination, verification, metadata, defect_list
 
 
+def _client_input_missing(defect: Dict[str, Any]) -> bool:
+    """
+    Is this limb's factual case still the client's to supply?
+
+    True when the client has given no account of the limb. `facts` being
+    populated does not clear it: that field is what the panel wrote, and where
+    the panel had no client account to write from, what it wrote is a
+    reconstruction. The distinction only matters in one direction, which is
+    the direction this guards — the document goes out over the client's
+    signature.
+
+    A limb that is conceded and paid is exempt: the DRC-03 reference is the
+    answer to it, and there is no factual case left to state.
+    """
+    if defect.get("posture") in (defects.AGREED_PAID, defects.PAID_UNDER_PROTEST):
+        return False
+    return not (defect.get("client_response") or "").strip()
+
+
 def _verified_index(verification: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Citation text -> its verification record, for gating the filing document."""
     index = {}
@@ -395,6 +414,24 @@ def _prose_citation_gaps(
 PROSE_GAP_STAMP = ("NOT FOR FILING — UNVERIFIED AUTHORITY CITED IN THE TEXT "
                    "— SEE THE FILE NOTE")
 
+# A reply that answers no limb answers nothing. It exported before this as an
+# ordinary-looking document — cause title, preliminary submissions, prayer for
+# a hearing — with the entire issue-wise reply silently absent, because every
+# defect-wise section is gated on the defect list. Nothing on its face said so.
+NO_DEFECTS_STAMP = ("NOT FOR FILING — THIS REPLY ANSWERS NO LIMB OF THE NOTICE")
+
+# The Noticee's factual case comes from the Noticee. Where it has not been
+# given, the limb carries the gap in the place the facts would have gone,
+# rather than whatever a model wrote in their absence.
+CLIENT_INPUT_STAMP = ("NOT FOR FILING — THE CLIENT'S FACTUAL RESPONSE IS "
+                      "OUTSTANDING ON ONE OR MORE LIMBS")
+CLIENT_INPUT_PLACEHOLDER = (
+    "[CLIENT INPUT REQUIRED — the Noticee's factual response on this limb has "
+    "not been recorded. This paragraph must be completed from the client's own "
+    "account before this reply is filed. It is left blank by design rather "
+    "than drafted.]"
+)
+
 
 # ---------------------------------------------------------------------------
 # 1. The filing document
@@ -418,14 +455,23 @@ def build_filing_reply(matter: Dict[str, Any]) -> bytes:
     _configure_styles(doc)
     _margins(doc)
 
-    watermark = metadata.get("watermark")
+    # Every stamp below follows the same rule as the prose-citation stamp:
+    # the document still exports, because blocking the download only pushes
+    # the text out through the clipboard, but nothing that is not filable ever
+    # leaves here looking filable.
+    stamps = []
     # A citation inside the filed prose that did not verify cannot be
-    # withheld the way a table entry is. Blocking the export entirely only
-    # pushes the text out through the clipboard, so the document exports —
-    # stamped on every page so it cannot be mistaken for filable.
+    # withheld the way a table entry is.
     if _prose_citation_gaps(determination, defect_list, verified, pack):
-        watermark = (f"{watermark} — {PROSE_GAP_STAMP}" if watermark
-                     else PROSE_GAP_STAMP)
+        stamps.append(PROSE_GAP_STAMP)
+    if not defect_list:
+        stamps.append(NO_DEFECTS_STAMP)
+    if any(_client_input_missing(d) for d in defect_list):
+        stamps.append(CLIENT_INPUT_STAMP)
+
+    watermark = " — ".join(
+        part for part in [metadata.get("watermark"), *stamps] if part
+    )
     if watermark:
         _page_header(doc, watermark)
 
@@ -490,6 +536,19 @@ def build_filing_reply(matter: Dict[str, Any]) -> bytes:
         _heading(doc, "C.  Issue-wise Detailed Reply", 1)
         for defect in defect_list:
             _defect_section(doc, defect, verified)
+    else:
+        # Reached only by a stored matter that predates the residuary limb, or
+        # by an extraction that failed outright. Either way the reviewer sees
+        # it on the face of the document rather than inferring it from a
+        # missing section.
+        _heading(doc, "C.  Issue-wise Detailed Reply", 1)
+        _para(doc,
+              "NO LIMB OF THE NOTICE HAS BEEN ANSWERED. No discrepancy was "
+              "identified from the notice, so this document contains no "
+              "issue-wise reply, no evidentiary index and no relief specific "
+              "to any allegation. It must not be filed. Decompose the notice "
+              "into its limbs and re-run the panel.",
+              bold=True)
 
     # ---- D. Consolidated statement of payments ---------------------------
     payment_rows = _payment_rows(defect_list)
@@ -636,9 +695,24 @@ def _defect_section(doc: Document, defect: Dict[str, Any],
         _para(doc, "Department's allegation", bold=True, size=Pt(10))
         _para(doc, contention)
 
-    if defect.get("facts"):
+    # The factual position is the Noticee's, and it comes from the Noticee.
+    # Where the client has not given its account, whatever stands in `facts`
+    # was written without one — so the gap is printed in its place rather than
+    # the prose. A blank a reviewer can see is safe; a fluent paragraph of
+    # invented facts filed over the client's signature is not.
+    if _client_input_missing(defect):
         _para(doc, "Factual position", bold=True, size=Pt(10))
-        _numbered_body(doc, defect["facts"])
+        _para(doc, CLIENT_INPUT_PLACEHOLDER, bold=True)
+        for item in defect.get("client_input_required") or []:
+            _para(doc, f"—  {item}", indent=Inches(0.3))
+    # Falls back to the client's own words where the panel drafted nothing —
+    # on a limb whose answer was withheld as a copy of its neighbour's, that
+    # is the difference between a limb with no factual position at all and one
+    # stating, unpolished, what the client actually said.
+    elif defect.get("facts") or defect.get("client_response"):
+        _para(doc, "Factual position", bold=True, size=Pt(10))
+        _numbered_body(doc, defect.get("facts")
+                       or defect.get("client_response"))
 
     # Gated exactly as the authorities table below is: the chairman is invited
     # to put circulars, notifications and case law in this field, and an entry
@@ -939,6 +1013,13 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
         if gap["citation"] not in recorded:
             blockers.append(gap["message"])
 
+    # Recomputed here for the same reason the prose gaps are: a matter stored
+    # before this check existed carries a `filing_blockers` list that was
+    # computed without it, and the zero-limb case is exactly the one where
+    # that list came back empty and read as a clean bill of health.
+    if not defect_list and not any("answers nothing" in str(b) for b in blockers):
+        blockers.insert(0, defects.validate_all([])[0])
+
     # An unread figure is a blocker in its own right. It reached the reviewer
     # as "Rs. 0" in the defect register before this, which reads as "nothing in
     # issue on this limb" — the one conclusion that is certainly wrong.
@@ -1001,10 +1082,38 @@ def build_file_note(matter: Dict[str, Any]) -> bytes:
                for d in defect_list],
               widths=[0.4, 2.5, 1.1, 1.4, 1.0])
 
-    # ---- 4. Evidence gaps — the most important section --------------------
+    # ---- 4. Outstanding from the client — the most important section ------
+    # Two different absences, both of which lose limbs, and neither of which
+    # any amount of drafting can cure: the document the officer will demand
+    # and nobody has confirmed we hold, and the client's own account of what
+    # happened, without which the reply cannot state its case at all.
+    _heading(doc, "4.  Outstanding from the Client", 1)
+
+    _heading(doc, "4.1  The client's factual response", 2)
+    _para(doc,
+          "The reply states the Noticee's case, and the Noticee's case comes "
+          "from the Noticee. Where a limb is listed here, no client account "
+          "has been recorded against it — the filing document carries a "
+          "CLIENT INPUT REQUIRED marker in place of the factual position, and "
+          "is stamped accordingly on every page. Nothing here can be settled "
+          "by re-running the panel.",
+          italic=True, size=Pt(9))
+    outstanding = [d for d in defect_list if _client_input_missing(d)]
+    if outstanding:
+        _grid(doc, ["Defect", "What the client must be asked"],
+              [[f"{d.get('index')} — {d.get('heading', '')}",
+                "\n".join(str(q) for q in (d.get("client_input_required") or []))
+                or "The client's account of this limb, in its own words: what "
+                   "was done, why, and what it holds to show it."]
+               for d in outstanding],
+              widths=[2.4, 4.0])
+    else:
+        _para(doc, "A client response is recorded against every limb that "
+                   "requires one.")
+
+    _heading(doc, "4.2  Evidence gaps", 2)
     gaps = [(d, list(d.get("evidence_gap") or [])) for d in defect_list]
     gaps = [(d, g) for d, g in gaps if g]
-    _heading(doc, "4.  Evidence Gaps", 1)
     _para(doc,
           "Documents the officer will require which the engagement team has "
           "not confirmed are available. A limb with a sound argument and a "

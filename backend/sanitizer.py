@@ -59,6 +59,17 @@ DROPPED_FIELDS = ("client_name", "gstin", "client_ref")
 DEFECT_SCRUBBED_FIELDS = (
     "heading", "department_contention", "notice_extract", "preamble",
     "fallback_text",
+    # The client's own account of the limb, written by the client's staff.
+    # It is the single most identifying free text in the matter — it names
+    # the trade name, the suppliers and the GSTINs in the ordinary course of
+    # explaining what happened — and on the draft tier it goes to the model
+    # like everything else, so it is scrubbed like everything else.
+    "client_response",
+)
+
+# The same, for defect fields holding a list of free-text strings.
+DEFECT_SCRUBBED_LIST_FIELDS = (
+    "client_documents_held", "evidence_held",
 )
 
 
@@ -157,6 +168,18 @@ def sanitize_matter(
                 if defect.get(field):
                     defect[field] = scrub_text(defect[field], replacements,
                                                client_name)
+            # Lists of free text scrub item by item. A document the client
+            # says it holds is described the way the client's staff describe
+            # it — "credit note from Sri Balaji Traders, GSTIN 33AAB..." — so
+            # the identifiers are in here exactly as they are in the prose.
+            for field in DEFECT_SCRUBBED_LIST_FIELDS:
+                items = defect.get(field)
+                if isinstance(items, list):
+                    defect[field] = [
+                        scrub_text(item, replacements, client_name)
+                        if isinstance(item, str) else item
+                        for item in items
+                    ]
             scrubbed_defects.append(defect)
         clean["defects"] = scrubbed_defects
 

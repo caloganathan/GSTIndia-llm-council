@@ -98,6 +98,13 @@ class TestParsing:
 
     def test_rejects_unsupported_type(self):
         with pytest.raises(ValueError, match="Unsupported file type"):
+            recon.parse_workbook("r.rtf", b"x" * 100)
+
+    def test_a_pdf_that_is_not_a_pdf_says_so(self):
+        """A supported extension over unreadable bytes still raises, and the
+        message names the file rather than surfacing a library's internals as
+        an unsupported-type error."""
+        with pytest.raises(ValueError, match="Could not read the PDF"):
             recon.parse_workbook("r.pdf", b"x" * 100)
 
     def test_rejects_oversized(self):
@@ -307,3 +314,168 @@ class TestBucketDefinitions:
 
     def test_blocked_credit_is_a_concession(self):
         assert gst.RECONCILIATION_BUCKETS_BY_KEY["ineligible"].strength == "concede"
+
+
+def _docx_bytes(rows):
+    """A Word document holding one table, as a client's ERP export would."""
+    import io as _io
+    import docx
+    document = docx.Document()
+    table = document.add_table(rows=len(rows), cols=len(rows[0]))
+    for r, row in enumerate(rows):
+        for c, value in enumerate(row):
+            table.cell(r, c).text = str(value)
+    buffer = _io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _pdf_bytes(lines):
+    """
+    A minimal one-page PDF with a real text layer, built by hand.
+
+    Written out rather than pulled from a fixture file so the test says what
+    it is testing: a PDF that records where its glyphs are and nothing about
+    what its columns were, which is the case the splitter has to survive.
+    """
+    text = "\n".join(
+        f"BT /F1 10 Tf 40 {760 - i * 14} Td ({line}) Tj ET"
+        for i, line in enumerate(lines)
+    )
+    objects = [
+        "<</Type/Catalog/Pages 2 0 R>>",
+        "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        "<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+        "/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>",
+        f"<</Length {len(text)}>>\nstream\n{text}\nendstream",
+        "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n{body}\nendobj\n".encode("latin-1")
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (f"trailer<</Size {len(objects) + 1}/Root 1 0 R>>\n"
+            f"startxref\n{xref}\n%%EOF").encode()
+    return bytes(out)
+
+
+class TestWordReconciliations:
+    """
+    A reconciliation reaches the firm in whatever the client's accountant had
+    to hand, and that is routinely a Word table pasted out of the ERP.
+    Refusing it meant re-keying thousands of rows into a spreadsheet before
+    the panel could see any figures — which meant, in practice, it never did.
+
+    A .docx carries its tables as real structure, so this path is exact.
+    """
+
+    ROWS = [
+        ["Supplier GSTIN", "Supplier Name", "Difference", "Remarks"],
+        ["29AAACX1111A1Z1", "Alpha Traders", "12000", "Timing — filed in April"],
+        ["29AAACX2222A1Z2", "Beta Supplies", "8000", "Supplier not filed"],
+    ]
+
+    def test_a_word_table_is_read(self):
+        headers, rows, _ = recon.parse_workbook("r.docx", _docx_bytes(self.ROWS))
+        assert len(rows) == 2
+        assert "Supplier GSTIN" in headers
+
+    def test_the_figures_survive_the_round_trip(self):
+        _, rows, _ = recon.parse_workbook("r.docx", _docx_bytes(self.ROWS))
+        assert "12000" in [str(cell) for cell in rows[0]]
+
+    def test_a_document_with_no_table_is_refused(self):
+        import io as _io
+        import docx
+        document = docx.Document()
+        document.add_paragraph("The reconciliation is attached separately.")
+        buffer = _io.BytesIO()
+        document.save(buffer)
+        with pytest.raises(ValueError, match="No table was found"):
+            recon.parse_workbook("r.docx", buffer.getvalue())
+
+    def test_several_tables_warn_rather_than_merge(self):
+        """
+        A reconciliation exported to Word usually carries a small summary
+        table beside the detail. Stacking the two double-counts every bucket
+        it touches, so the widest is read and the rest are named.
+        """
+        import io as _io
+        import docx
+        document = docx.Document()
+        summary = document.add_table(rows=2, cols=2)
+        summary.cell(0, 0).text = "Bucket"
+        summary.cell(0, 1).text = "Amount"
+        detail = document.add_table(rows=len(self.ROWS), cols=4)
+        for r, row in enumerate(self.ROWS):
+            for c, value in enumerate(row):
+                detail.cell(r, c).text = str(value)
+        buffer = _io.BytesIO()
+        document.save(buffer)
+        _, rows, warnings = recon.parse_workbook("r.docx", buffer.getvalue())
+        assert len(rows) == 2
+        assert any("2 tables" in w for w in warnings)
+
+
+class TestPdfReconciliations:
+    """
+    A PDF records where the glyphs are, not what the columns were, so this
+    path checks its own work: the rows must agree on how many columns they
+    have, and a file that cannot produce a consistent grid raises and names
+    the formats that will work.
+
+    A bucket total computed from a misaligned grid arrives looking exactly
+    like a correct one, and is argued from in a filed reply.
+    """
+
+    def test_a_scan_with_no_text_layer_is_refused_not_guessed(self):
+        """
+        OCR is offered for notices because a misread word in a notice is
+        visible to the reviewer reading it. A misread digit in row 4,000 of a
+        reconciliation is not.
+        """
+        blank = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+                 b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+                 b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\n"
+                 b"trailer<</Root 1 0 R>>")
+        with pytest.raises(ValueError, match="no text layer|Could not read"):
+            recon.parse_workbook("r.pdf", blank)
+
+    LINES = [
+        "Supplier GSTIN    Supplier Name    Difference    Remarks",
+        "29AAACX1111A1Z1    Alpha Traders    12000    Timing",
+        "29AAACX2222A1Z2    Beta Supplies    8000    Not filed",
+    ]
+
+    def test_a_printed_grid_is_recovered(self):
+        headers, rows, _ = recon.parse_workbook("r.pdf", _pdf_bytes(self.LINES))
+        assert [str(h) for h in headers][:2] == [
+            "Supplier GSTIN", "Supplier Name"]
+        assert len(rows) == 2
+        assert rows[0][2] == "12000"
+
+    def test_page_furniture_is_dropped_and_reported(self):
+        """A heading or a page number does not fit the grid. Skipping it
+        silently is how a row count stops matching the document."""
+        _, rows, warnings = recon.parse_workbook(
+            "r.pdf", _pdf_bytes(["ITC Reconciliation FY 2022-23"]
+                                + self.LINES + ["Page 1 of 4"]))
+        assert len(rows) == 2
+        assert any("did not fit" in w for w in warnings)
+
+    def test_a_pdf_with_no_column_separation_is_refused(self):
+        with pytest.raises(ValueError, match="No columns|does not appear"):
+            recon.parse_workbook(
+                "r.pdf", _pdf_bytes(["A letter about the reconciliation.",
+                                     "It is attached separately."]))
+
+    def test_a_single_space_does_not_split_a_supplier_name(self):
+        """One space is inside a supplier name far more often than it is
+        between columns."""
+        split = recon._PDF_COLUMN_GAP.split("Alpha Traders Private Limited")
+        assert split == ["Alpha Traders Private Limited"]

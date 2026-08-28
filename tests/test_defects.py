@@ -324,7 +324,28 @@ class TestValidation:
     def test_a_complete_limb_passes(self):
         assert defects.validate(defects.new_defect(
             1, "Blocked credit", posture=defects.CONTESTED,
-            annexures=["Purchase invoices"])) == []
+            annexures=["Purchase invoices"],
+            client_response="The credit relates to plant and machinery, "
+                            "not to civil works.")) == []
+
+    def test_a_limb_without_the_clients_account_blocks_filing(self):
+        """
+        The reply states the Noticee's case, and only the Noticee can supply
+        it. A limb with none is a limb whose facts, if it has any, were
+        written by a model with nothing to write from.
+        """
+        problems = defects.validate(defects.new_defect(
+            1, "Blocked credit", posture=defects.CONTESTED,
+            annexures=["Purchase invoices"]))
+        assert any("client has not given its account" in p for p in problems)
+
+    def test_a_paid_limb_needs_no_client_account(self):
+        """A conceded limb is answered by its DRC-03 reference."""
+        problems = defects.validate(defects.new_defect(
+            1, "Late fee", posture=defects.AGREED_PAID,
+            payment={"reference": "AD290626001122B"}))
+        assert not any("client has not given its account" in p
+                       for p in problems)
 
 
 class TestTheLastLimbDoesNotAbsorbTheDemandSummary:
@@ -495,3 +516,37 @@ class TestTheAnnexureBoundary:
         assert sum(row["amounts"].values()) == 44.00, (
             "the interest limb absorbed the annexure total"
         )
+
+
+class TestTheNoticeThatDoesNotSegment:
+    """
+    A notice with no parameter-wise list must still produce a limb.
+
+    `segment()` has always returned [] when it found nothing defect-shaped,
+    and its docstring has always said the caller must read that as "needs
+    manual decomposition". No caller did, and the consequence was silent:
+    every defect-wise section of both exported documents is gated on the
+    defect list, so a notice that did not segment produced a reply carrying a
+    cause title, two paragraphs of boilerplate and a prayer for a hearing —
+    over a file note reporting that no blockers had been found.
+    """
+
+    def test_an_empty_defect_list_is_itself_a_blocker(self):
+        problems = defects.validate_all([])
+        assert problems
+        assert "answers nothing" in problems[0]
+
+    def test_the_residuary_limb_carries_the_notice(self):
+        limb = defects.residuary_defect(
+            "The ITC availed in GSTR-3B exceeds that in GSTR-2B by "
+            "Rs. 1,23,716.68 for the period. Explain the difference."
+        )
+        assert limb["index"] == 1
+        assert limb["posture"] == defects.UNDECIDED
+        assert limb["source"] == "residuary"
+        assert limb["needs_decomposition"] is True
+        assert "1,23,716.68" in limb["notice_extract"]
+
+    def test_the_residuary_limb_blocks_filing_until_decomposed(self):
+        problems = defects.validate(defects.residuary_defect("Some notice."))
+        assert any("NOT segmented off a heading" in p for p in problems)

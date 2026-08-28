@@ -865,7 +865,14 @@ def extract_defects(text: str, pack) -> List[Dict[str, Any]]:
     catalogue = getattr(pack, "DEFECT_TYPES", [])
     found = defects.segment(text, catalogue)
     if not found:
-        return []
+        # Nothing defect-shaped in the notice. That is not the same as no
+        # defect: a scrutiny intimation alleging one head-wise ITC difference
+        # has no parameter-wise list to segment, and it is still a notice that
+        # must be answered limb by limb. Returning [] here emptied every
+        # defect-wise section of both exported documents at once, and the file
+        # note then reported no blockers, because there was no limb left to
+        # find a blocker on.
+        found = [defects.residuary_defect(defects.operative_region(text))]
 
     head_order = notice_tables.detect_head_order(text)
 
