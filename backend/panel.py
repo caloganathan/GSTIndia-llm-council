@@ -120,7 +120,7 @@ _CHAIRMAN_DEFECT_KEYS = (
     "posture", "strength", "our_position", "facts", "submission",
     "department_contention", "legal_framework", "authorities",
     "evidence_required", "evidence_gap", "annexures", "payment", "splits",
-    "prayer_relief", "amount_note",
+    "prayer_relief", "amount_note", "client_input_required",
 )
 
 # The shape each structured key must arrive in. A model asked for an object
@@ -139,7 +139,13 @@ _CHAIRMAN_DEFECT_SHAPES = {
     "evidence_gap": list,
     "annexures": list,
     "splits": list,
+    "client_input_required": list,
 }
+
+# The prose fields that carry a limb's own answer. Two limbs sharing one of
+# these verbatim is not a coincidence — it is the model having answered limb
+# N by restating limb N-1.
+_LIMB_PROSE_KEYS = ("facts", "submission", "our_position")
 
 
 def merge_determination(
@@ -198,7 +204,53 @@ def merge_determination(
             defect["unanswered"] = True
 
     merged.sort(key=lambda d: (d.get("index") or 0))
+    _strip_copied_limbs(merged)
     return merged
+
+
+def _normalise_prose(value: Any) -> str:
+    """Prose reduced to what it says, for comparing one limb against another."""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _strip_copied_limbs(merged: List[Dict[str, Any]]) -> None:
+    """
+    Withhold a limb's answer where it is simply the previous limb's answer.
+
+    A model working through eight limbs in one response drifts into answering
+    the later ones by restating the earlier ones. It reads fluently and it is
+    wrong in the most expensive way available: limb N is answered on limb
+    N-1's facts, so the officer is told the wrong thing about a discrepancy
+    that was never addressed, and the limb is confirmed.
+
+    The copied text is removed rather than annotated. A reviewer scanning a
+    forty-page reply will not notice that two paragraphs match; they will
+    notice a limb with its factual position missing and a blocker naming it.
+    That is the whole point of removing it: the failure has to be louder than
+    the text it replaces.
+
+    Only exact matches on normalised prose are treated as copies. Two limbs of
+    the same defect type legitimately share phrasing, and a fuzzy threshold
+    here would start deleting real answers — a false positive costs a limb
+    just as a false negative does.
+    """
+    for key in _LIMB_PROSE_KEYS:
+        seen: Dict[str, Any] = {}
+        for defect in merged:
+            text = _normalise_prose(defect.get(key))
+            # Short strings collide honestly: two limbs may both be answered
+            # "DROP the demand". A copy worth catching is a paragraph.
+            if len(text) < 120:
+                continue
+            first = seen.get(text)
+            if first is None:
+                seen[text] = defect.get("index")
+                continue
+            defect[key] = ""
+            defect["duplicate_of"] = first
+
 
 
 def filed_text_blockers(verification: Dict[str, Any]) -> List[str]:
@@ -430,26 +482,72 @@ async def run_panel_stream(
         working_matter, pack, analyses, cross_exams, briefing_text,
         recon_text,
     )
+    chairman_ceiling = config.role_max_tokens("chairman")
     chairman_result = await query_model(
         models["chairman"],
         [{"role": "user", "content": chairman_prompt}],
         zdr=zdr,
         effort=config.role_effort("chairman"),
-        max_tokens=config.role_max_tokens("chairman"),
+        max_tokens=chairman_ceiling,
     )
     chairman_usage = [_usage_of(chairman_result)]
 
+    determination = None
     if chairman_result.get("ok"):
         determination = _extract_json(chairman_result["content"])
-        if determination is None:
-            determination = _fallback_determination(
-                chairman_result["content"],
-                "The chairman did not return parseable JSON.",
-            )
-    else:
-        determination = _fallback_determination(
-            "", f"Chairman call failed: {chairman_result.get('error')}"
+
+    # One recovery attempt before degrading. The chairman is the only stage
+    # whose failure empties the entire deliverable — the counsel analyses
+    # survive it, but every defect-wise section of both documents is built
+    # from this JSON — and its two failure modes are both recoverable.
+    #
+    # Truncation is by far the commoner one and does not look like a failure:
+    # a nine-limb determination is a long JSON object, and a model that runs
+    # out of room mid-object returns a perfectly good answer with the closing
+    # braces missing. Retrying with headroom fixes it. A model that wrapped
+    # its JSON in commentary `_extract_json` already handles; one that
+    # answered in prose is asked again, for the object alone.
+    if determination is None:
+        truncated = chairman_result.get("finish_reason") == "length"
+        retry_result = await query_model(
+            models["chairman"],
+            [{"role": "user", "content": chairman_prompt}] if truncated else [
+                {"role": "user", "content": chairman_prompt},
+                {"role": "assistant",
+                 "content": (chairman_result.get("content") or "")[:4000]},
+                {"role": "user", "content":
+                    "That was not a single parseable JSON object. Return the "
+                    "determination again as ONE JSON object and nothing else "
+                    "— no commentary before or after it, no markdown fence. "
+                    "Keep every defect entry."},
+            ],
+            zdr=zdr,
+            effort=config.role_effort("chairman"),
+            max_tokens=chairman_ceiling * 2 if truncated else chairman_ceiling,
         )
+        chairman_usage.append(_usage_of(retry_result))
+        if retry_result.get("ok"):
+            determination = _extract_json(retry_result["content"])
+        if determination is not None:
+            chairman_result = retry_result
+        elif truncated:
+            determination = _fallback_determination(
+                retry_result.get("content") or chairman_result["content"],
+                "The chairman's output was cut off at the token ceiling and "
+                "did not complete on a retry with double the room. Raise "
+                "MAX_TOKENS_CHAIRMAN, or run fewer limbs at once.",
+            )
+        elif not chairman_result.get("ok"):
+            determination = _fallback_determination(
+                "",
+                "Chairman call failed on both attempts: "
+                f"{retry_result.get('error') or chairman_result.get('error')}",
+            )
+        else:
+            determination = _fallback_determination(
+                retry_result.get("content") or chairman_result["content"],
+                "The chairman did not return parseable JSON, on two attempts.",
+            )
 
     determination["_chairman_model"] = models["chairman"]
 
@@ -465,13 +563,19 @@ async def run_panel_stream(
     )
     unanswered = [d for d in determination["defects"] if d.get("unanswered")]
     if unanswered:
-        determination.setdefault("risk_flags", []).insert(0, (
+        message = (
             f"{len(unanswered)} defect(s) raised in the notice were not "
             "answered by the panel: "
             + "; ".join(str(d.get("heading")) for d in unanswered)
             + ". A limb left unanswered is a limb the officer confirms "
               "unopposed. Settle these before filing."
-        ))
+        )
+        determination.setdefault("risk_flags", []).insert(0, message)
+        # Also a blocker, not only a flag. Risk flags are read as things to
+        # weigh; this is a thing to fix, and it is the failure the reviewer is
+        # least able to see for themselves — the reply reads as complete
+        # because the limb it does not answer simply is not in it.
+        determination["filing_blockers"].insert(0, message)
 
     yield {"type": "stage3_complete", "data": determination}
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
-  ARGUED_POSTURES, POSTURES, TAX_HEADS, formatRupeesExact, headTotal, postureLabel,
+  ARGUED_POSTURES, PAID_POSTURES, POSTURES, TAX_HEADS, formatRupeesExact,
+  headTotal, postureLabel,
 } from '../format';
 
 /**
@@ -94,6 +95,12 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
           const amount = headTotal(defect.amount_by_head);
           const expanded = open === index;
           const gaps = defect.evidence_gap || [];
+          // Mirrors export._client_input_missing: a limb conceded and paid is
+          // answered by its DRC-03 reference, and has no factual case left to
+          // state. Keep the two in step — this badge is what tells the
+          // reviewer why the reply is stamped.
+          const clientInputMissing =
+            !PAID_POSTURES.has(defect.posture) && !defect.client_response?.trim();
           return (
             <div key={defect.index ?? index} className="card card-pad defect-row">
               <div
@@ -134,6 +141,21 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
                     )}
                     {defect.unanswered && (
                       <span className="badge badge-danger">Unanswered</span>
+                    )}
+                    {clientInputMissing && (
+                      <span className="badge badge-danger">
+                        Client response outstanding
+                      </span>
+                    )}
+                    {defect.duplicate_of && (
+                      <span className="badge badge-danger">
+                        Answer copied from limb {defect.duplicate_of}
+                      </span>
+                    )}
+                    {defect.needs_decomposition && (
+                      <span className="badge badge-warning">
+                        Not segmented — decompose by hand
+                      </span>
                     )}
                     {gaps.length > 0 && (
                       <span className="badge badge-danger">
@@ -194,6 +216,28 @@ export default function DefectList({ defects, onChange, readOnly = false }) {
                         </select>
                         <div className="field-help">
                           {POSTURES.find((p) => p.key === defect.posture)?.hint}
+                        </div>
+                      </div>
+
+                      {/* The one input no model and no notice can supply.
+                          Without it the panel is asked for the Noticee's
+                          factual case with no facts, and what it writes
+                          instead is filed over the client's signature. */}
+                      <div className="field">
+                        <label className="field-label" htmlFor={`client-${index}`}>
+                          What the client says about this limb
+                        </label>
+                        <textarea
+                          id={`client-${index}`}
+                          rows={5}
+                          value={defect.client_response || ''}
+                          placeholder="In the client's own words: what was done, why, and what it holds to show it. e.g. 'The difference is supplier credit notes for purchase returns in Oct 2022, reversed in the November 3B. Credit notes and the purchase-return register are available.'"
+                          onChange={(e) => update(index, { client_response: e.target.value })}
+                        />
+                        <div className="field-help">
+                          {defect.client_response
+                            ? 'This is the only source of fact the panel has. Everything else it sees is the department\'s allegation.'
+                            : 'Outstanding. The panel will argue the law and the department\'s arithmetic on this limb, but it will NOT invent facts — the reply will carry a CLIENT INPUT REQUIRED marker in place of the factual position, and will be stamped not for filing until this is answered.'}
                         </div>
                       </div>
 

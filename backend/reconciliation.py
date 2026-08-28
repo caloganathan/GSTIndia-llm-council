@@ -29,7 +29,19 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_RECON_BYTES", str(15 * 1024 * 1024)))
-SUPPORTED = (".xlsx", ".xlsm", ".csv")
+SUPPORTED = (".xlsx", ".xlsm", ".csv", ".docx", ".pdf")
+
+# A reconciliation reaches the firm in whatever the client's accountant had to
+# hand, and that is routinely a Word table pasted out of the ERP or a PDF the
+# portal or the department produced. Refusing those forced the firm to
+# re-key thousands of rows into a spreadsheet before the panel could see any
+# figures at all — which meant, in practice, that it did not see them.
+#
+# Both are read for TABLES only, and both keep the rule the workbook reader
+# keeps: a file whose columns cannot be identified raises and says what to
+# upload instead. A reconciliation half-read is worse than one not read, and
+# the bucket totals are what the reply is argued from.
+TABULAR_FORMATS = (".docx", ".pdf")
 
 # Guard against a workbook with a runaway row count.
 MAX_ROWS = 20000
@@ -171,6 +183,128 @@ def _find_header_row(rows: List[List[Any]]) -> int:
     return best_index if best_score >= 2 else 0
 
 
+def _rows_from_docx(content: bytes, warnings: List[str]) -> List[List[Any]]:
+    """
+    Rows out of the tables in a Word document.
+
+    A .docx carries its tables as real structure, so this is exact — there is
+    no column guessing and no risk of splitting a supplier name on a space.
+
+    Where a document holds several tables the widest is taken, and the others
+    are named in a warning rather than silently merged. Merging them is the
+    obvious-looking move and it is wrong: a reconciliation exported to Word
+    usually carries a small summary table beside the detail, and stacking the
+    two double-counts every bucket it touches.
+    """
+    try:
+        import docx
+        document = docx.Document(io.BytesIO(content))
+    except Exception as e:
+        raise ValueError(f"Could not read the Word document: {e}")
+
+    tables = document.tables
+    if not tables:
+        raise ValueError(
+            "No table was found in the Word document. The reconciliation must "
+            "be a table, not paragraphs — or upload it as .xlsx or .csv."
+        )
+
+    widest = max(tables, key=lambda t: len(t.columns))
+    if len(tables) > 1:
+        warnings.append(
+            f"The document holds {len(tables)} tables. The widest "
+            f"({len(widest.columns)} columns) was read; the rest were "
+            "ignored. Check that it is the right one."
+        )
+
+    rows: List[List[Any]] = []
+    for index, row in enumerate(widest.rows):
+        if index > MAX_ROWS:
+            warnings.append(f"Only the first {MAX_ROWS:,} rows were read.")
+            break
+        rows.append([cell.text.strip() for cell in row.cells])
+    return rows
+
+
+# A run of two or more spaces is how a PDF text layer separates columns. One
+# space is inside a supplier name far more often than it is between columns.
+_PDF_COLUMN_GAP = re.compile(r"\s{2,}")
+
+
+def _rows_from_pdf(content: bytes, warnings: List[str]) -> List[List[Any]]:
+    """
+    Rows out of a PDF's text layer, split on column gaps.
+
+    This is the one format here with no table structure to read: a PDF records
+    where the glyphs are, not what the columns were. Splitting on runs of
+    whitespace recovers the grid for the ordinary case — a report printed from
+    a spreadsheet or the portal — and does not recover it for a PDF with
+    ruled cells and wrapped text.
+
+    So the result is checked rather than trusted. The rows must agree on how
+    many columns they have; where they do not, this raises and names the
+    formats that will work. The alternative is a bucket total computed from a
+    misaligned grid, which arrives looking exactly like a correct one and is
+    argued from in a filed reply.
+
+    A scanned reconciliation has no text layer at all and is refused here.
+    OCR is offered for notices (`ocr.py`) because a wrong word in a notice is
+    visible to the reviewer reading it; a wrong digit in row 4,000 of a
+    reconciliation is not.
+    """
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(content))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception as e:
+        raise ValueError(f"Could not read the PDF: {e}")
+
+    lines: List[str] = []
+    for page in pages:
+        lines.extend(line for line in page.splitlines() if line.strip())
+
+    if not lines:
+        raise ValueError(
+            "The PDF has no text layer — it is a scan. A reconciliation is "
+            "not read by OCR, because a misread digit in one row of several "
+            "thousand is not visible to anyone checking it. Upload the "
+            "reconciliation as .xlsx or .csv."
+        )
+
+    split = [
+        [cell.strip() for cell in _PDF_COLUMN_GAP.split(line.strip())]
+        for line in lines[:MAX_ROWS]
+    ]
+    if len(lines) > MAX_ROWS:
+        warnings.append(f"Only the first {MAX_ROWS:,} rows were read.")
+
+    # The modal width is the table; anything narrower is a heading, a page
+    # number or a footer, and anything wider is two columns run together.
+    widths = [len(row) for row in split if len(row) > 1]
+    if not widths:
+        raise ValueError(
+            "No columns could be identified in the PDF — the text layer has "
+            "no column separation to read. Upload the reconciliation as "
+            ".xlsx or .csv."
+        )
+    table_width = max(set(widths), key=widths.count)
+    if table_width < 3:
+        raise ValueError(
+            "The PDF does not appear to hold a reconciliation table — only "
+            f"{table_width} column(s) were found. Upload it as .xlsx or .csv."
+        )
+
+    rows = [row for row in split if len(row) == table_width]
+    dropped = len(split) - len(rows)
+    if dropped:
+        warnings.append(
+            f"{dropped} line(s) in the PDF did not fit the {table_width}-column "
+            "grid and were skipped — headings, page furniture, or rows whose "
+            "text wrapped. Check the bucket totals against the document."
+        )
+    return rows
+
+
 def parse_workbook(filename: str, content: bytes) -> Tuple[List[Any], List[List[Any]], List[str]]:
     """
     Read an uploaded reconciliation into headers and rows. Entirely local.
@@ -190,7 +324,11 @@ def parse_workbook(filename: str, content: bytes) -> Tuple[List[Any], List[List[
         )
 
     raw: List[List[Any]] = []
-    if name.endswith(".csv"):
+    if name.endswith(".docx"):
+        raw = _rows_from_docx(content, warnings)
+    elif name.endswith(".pdf"):
+        raw = _rows_from_pdf(content, warnings)
+    elif name.endswith(".csv"):
         text = None
         for encoding in ("utf-8-sig", "utf-8", "latin-1"):
             try:
