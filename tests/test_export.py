@@ -810,3 +810,52 @@ class TestAnUnreadAmountIsNeverAZero:
         assert "Not read from the notice" not in note
         assert "INCOMPLETE" not in note
         assert "INCOMPLETE" not in filing
+
+
+class TestCauseTitleAdministration:
+    """The cause title named a State Commercial Taxes Department on every
+    reply, including replies to Central (CGST) officers."""
+
+    def test_state_officer_keeps_the_state_title(self):
+        lines = export._forum_line({
+            "issuing_officer": "R Kumar, Assistant Commissioner",
+            "jurisdiction_office": "Jayanagar Assessment Circle",
+            "state": "Karnataka"})
+        assert lines[0].endswith("(ST)")
+        assert "COMMERCIAL TAXES DEPARTMENT, GOVERNMENT OF KARNATAKA" in lines
+
+    def test_central_officer_gets_a_central_title(self):
+        lines = export._forum_line({
+            "issuing_officer": "S Rao, Superintendent of Central Tax",
+            "jurisdiction_office": "Range II, CGST Division, Coimbatore",
+            "state": "Tamil Nadu"})
+        assert lines[0].endswith("(CGST)")
+        assert "CENTRAL GOODS AND SERVICES TAX" in lines
+        assert not any("COMMERCIAL TAXES" in l for l in lines)
+
+    def test_a_state_commissionerate_is_not_mistaken_for_central(self):
+        lines = export._forum_line({
+            "issuing_officer": "Deputy Commissioner (ST)",
+            "jurisdiction_office": "Commissionerate of Commercial Taxes",
+            "state": "Tamil Nadu"})
+        assert lines[0].endswith("(ST)")
+
+
+class TestComputationsNeverVanish:
+    def test_a_computation_failure_is_stated_not_silently_dropped(self, monkeypatch):
+        from backend import calculators
+
+        def boom(_matter):
+            raise ValueError("bad input")
+
+        monkeypatch.setattr(calculators, "matter_computations", boom)
+        text = "\n".join(p.text for p in _note().paragraphs)
+        assert "could not be produced" in text
+
+    def test_dggi_written_out_is_central(self):
+        lines = export._forum_line({
+            "issuing_officer": "Senior Intelligence Officer, Deputy Commissioner",
+            "jurisdiction_office": "Directorate General of GST Intelligence, "
+                                   "Chennai Zonal Unit",
+            "state": "Tamil Nadu"})
+        assert "CENTRAL GOODS AND SERVICES TAX" in lines

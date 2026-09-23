@@ -578,13 +578,28 @@ def _forum_line(intake: Dict[str, Any]) -> List[str]:
             designation = candidate
             break
     state = intake.get("state") or ""
+    # A Central officer is not a State Commercial Taxes officer. Stating the
+    # wrong administration in the cause title of a filed reply is the first
+    # thing the reader sees. Only explicit Central markers are trusted:
+    # "Commissionerate" and "Division" are used by State administrations too
+    # (Tamil Nadu's is the Commissionerate of Commercial Taxes).
+    central = bool(CENTRAL_OFFICE_RE.search(f"{office} {officer}"))
+    suffix = " (CGST)" if central else " (ST)"
     lines = [f"BEFORE THE {(designation or 'PROPER OFFICER').upper()}"
-             f"{' (ST)' if state and designation else ''}"]
+             f"{suffix if (state or central) and designation else ''}"]
     if office:
         lines.append(office.upper())
-    if state:
+    if central:
+        lines.append("CENTRAL GOODS AND SERVICES TAX")
+    elif state:
         lines.append(f"COMMERCIAL TAXES DEPARTMENT, GOVERNMENT OF {state.upper()}")
     return lines
+
+
+CENTRAL_OFFICE_RE = re.compile(
+    r"\bCGST\b|central\s+(?:goods|tax|gst|excise)|\bDGGI\b|"
+    r"directorate\s+general\s+of\s+(?:gst|goods\s+and\s+services\s+tax)"
+    r"\s+intelligence", re.I)
 
 
 def _notice_line(intake: Dict[str, Any], pack) -> str:
@@ -1147,9 +1162,15 @@ def _computations_section(doc: Document, matter: Dict[str, Any]):
 
     try:
         computed = calculators.matter_computations(matter)
-    except Exception:
+    except Exception as exc:
         # A working note is worth having without this section; it is not worth
-        # losing the whole document to an arithmetic edge case.
+        # losing the whole document to an arithmetic edge case. But the
+        # section must not VANISH: a reviewer who sees no computations cannot
+        # tell "nothing to compute" from "the computation broke".
+        _heading(doc, "9.  Statutory Computations", 1)
+        _para(doc, "The statutory computations could not be produced for this "
+                   f"matter ({type(exc).__name__}). Compute interest, penalty "
+                   "and pre-deposit manually before advising.", bold=True)
         return
 
     blocks = computed.get("computations") or {}
@@ -1171,7 +1192,10 @@ def _computations_section(doc: Document, matter: Dict[str, Any]):
           italic=True, size=Pt(9))
 
     if penalty.get("computed"):
-        _heading(doc, f"Penalty exposure — Section {penalty['section']}", 2)
+        track = {"fraud": " (fraud track)",
+                 "non_fraud": " (non-fraud track)"}.get(penalty.get("track"), "")
+        _heading(doc, "Penalty exposure — Section "
+                      f"{penalty.get('scheme') or penalty['section']}{track}", 2)
         _para(doc, f"Computed on tax of {_rupees(penalty.get('tax'))}.",
               size=Pt(9), italic=True)
         rows = []
@@ -1179,6 +1203,11 @@ def _computations_section(doc: Document, matter: Dict[str, Any]):
             when = {
                 "before_notice": "If paid before the notice",
                 "within_30_days": "If paid within 30 days of the notice",
+                "within_60_days": "If paid within 60 days of the notice",
+                "within_30_days_of_order":
+                    "If paid within 30 days of the order",
+                "within_60_days_of_order":
+                    "If paid within 60 days of the order",
                 "on_order": "On determination by order",
             }.get(stage["stage"], stage["stage"])
             if stage.get("deadline"):
@@ -1203,7 +1232,8 @@ def _computations_section(doc: Document, matter: Dict[str, Any]):
             _para(doc, f"•  {caveat}", size=Pt(9), indent=Inches(0.2))
 
     if limitation.get("computed"):
-        _heading(doc, "Limitation for appeal — Section 107", 2)
+        _heading(doc, "Limitation for appeal — Section "
+                      f"{limitation.get('forum') or '107'}", 2)
         _para(doc, limitation.get("message", ""),
               bold=limitation.get("status") in ("condonable", "time_barred"))
         _particulars(doc, [

@@ -14,7 +14,17 @@ the firm's name.
 Meanwhile the limb of the real matter that turned on law was won on two
 authorities that had been sitting in the partner's own drafting skill the whole
 time: Safari Retreats in the Supreme Court, and CBIC Circular 172/04/2022-GST.
-Neither is volatile. Both decide the point.
+
+CORRECTION (September 2026 review). Neither of those survives as recorded.
+Circular 172/04/2022-GST does not deal with works-contract credit at all — it
+clarifies deemed-export refunds, the scope of "leasing" and the proviso in
+s.17(5)(b), employee perquisites, and ledger utilisation. The works-contract
+answer is in the statute itself: the carve-out in s.17(5)(c) and the words
+"on his own account" in s.17(5)(d). And Safari Retreats was neutralised for
+every period from 01.07.2017 by the Finance Act 2025. Both entries have been
+rewritten below and neither is marked FILED any longer. A library entry that
+misstates what an authority decides is worse than no entry: it arrives in
+the brief carrying the firm's own imprimatur.
 
 THE RULE THAT REPLACES IT
 -------------------------
@@ -81,39 +91,45 @@ AUTHORITIES: List[Authority] = [
 
     # -- Blocked credit and works contract --------------------------------
     Authority(
-        "M/s Safari Retreats Pvt. Ltd. v. Chief Commissioner of Central GST, "
-        "Civil Appeal No. 2948 of 2023, decided 03.10.2024",
-        "Input tax credit on construction inputs is not blocked where the "
-        "construction serves a plant-and-machinery or business purpose; the "
-        "functional test of business use governs Section 17(5)(d).",
+        "Chief Commissioner of Central Goods and Services Tax v. M/s Safari "
+        "Retreats Pvt. Ltd., Civil Appeal No. 2948 of 2023, decided "
+        "03.10.2024, 2024 INSC 756",
+        "HISTORICAL. On Section 17(5)(d) as it then read ('plant or "
+        "machinery'), a building could qualify as 'plant' on a functional "
+        "test, and the question was remitted to the High Court on the facts. "
+        "Overridden retrospectively by the Finance Act 2025 — see the note.",
         ["itc_blocked_17_5", "works_contract"],
-        forum="Supreme Court", certainty=FILED,
+        forum="Supreme Court",
         note="SUPERSEDED BY STATUTE FOR MOST PURPOSES — DO NOT CITE WITHOUT "
              "READING THIS. The ruling turned on Section 17(5)(d) reading "
              "'plant OR machinery' where Section 17(5)(c) reads 'plant AND "
              "machinery', and the Court held the former took its ordinary "
-             "commercial meaning rather than the Explanation. Section 119 of "
-             "the Finance Act 2025 substituted 'plant and machinery' in "
-             "Section 17(5)(d) WITH RETROSPECTIVE EFFECT FROM 01.07.2017, "
-             "expressly to neutralise that construction. The judgment stands "
-             "(the review petition was dismissed in May 2025) and remains good "
-             "authority on the functional test and on ITC for a building let "
-             "out; it no longer carries the 'plant or machinery' argument for "
-             "any period. Confirm the position for the period in issue on "
-             "every use, and never advance this as though the statute were "
-             "unchanged.",
+             "commercial meaning rather than the Explanation. The Finance Act "
+             "2025 (clause 119 of the Bill) substituted 'plant and machinery' "
+             "in Section 17(5)(d) WITH RETROSPECTIVE EFFECT FROM 01.07.2017, "
+             "with an Explanation that the reference is to be so construed "
+             "notwithstanding any judgment — expressly to neutralise that "
+             "construction. The Explanation to Section 17 excludes land, "
+             "buildings and civil structures from 'plant and machinery', so "
+             "the ruling can no longer support ITC on a building, let out or "
+             "otherwise, for ANY period. The review petition was dismissed in "
+             "May 2025, but that does not revive the construction. Do not "
+             "cite it for the credit; cite it, if at all, only to explain why "
+             "the statute now reads as it does.",
     ),
     Authority(
-        "CBIC Circular No. 172/04/2022-GST dated 06.07.2022",
-        "Input tax credit on goods and services used by a contractor for "
-        "construction supplied as a works contract to another registered "
-        "person is not blocked under Section 17(5)(c)/(d). The bar reaches "
-        "construction on the taxpayer's OWN account, not construction supplied "
-        "onward as a taxable works contract.",
+        "Sections 17(5)(c) and 17(5)(d), CGST Act, 2017",
+        "The works-contract bar in Section 17(5)(c) does not apply 'where it "
+        "is an input service for further supply of works contract service', "
+        "and the bar in Section 17(5)(d) reaches construction 'on his own "
+        "account' only. A contractor building for a client under a taxable "
+        "works contract is outside both.",
         ["itc_blocked_17_5", "works_contract"],
-        kind=CIRCULAR, forum="CBIC", certainty=FILED,
-        note="Decisive on the works-contract limb; a circular binds the "
-             "department even where it does not bind the assessee.",
+        kind=STATUTE,
+        note="Replaces an entry that cited CBIC Circular 172/04/2022-GST for "
+             "this proposition. That circular does not address works-contract "
+             "credit (it deals with deemed-export refunds, s.17(5)(b), "
+             "perquisites and ledger use) and must not be cited for it.",
     ),
     Authority(
         "Section 2(119), CGST Act, 2017",
@@ -222,9 +238,13 @@ AUTHORITIES: List[Authority] = [
         "(No. 2) Act, 2024)",
         "Retrospective relief from the Section 16(4) time bar for FY 2017-18 "
         "to FY 2020-21, and for registrations cancelled and subsequently "
-        "restored. Where the period in issue falls in those years this is the "
-        "COMPLETE answer to a legacy time-bar demand and no judicial authority "
-        "is needed. Lead with it.",
+        "restored. Section 16(5) reaches credit in any return for FY 2017-18 "
+        "to 2020-21 filed up to 30.11.2021; Section 16(6) has its own "
+        "conditions on restoration. Where the facts meet those conditions it "
+        "answers a legacy time-bar demand without judicial authority — lead "
+        "with it. Where an ORDER had already issued, relief depended on a "
+        "rectification application under the special procedure in "
+        "Notification No. 22/2024-Central Tax, whose window has closed.",
         ["itc_time_limit"],
         kind=STATUTE, certainty=FILED,
     ),
@@ -371,12 +391,19 @@ AUTHORITIES: List[Authority] = [
         kind=STATUTE, certainty=FILED,
     ),
     Authority(
+        "Circular No. 122/41/2019-GST dated 05.11.2019, as extended by "
         "Circular No. 128/47/2019-GST dated 23.12.2019",
-        "A Document Identification Number is mandatory on departmental "
-        "communications; a communication without a DIN is treated as invalid "
-        "and deemed never to have been issued.",
+        "A communication by a CBIC officer that does not carry a Document "
+        "Identification Number is treated as invalid and deemed never to have "
+        "been issued.",
         ["procedure", "natural_justice"],
         kind=CIRCULAR, forum="CBIC",
+        note="Narrow. It binds CBIC (Central) officers only, not State tax "
+             "officers. Circular No. 249/06/2025-GST dated 09.06.2025 "
+             "clarifies that a communication generated on the common portal "
+             "and carrying a verifiable Reference Number (RFN) needs no DIN — "
+             "which covers most portal-issued ASMT-10, DRC-01 and DRC-07. Use "
+             "only for an off-portal Central communication with neither.",
     ),
     Authority(
         "Section 61 read with Rule 99, CGST Act and Rules, 2017",
@@ -400,12 +427,23 @@ AUTHORITIES: List[Authority] = [
 
     # -- E-way bill --------------------------------------------------------
     Authority(
-        "Section 129 read with Rule 138, CGST Act and Rules, 2017",
-        "Detention and penalty require the ingredients of the section to be "
-        "made out; a clerical defect in an e-way bill, absent any intent to "
-        "evade, does not by itself sustain the penalty.",
+        "Circular No. 64/38/2018-GST dated 14.09.2018, read with Section 129 "
+        "and Rule 138",
+        "Paragraph 5 of the circular lists e-way bill discrepancies that do "
+        "not warrant proceedings under Section 129 — a penalty under Section "
+        "125 is the proper course: spelling mistakes in the name of the "
+        "consignor or consignee where the GSTIN is correct; an error in the "
+        "PIN code where the address is otherwise correct; an error in the "
+        "address of the consignee where the locality and other details are "
+        "correct; an error in one or two digits of the document number; an "
+        "error in the 4- or 6-digit HSN where the first two digits are "
+        "correct; and an error in one or two digits or characters of the "
+        "vehicle number. Quote the paragraph itself, not this summary.",
         ["eway_bill"],
-        kind=STATUTE,
+        kind=CIRCULAR, forum="CBIC",
+        note="The Section 129 penalty since 01.01.2022 does not depend on "
+             "intent, so the argument is that the defect is clerical and "
+             "within the circular, not that mens rea is absent.",
     ),
 ]
 

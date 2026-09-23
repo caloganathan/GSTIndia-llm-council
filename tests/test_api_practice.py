@@ -156,11 +156,22 @@ class TestCostEstimate:
 
 class TestComputations:
     def test_penalty_stages_are_returned_with_their_deadlines(self, client):
-        _matter(client, "m1", due_date="2026-02-10")
+        _matter(client, "m1", due_date="2026-02-10", notice_type="DRC-01")
         result = client.get("/api/matters/m1/computations", headers=HEADERS).json()
         penalty = result["computations"]["penalty"]
         assert penalty["computed"] is True
         assert penalty["concession_deadline"] == "2026-02-09"
+
+    def test_a_scrutiny_notice_does_not_start_the_scn_window(self, client):
+        """An ASMT-10 is not a show cause notice. Dating the s.73(8) window
+        from it (as this test once asserted) hid that the before-notice stage
+        is still open."""
+        _matter(client, "m1", due_date="2026-02-10")
+        result = client.get("/api/matters/m1/computations", headers=HEADERS).json()
+        penalty = result["computations"]["penalty"]
+        assert penalty["computed"] is True
+        assert penalty["concession_deadline"] is None
+        assert "BEFORE-NOTICE stage is still open" in penalty["caveats"][0]
 
     def test_the_tax_base_comes_from_the_limbs(self, client):
         _matter(client, "m1")
