@@ -50,16 +50,42 @@ class TestInterest:
 class TestInterestRateSelection:
     """The choice of provision, which is where the money is."""
 
-    def test_utilised_credit_attracts_24_percent(self):
+    def test_utilised_credit_attracts_section_50_3_at_eighteen_percent(self):
+        """
+        The notified s.50(3) rate is 18%, not 24%. Section 116 of the Finance
+        Act 2022, with its Sixth Schedule, amended Notification 13/2017-CT
+        retrospectively w.e.f. 01.07.2017. The 24% in the section is a ceiling.
+        This test asserted 24.0 until September 2026 and so locked the wrong
+        rate in; it overstated every utilised-credit working by a third.
+        """
         result = calculators.interest_on_defect(
             100000, "2024-01-01", "2024-12-31", itc_utilised=True)
-        assert result["rate"] == 24.0
+        assert result["rate"] == 18.0
+        assert result["amount"] == 18000.0
         assert "50(3)" in result["basis"]
+        joined = " ".join(result["caveats"])
+        assert "Sixth Schedule" in joined and "ceiling" in joined
+        assert "Rule 88B" in joined
 
-    def test_credit_not_utilised_is_a_defence_not_a_lower_rate(self):
+    def test_the_constant_is_the_notified_rate_not_the_statutory_ceiling(self):
+        assert calculators.INTEREST_RATE_ITC_UTILISED == 18.0
+
+    def test_credit_not_utilised_is_a_defence_and_computes_nil(self):
+        """
+        Availed but not utilised: no interest arises under s.50(3), and no tax
+        was short paid to engage s.50(1). The branch used to compute 18% under
+        s.50(1) while its own caveat said nothing arose — once the s.50(3)
+        rate was corrected, utilised and unutilised credit gave the SAME
+        figure, which is the defence silently thrown away.
+        """
         result = calculators.interest_on_defect(
             100000, "2024-01-01", "2024-12-31", itc_utilised=False)
-        assert result["rate"] == 18.0
+        assert result["computed"] is True
+        assert result["amount"] == 0.0
+        assert "not attracted" in result["basis"]
+        utilised = calculators.interest_on_defect(
+            100000, "2024-01-01", "2024-12-31", itc_utilised=True)
+        assert utilised["amount"] != result["amount"]
         joined = " ".join(result["caveats"]).lower()
         # The point is that s.50(3) does not arise AT ALL, which is a positive
         # submission. A caveat that merely notes a lower rate has missed it.
@@ -77,6 +103,16 @@ class TestInterestRateSelection:
             100000, "2024-01-01", "2024-12-31")
         assert any("electronic cash ledger" in c for c in result["caveats"])
 
+    def test_cash_ledger_proviso_states_its_exception_for_proceedings(self):
+        """The relief does not apply to a return filed after s.73/74/74A
+        proceedings commenced — the very matters this product handles."""
+        result = calculators.interest_on_defect(
+            100000, "2024-01-01", "2024-12-31")
+        proviso = next(c for c in result["caveats"]
+                       if "electronic cash ledger" in c)
+        assert "commencement of proceedings" in proviso
+        assert "74A" in proviso
+
 
 class TestPenalty:
     def test_73_carries_no_penalty_in_both_concession_windows(self):
@@ -92,6 +128,25 @@ class TestPenalty:
         assert stages["before_notice"]["amount"] == 60000.0
         assert stages["within_30_days"]["amount"] == 100000.0
         assert stages["on_order"]["amount"] == 400000.0
+
+    def test_74_carries_the_post_order_fifty_percent_stage(self):
+        """s.74(11): 50% if paid within 30 days of the order. It was only in a
+        note, so the table showed 100% as the only post-order figure."""
+        result = calculators.penalty_options("74", 400000, "2026-01-10")
+        stages = {s["stage"]: s for s in result["stages"]}
+        assert stages["within_30_days_of_order"]["amount"] == 200000.0
+        assert "74(11)" in stages["within_30_days_of_order"]["note"]
+
+    def test_self_assessed_tax_exception_is_flagged_on_73(self):
+        """s.73(11): the nil-penalty windows do not reach self-assessed tax
+        unpaid beyond 30 days of its due date."""
+        result = calculators.penalty_options("73", 100000, "2026-01-10")
+        assert any("73(11)" in c and "self-assessed" in c
+                   for c in result["caveats"])
+
+    def test_self_assessed_tax_exception_is_flagged_on_74a_non_fraud(self):
+        result = calculators.penalty_options("74A", 100000, "2026-01-10")
+        assert any("74A(11)" in c for c in result["caveats"])
 
     def test_73_9_applies_the_ten_thousand_rupee_floor(self):
         # 10% of Rs. 40,000 is Rs. 4,000, but s.73(9) is the HIGHER of 10% and
@@ -133,10 +188,48 @@ class TestPredeposit:
         assert result["capped"] is True
         assert result["amount"] == calculators.PREDEPOSIT_107_CAP
 
-    def test_penalty_only_detention_appeal_is_twenty_five_percent(self):
+    def test_penalty_only_appeal_is_ten_percent_after_finance_act_2025(self):
+        """The proviso to s.107(6) was substituted w.e.f. 01.10.2025: every
+        penalty-only order, s.129(3) included, now needs 10% — the s.129(3)
+        deposit was 25% until then."""
         result = calculators.predeposit(200000, "107", penalty_only=True)
-        assert result["amount"] == 50000.0
+        assert result["amount"] == 20000.0
         assert "129(3)" in result["basis"]
+        assert "01.10.2025" in result["basis"]
+        assert any("25%" in c for c in result["caveats"])
+
+    def test_penalty_only_tribunal_appeal_is_a_further_ten_percent(self):
+        result = calculators.predeposit(200000, "112", penalty_only=True)
+        assert result["forum"] == "112"
+        assert result["amount"] == 20000.0
+        assert "112(8)" in result["basis"]
+
+    def test_igst_is_capped_at_forty_crore(self):
+        result = calculators.predeposit(500_00_00_000, "107", head="igst")
+        assert result["capped"] is True
+        assert result["amount"] == 40_00_00_000.0
+
+    def test_the_cap_applies_per_act_not_to_the_combined_demand(self):
+        """Rs. 300 crore each of CGST and SGST: each Act's deposit is capped
+        at Rs. 20 crore, so Rs. 40 crore in all — not one Rs. 20 crore cap on
+        the combined Rs. 600 crore."""
+        result = calculators.predeposit_by_head(
+            {"cgst": 300_00_00_000, "sgst": 300_00_00_000}, "107")
+        assert result["amount"] == 40_00_00_000.0
+        assert len(result["by_head"]) == 2
+
+    def test_head_wise_deposit_below_the_cap_is_ten_percent_of_the_total(self):
+        result = calculators.predeposit_by_head(
+            {"cgst": 50000, "sgst": 50000, "igst": 0}, "107")
+        assert result["amount"] == 10000.0
+        # The old caveat said "the same amount again is payable under the
+        # SGST Act" on a figure that already included SGST.
+        assert not any("same amount again" in c for c in result["caveats"])
+
+    def test_unallocated_heads_are_flagged_not_guessed(self):
+        result = calculators.predeposit_by_head({"unallocated": 100000})
+        assert result["amount"] == 10000.0
+        assert any("not split by head" in c for c in result["caveats"])
 
     def test_112_is_a_further_deposit_over_the_107_amount(self):
         result = calculators.predeposit(1000000, "112")
@@ -181,10 +274,89 @@ class TestAppealLimitation:
         assert result["ordinary_deadline"] == "2026-04-01"
 
 
+class TestTribunalLimitation:
+    """Section 112: three months plus three, or the notified Tribunal date
+    (31.07.2026 for orders communicated before 01.04.2026) if later."""
+
+    def test_an_order_after_the_cutoff_runs_three_months(self):
+        result = calculators.appeal_limitation("2026-05-10", as_on="2026-06-01",
+                                               forum="112")
+        assert result["forum"] == "112"
+        assert result["ordinary_deadline"] == "2026-08-10"
+        assert result["condonable_deadline"] == "2026-11-10"
+
+    def test_a_backlog_order_takes_the_notified_date(self):
+        result = calculators.appeal_limitation("2025-01-15", as_on="2026-07-01",
+                                               forum="112")
+        assert result["ordinary_deadline"] == "2026-07-31"
+        assert result["status"] == "in_time"
+        assert any("01.04.2026" in c for c in result["caveats"])
+
+    def test_a_backlog_order_after_the_notified_date_is_flagged_arguable(self):
+        result = calculators.appeal_limitation("2025-01-15", as_on="2026-09-23",
+                                               forum="112")
+        assert result["status"] == "condonable"
+        assert any("not settled" in c for c in result["caveats"])
+
+    def test_an_order_late_in_march_keeps_its_own_three_months_if_later(self):
+        # 3 months from 31.03.2026 is 30.06.2026, earlier than 31.07.2026.
+        result = calculators.appeal_limitation("2026-03-31", as_on="2026-04-01",
+                                               forum="112")
+        assert result["ordinary_deadline"] == "2026-07-31"
+
+    def test_first_appeal_is_unchanged_by_the_tribunal_dates(self):
+        result = calculators.appeal_limitation("2025-01-15", as_on="2025-02-01")
+        assert result["forum"] == "107"
+        assert result["ordinary_deadline"] == "2025-04-15"
+
+
 class TestAmnesty128A:
+    # Inside the window, for tests of the section/year/payment logic.
+    OPEN = "2025-03-01"
+
     def test_eligible_year_and_section(self):
-        result = calculators.amnesty_128a("73", "FY 2018-19", tax_paid=True)
+        result = calculators.amnesty_128a("73", "FY 2018-19", tax_paid=True,
+                                          as_on=self.OPEN)
         assert result["eligible"] is True
+        assert result["window_open"] is True
+
+    def test_the_window_closed_on_30_june_2025(self):
+        """Tax by 31.03.2025, application by 30.06.2025 (Rule 164). The module
+        used to report the waiver AVAILABLE on any s.73 demand for the three
+        years, long after it could be claimed."""
+        result = calculators.amnesty_128a("73", "FY 2018-19", tax_paid=True,
+                                          as_on="2025-07-01")
+        assert result["eligible"] is False
+        assert result["window_open"] is False
+        joined = " ".join(result["reasons"])
+        assert "CLOSED" in joined and "30.06.2025" in joined
+
+    def test_the_last_day_of_the_window_is_still_open(self):
+        result = calculators.amnesty_128a("73", "FY 2018-19", tax_paid=True,
+                                          as_on="2025-06-30")
+        assert result["eligible"] is True
+
+    def test_a_redetermined_section_74_demand_gets_six_months(self):
+        """Proviso to s.128A(1): the one route still open after 30.06.2025."""
+        result = calculators.amnesty_128a(
+            "74", "FY 2019-20", tax_paid=True, as_on="2026-09-01",
+            redetermination_date="2026-06-15")
+        assert result["eligible"] is True
+        assert any("15.12.2026" in r for r in result["reasons"])
+
+    def test_a_redetermination_window_also_expires(self):
+        result = calculators.amnesty_128a(
+            "74", "FY 2019-20", tax_paid=True, as_on="2027-01-01",
+            redetermination_date="2026-06-15")
+        assert result["eligible"] is False
+
+    def test_the_forms_are_described_correctly(self):
+        result = calculators.amnesty_128a("73", "FY 2018-19")
+        assert "no order" in result["form"] and "order has been passed" in result["form"]
+
+    def test_erroneous_refund_exclusion_is_stated(self):
+        result = calculators.amnesty_128a("73", "FY 2018-19")
+        assert any("erroneous refund" in c for c in result["caveats"])
 
     def test_section_74_is_outside_the_waiver(self):
         result = calculators.amnesty_128a("74", "FY 2018-19")
@@ -199,7 +371,8 @@ class TestAmnesty128A:
         assert any("2021-22" in r for r in result["reasons"])
 
     def test_unpaid_tax_keeps_eligibility_but_flags_the_condition(self):
-        result = calculators.amnesty_128a("73", "FY 2019-20", tax_paid=False)
+        result = calculators.amnesty_128a("73", "FY 2019-20", tax_paid=False,
+                                          as_on=self.OPEN)
         assert result["eligible"] is True
         assert any("not yet earned" in r for r in result["reasons"])
 
@@ -207,9 +380,10 @@ class TestAmnesty128A:
         result = calculators.amnesty_128a("73", "FY 2018-19", tax_paid=True)
         assert any("withdrawal" in c for c in result["caveats"])
 
-    def test_window_dates_are_not_asserted_from_stale_constants(self):
+    def test_the_dates_applied_are_stated_and_flagged_for_confirmation(self):
         result = calculators.amnesty_128a("73", "FY 2018-19")
-        assert any("currently in force" in c for c in result["caveats"])
+        assert any("currently in force" in c and "31.03.2025" in c
+                   for c in result["caveats"])
 
     def test_period_formats_all_normalise(self):
         for period in ("FY 2018-19", "2018-19", "2018-2019", "F.Y. 2018-19"):
@@ -403,3 +577,63 @@ class TestSection74A:
         result = calculators.amnesty_128a("74", "FY 2018-19")
         assert result["eligible"] is False
         assert any("re-characterisation" in r for r in result["reasons"])
+
+
+class TestOrdersAndPresentation:
+    """Found by rendering the file note end to end after the rate fix."""
+
+    def _matter(self, **intake):
+        base = {"section_invoked": "73", "tax_period": "FY 2021-22",
+                "defects": [{"index": 1, "amount_by_head":
+                             {"cgst": 2060000.0, "sgst": 2060000.0}}]}
+        base.update(intake)
+        return {"id": "m1", "intake": base}
+
+    def test_an_order_date_is_not_used_as_the_show_cause_notice_date(self):
+        """On a DRC-07 the notice_date IS the order. Counting the s.73(8)
+        window from it printed a concession deadline that never existed."""
+        result = calculators.matter_computations(
+            self._matter(notice_type="DRC-07", notice_date="2026-08-01"))
+        penalty = result["computations"]["penalty"]
+        assert penalty["concession_deadline"] is None
+        assert all(s["deadline"] is None for s in penalty["stages"])
+        assert any("order is on file" in c for c in penalty["caveats"])
+
+    def test_the_section_74_post_order_concession_is_dated_from_the_order(self):
+        result = calculators.matter_computations(self._matter(
+            section_invoked="74", notice_type="DRC-07",
+            notice_date="2026-08-01"))
+        penalty = result["computations"]["penalty"]
+        stage = next(s for s in penalty["stages"]
+                     if s["stage"] == "within_30_days_of_order")
+        assert stage["deadline"] == "2026-08-31"
+
+    def test_the_74a_fraud_post_order_concession_is_sixty_days(self):
+        result = calculators.penalty_options("74A", 100000, fraud=True,
+                                             order_date="2026-08-01")
+        assert result["order_concession_deadline"] == "2026-09-30"
+
+    def test_windows_run_from_issue_not_service(self):
+        result = calculators.penalty_options("73", 100000, "2026-01-10")
+        assert any("ISSUE" in c and "not from its service" in c
+                   for c in result["caveats"])
+
+    def test_workings_use_indian_digit_grouping(self):
+        result = calculators.predeposit_by_head(
+            {"cgst": 2060000.0, "sgst": 2060000.0})
+        assert "20,60,000.00" in result["working"]
+        assert "4,12,000.00" in result["working"]
+        interest = calculators.compute_interest(317450, "2024-01-01",
+                                                "2025-02-06")
+        assert "3,17,450.00" in interest["working"]
+
+    def test_the_head_wise_deposit_reaches_the_matter_computation(self):
+        result = calculators.matter_computations(
+            self._matter(notice_type="DRC-07", notice_date="2026-08-01"))
+        deposit = result["computations"]["predeposit_107"]
+        assert deposit["amount"] == 412000.0
+        assert len(deposit["by_head"]) == 2
+
+    def test_74_outside_the_amnesty_years_does_not_hold_out_128a(self):
+        result = calculators.amnesty_128a("74", "FY 2021-22")
+        assert not any("re-characterisation" in r for r in result["reasons"])

@@ -171,6 +171,9 @@ a refund on two grounds came back as one limb with both figures.
 12. **Section 74A is not Section 74.** `startswith("74")` matches "74A", and routing a 74A notice through the 74 table gets the concession deadline wrong by thirty days. Match 74A first, everywhere.
 13. **Limitation runs in calendar months**, not 90+30 days — s.3(35), General Clauses Act. Day counts are for display only.
 14. **Redaction is per reader, never per matter.** The stored record is always complete; `redact_for_role` AND the live SSE stream strip the deliberation and the cost for roles without the grant.
+15. **The s.50(3) rate is 18%, not 24%.** The section says "not exceeding twenty-four per cent"; that is a ceiling. The notified rate is 18% w.e.f. 01.07.2017 (Notification 13/2017-CT as amended by s.116 and the Sixth Schedule of the Finance Act 2022). `calculators.py` carried 24.0 until September 2026. Do not restore it from the section text.
+16. **Notified dates are not timeless.** s.128A closed on 30.06.2025; the GSTAT backlog date is 31.07.2026 (as extended); the penalty-only 10% pre-deposit runs from 01.10.2025. `calculators.py` holds these as named constants with the notification behind each. Re-check them whenever a notification lands, and never report a closed window as "available".
+17. **Pre-deposit caps are per Act.** Rs. 20 crore each under CGST and SGST, Rs. 40 crore under IGST. Use `predeposit_by_head`; one cap on a combined total understates large demands.
 
 ### Frontend
 Design tokens in `theme.css` (light/dark via `data-theme` on `<html>`); components never hardcode colours. `format.js` holds helpers/constants separately from `shared.jsx` so React Fast Refresh works — `POSTURES` and friends live there for the same reason. Views: Dashboard, PanelWorkspace (multi-file intake + defect review + live deliberation), DefectList, MatterList, MatterDetail (two separate downloads), AdminPanel, GeneralCouncil.

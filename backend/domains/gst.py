@@ -83,8 +83,10 @@ NOTICE_TYPES = {
         ),
         NoticeType(
             "DRC-01A", "Intimation of tax ascertained as payable (pre-SCN)",
-            "Section 73(5)/74(5) read with Rule 142(1A)",
-            "Pre-show-cause intimation inviting voluntary payment before a formal SCN.",
+            "Rule 142(1A), before a notice under Section 73(1)/74(1)/74A(1)",
+            "Pre-show-cause intimation inviting voluntary payment before a formal "
+            "SCN. Discretionary ('may') since Notification No. 79/2020-Central "
+            "Tax (w.e.f. 15.10.2020).",
             ["quantification disputes", "opportunity to pay with reduced penalty",
              "whether ingredients of s.74 are made out"],
             reply_form="DRC-01A Part B",
@@ -150,24 +152,29 @@ NOTICE_TYPES = {
             reply_form="DRC-01C Part B",
         ),
         NoticeType(
-            "MOV-07", "Notice for detention of goods in transit",
-            "Section 129 read with Rule 138",
-            "Detention of goods/conveyance during movement.",
+            "MOV-07", "Notice under Section 129(3) — tax and penalty proposed",
+            "Section 129(3) read with Rule 138 and Circular 41/15/2018-GST",
+            "Notice specifying the penalty payable on goods or a conveyance "
+            "detained in transit (the detention order itself is MOV-06).",
             ["e-way bill expiry or absence", "clerical errors in e-way bill",
-             "intent to evade — whether established", "quantum of penalty under s.129(1)"],
-            deadline_note="Time-critical: goods remain detained pending resolution.",
+             "intent to evade — whether established",
+             "quantum under s.129(1): 200% of tax (or the higher of 50% of "
+             "value and 200% of tax) since 01.01.2022"],
+            deadline_note="Time-critical: goods remain detained, and the MOV-09 "
+                          "order must follow within 7 days of service of this "
+                          "notice (s.129(3)). Reply at once.",
         ),
         # -- Scrutiny and assessment --------------------------------------
         NoticeType(
             "ASMT-11", "Reply to scrutiny notice",
-            "Section 61(2) read with Rule 99(2)",
+            "Section 61(1) read with Rule 99(2)",
             "The registered person's explanation to an ASMT-10.",
             ["as raised in the ASMT-10"],
             reply_form="ASMT-11",
         ),
         NoticeType(
             "ASMT-12", "Acceptance of explanation — proceedings dropped",
-            "Section 61(3) read with Rule 99(3)",
+            "Section 61(2) read with Rule 99(3)",
             "Order closing scrutiny where the explanation is found acceptable.",
             ["closure of the scrutiny", "limbs dropped and limbs surviving"],
         ),
@@ -175,18 +182,23 @@ NOTICE_TYPES = {
             "ASMT-13", "Assessment of non-filers — best judgment",
             "Section 62 read with Rule 100(1)",
             "Best judgment assessment where the return was not furnished.",
-            ["withdrawal on filing within 30 days under s.62(2)",
+            ["withdrawal on filing within 60 days under s.62(2)",
              "quantification without material", "service of the s.46 notice"],
             reply_form="Return under s.62(2)",
-            deadline_note="Order stands withdrawn if the valid return is filed "
-                          "within 30 days of service, with interest and late fee.",
+            deadline_note="Order is deemed withdrawn if the valid return is "
+                          "filed within 60 days of service, with interest and "
+                          "late fee — or within a further 60 days on payment of "
+                          "additional late fee of Rs. 100 per day (s.62(2) as "
+                          "amended by the Finance Act 2023, w.e.f. 01.10.2023).",
         ),
         NoticeType(
             "ASMT-14", "Assessment of unregistered persons",
             "Section 63 read with Rule 100(2)",
             "Assessment of a taxable person who failed to obtain registration.",
             ["liability to register", "period of liability", "quantification"],
-            reply_form="ASMT-15",
+            reply_form="Written reply to the show cause notice",
+            deadline_note="Reply within 15 days (Rule 100(2)). ASMT-15 is the "
+                          "resulting order, not a reply form.",
         ),
 
         # -- Demand, recovery and payment ---------------------------------
@@ -218,7 +230,8 @@ NOTICE_TYPES = {
             "Garnishee notice to a debtor of the defaulter.",
             ["whether any amount is due", "stay of the underlying demand",
              "pre-deposit already made"],
-            reply_form="DRC-14 / representation",
+            reply_form="Representation (DRC-14 is the officer's certificate "
+                       "on payment, not a reply form)",
             deadline_note="Time-critical: bank accounts and receivables are "
                           "attached pending resolution.",
         ),
@@ -243,19 +256,24 @@ NOTICE_TYPES = {
             ["additional 10% pre-deposit (20% cumulative)",
              "limitation and the backlog window", "questions of law"],
             reply_form="APL-05",
-            deadline_note="GSTAT has been operational since 24 September 2025. "
-                          "Verify the current filing window and the backlog "
-                          "cut-off applicable to orders communicated before "
-                          "01.04.2026 before advising on limitation.",
+            deadline_note="3 months from communication, condonable by 3 "
+                          "further months (s.112(1), (6)). Orders communicated "
+                          "before 01.04.2026: last date notified as 30.06.2026, "
+                          "extended to 31.07.2026 (S.O. 3502(E), 30.06.2026) — "
+                          "confirm no later extension. Penalty-only orders: a "
+                          "further 10% of penalty (s.112(8) proviso, "
+                          "w.e.f. 01.10.2025).",
         ),
 
         # -- Audit, refund, registration -----------------------------------
         NoticeType(
-            "ADT-04", "Special audit directed",
-            "Section 66 read with Rule 102",
-            "Audit by a nominated chartered or cost accountant.",
-            ["prior approval of the Commissioner", "nature and complexity "
-             "threshold", "opportunity of hearing before direction"],
+            "ADT-04", "Findings of special audit",
+            "Section 66(5)/(6) read with Rule 102(2)",
+            "Communication of the findings of a special audit by a nominated "
+            "chartered or cost accountant, directed in ADT-03 (Rule 102(1)).",
+            ["prior approval of the Commissioner for the ADT-03 direction",
+             "nature and complexity threshold",
+             "opportunity of being heard on the findings (s.66(5))"],
         ),
         NoticeType(
             "RFD-06", "Refund sanction / rejection order",
@@ -292,11 +310,11 @@ NOTICE_TYPES = {
         # -- Movement of goods ---------------------------------------------
         NoticeType(
             "MOV-06", "Order of detention of goods and conveyance",
-            "Section 129(1) read with Rule 140",
+            "Section 129(1) read with Rule 138 and Circular 41/15/2018-GST",
             "Formal detention order following interception.",
             ["intent to evade", "clerical e-way bill defects",
              "quantum under s.129(1)(a)/(b)"],
-            reply_form="MOV-09 representation",
+            reply_form="Reply to the MOV-07 notice that follows",
             deadline_note="Time-critical: goods remain detained.",
         ),
         NoticeType(
@@ -308,7 +326,7 @@ NOTICE_TYPES = {
         ),
         NoticeType(
             "MOV-10", "Notice for confiscation",
-            "Section 130 read with Rule 141",
+            "Section 130 read with Circular 41/15/2018-GST",
             "Proposed confiscation of goods and conveyance.",
             ["ingredients of s.130 as distinct from s.129",
              "option to pay fine in lieu of confiscation"],
@@ -333,8 +351,11 @@ NOTICE_TYPES = {
             ["full tax paid within the notified window",
              "withdrawal of appeals as a condition", "scope of the waiver"],
             reply_form="SPL-01 / SPL-02",
-            deadline_note="Verify the operative dates before relying on this "
-                          "route — the window has moved more than once.",
+            deadline_note="CLOSED for ordinary cases: tax by 31.03.2025 "
+                          "(Notification No. 21/2024-Central Tax), application "
+                          "by 30.06.2025 (Rule 164). Still open only where a "
+                          "s.74 demand is redetermined under s.73 on an "
+                          "appellate direction — six months from that order.",
         ),
         NoticeType(
             "ARA-01", "Application for advance ruling",
@@ -377,7 +398,9 @@ Demands and limitation
 - s.74 (fraud, wilful misstatement or suppression of facts): 5 years. The
   ingredients must be specifically alleged AND established — mechanical
   invocation of s.74 to enlarge limitation is a recognised ground of challenge.
-- s.74A applies from FY 2024-25 with a common limitation scheme.
+- s.74A applies from FY 2024-25 with a common limitation scheme: SCN within
+  42 months of the due date of the annual return, order within 12 months of
+  the SCN (extendable by 6 months); penalty concession windows of 60 days.
 - s.168A extensions of limitation have themselves been the subject of
   challenge; verify the position applicable to the year in issue.
 
@@ -388,19 +411,33 @@ Procedure and natural justice
   other than those, specified in the show cause notice.
 - s.169: modes of service. Portal-only upload under the "Additional Notices"
   tab has been a live litigation ground.
-- Rule 142(1A): DRC-01A intimation before issue of DRC-01.
+- Rule 142(1A): DRC-01A intimation before issue of DRC-01 — discretionary
+  ("may") since Notification No. 79/2020-Central Tax (w.e.f. 15.10.2020), so
+  non-issue is a weak ground on its own; High Courts are divided.
 
 Interest, penalty, amnesty
-- s.50 interest; s.50(3) for ITC wrongly availed and utilised.
+- s.50(1) interest at 18%. s.50(3) for ITC wrongly availed AND utilised, at
+  18% (NOT 24% — 24% is the ceiling in the section; Notification 13/2017-CT
+  was amended to 18% w.e.f. 01.07.2017 by s.116 and the Sixth Schedule of the
+  Finance Act 2022), from the date of utilisation (Rule 88B).
+- Proviso to s.50(1): interest on the cash portion only for a late return —
+  not available where the return was filed after s.73/74/74A proceedings
+  commenced.
 - s.122 / s.125 penalties; s.126 general disciplines.
 - s.128A amnesty: waiver of interest and penalty for s.73 demands for
-  FY 2017-18, 2018-19 and 2019-20 subject to payment of full tax within the
-  notified window (Forms SPL-01/SPL-02). Verify current dates before relying.
+  FY 2017-18, 2018-19 and 2019-20 subject to payment of full tax. The window
+  CLOSED — tax by 31.03.2025, SPL-01/SPL-02 by 30.06.2025 — except for a s.74
+  demand redetermined under s.73 on appellate direction (six months from the
+  redetermination order).
 
 Appeals
-- s.107: Appellate Authority — 3 months, condonable by 1 month, 10% pre-deposit.
-- s.112: GST Appellate Tribunal — further pre-deposit; GSTAT became
-  operational in September 2025. Verify current filing procedure and dates.
+- s.107: Appellate Authority — 3 months, condonable by 1 month; pre-deposit
+  10% of disputed tax, capped at Rs. 20 crore per Act (Rs. 40 crore IGST).
+- s.112: GST Appellate Tribunal — 3 months, condonable by 3 months; a further
+  10%, capped at Rs. 20 crore per Act. Orders communicated before 01.04.2026:
+  last date 31.07.2026 (extended from 30.06.2026). Verify any later extension.
+- Penalty-only orders (no tax demanded): 10% of penalty at each forum, w.e.f.
+  01.10.2025 (Finance Act 2025) — including s.129(3), previously 25%.
 """
 
 PROCEDURAL_GROUNDS = """\
@@ -412,7 +449,9 @@ arguing merits, because a matter is more often won here than on substance:
     with particulars?
 2.  Jurisdiction of the proper officer — monetary limits and assignment of
     functions; Central vs State jurisdiction and cross-empowerment.
-3.  DRC-01A — was the pre-SCN intimation issued at all? Rule 142(1A).
+3.  DRC-01A — was the pre-SCN intimation issued? Rule 142(1A) has been
+    discretionary since 15.10.2020, so treat non-issue as a supporting ground,
+    not a lead one.
 4.  Vagueness of the SCN — does it disclose the specific allegation, the
     provision invoked, and the basis of quantification? A notice that merely
     annexes a table of differences is vulnerable.
@@ -643,7 +682,14 @@ RECONCILIATION_BUCKETS = [
         "GSTR-2A is a dynamic statement that updates as suppliers furnish "
         "GSTR-1. Where the supplier has since filed and the credit now appears, "
         "the conditions in section 16(2) were satisfied at the material time "
-        "and no reversal arises. The subsequent GSTR-2A is produced in support.",
+        "and no reversal arises. The subsequent GSTR-2A is produced in support. "
+        "THIS HOLDS FOR PERIODS UP TO 31.12.2021 ONLY. From 01.01.2022 section "
+        "16(2)(aa) and Rule 36(4) make the invoice's appearance in GSTR-2B for "
+        "the period a condition of availing it, so credit taken ahead of the "
+        "supplier's filing was ineligible in that month: the answer becomes "
+        "that the credit became eligible in the later period, with interest "
+        "only if and from when it was utilised (section 50(3), Rule 88B) — "
+        "defensible, not strong.",
         "Contested with documentary proof of the later filing.",
     ),
     ReconBucket(
