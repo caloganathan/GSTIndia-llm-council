@@ -258,11 +258,13 @@ NOTICE_TYPES = {
             reply_form="APL-05",
             deadline_note="3 months from communication, condonable by 3 "
                           "further months (s.112(1), (6)). Orders communicated "
-                          "before 01.04.2026: last date notified as 30.06.2026, "
-                          "extended to 31.07.2026 (S.O. 3502(E), 30.06.2026) — "
-                          "confirm no later extension. Penalty-only orders: a "
-                          "further 10% of penalty (s.112(8) proviso, "
-                          "w.e.f. 01.10.2025).",
+                          "before 01.05.2026: last date 31.07.2026 (S.O. "
+                          "3502(E), 30.06.2026, which moved both the date and "
+                          "the cohort from 30.06.2026 / 01.04.2026) — confirm "
+                          "no later notification. Penalty-only orders: a "
+                          "further 10% of penalty (s.112(8) proviso, w.e.f. "
+                          "01.10.2025) — not where the SCN predates that date "
+                          "(Gaurav Jain, Delhi HC DB, 31.07.2026).",
         ),
 
         # -- Audit, refund, registration -----------------------------------
@@ -355,7 +357,9 @@ NOTICE_TYPES = {
                           "(Notification No. 21/2024-Central Tax), application "
                           "by 30.06.2025 (Rule 164). Still open only where a "
                           "s.74 demand is redetermined under s.73 on an "
-                          "appellate direction — six months from that order.",
+                          "appellate direction — six months from "
+                          "communication of that order (proviso to Rule "
+                          "164(7)).",
         ),
         NoticeType(
             "ARA-01", "Application for advance ruling",
@@ -427,17 +431,21 @@ Interest, penalty, amnesty
 - s.128A amnesty: waiver of interest and penalty for s.73 demands for
   FY 2017-18, 2018-19 and 2019-20 subject to payment of full tax. The window
   CLOSED — tax by 31.03.2025, SPL-01/SPL-02 by 30.06.2025 — except for a s.74
-  demand redetermined under s.73 on appellate direction (six months from the
-  redetermination order).
+  demand redetermined under s.73 on appellate direction (SPL-02 within six
+  months of communication of the redetermination order, proviso to Rule
+  164(7)).
 
 Appeals
 - s.107: Appellate Authority — 3 months, condonable by 1 month; pre-deposit
   10% of disputed tax, capped at Rs. 20 crore per Act (Rs. 40 crore IGST).
 - s.112: GST Appellate Tribunal — 3 months, condonable by 3 months; a further
-  10%, capped at Rs. 20 crore per Act. Orders communicated before 01.04.2026:
-  last date 31.07.2026 (extended from 30.06.2026). Verify any later extension.
+  10%, capped at Rs. 20 crore per Act. Orders communicated before 01.05.2026:
+  last date 31.07.2026 (S.O. 3502(E), 30.06.2026). Verify any later
+  notification.
 - Penalty-only orders (no tax demanded): 10% of penalty at each forum, w.e.f.
-  01.10.2025 (Finance Act 2025) — including s.129(3), previously 25%.
+  01.10.2025 (Finance Act 2025) — including s.129(3), previously 25%. Held
+  inapplicable where the SCN was issued before 01.10.2025: Gaurav Jain v.
+  Joint Commissioner (Appeals-II), CGST Delhi Zone (Delhi HC, DB, 31.07.2026).
 """
 
 PROCEDURAL_GROUNDS = """\

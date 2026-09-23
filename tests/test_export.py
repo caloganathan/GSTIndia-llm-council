@@ -839,3 +839,23 @@ class TestCauseTitleAdministration:
             "jurisdiction_office": "Commissionerate of Commercial Taxes",
             "state": "Tamil Nadu"})
         assert lines[0].endswith("(ST)")
+
+
+class TestComputationsNeverVanish:
+    def test_a_computation_failure_is_stated_not_silently_dropped(self, monkeypatch):
+        from backend import calculators
+
+        def boom(_matter):
+            raise ValueError("bad input")
+
+        monkeypatch.setattr(calculators, "matter_computations", boom)
+        text = "\n".join(p.text for p in _note().paragraphs)
+        assert "could not be produced" in text
+
+    def test_dggi_written_out_is_central(self):
+        lines = export._forum_line({
+            "issuing_officer": "Senior Intelligence Officer, Deputy Commissioner",
+            "jurisdiction_office": "Directorate General of GST Intelligence, "
+                                   "Chennai Zonal Unit",
+            "state": "Tamil Nadu"})
+        assert "CENTRAL GOODS AND SERVICES TAX" in lines

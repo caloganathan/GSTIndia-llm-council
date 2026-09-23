@@ -429,11 +429,16 @@ AUTHORITIES: List[Authority] = [
     Authority(
         "Circular No. 64/38/2018-GST dated 14.09.2018, read with Section 129 "
         "and Rule 138",
-        "Minor discrepancies in an e-way bill (such as spelling errors, a "
-        "one- or two-digit error in the PIN code or vehicle number, or an "
-        "error in the address where the locality is otherwise identifiable) "
-        "do not warrant detention under Section 129; a penalty under Section "
-        "125 is the proper course.",
+        "Paragraph 5 of the circular lists e-way bill discrepancies that do "
+        "not warrant proceedings under Section 129 — a penalty under Section "
+        "125 is the proper course: spelling mistakes in the name of the "
+        "consignor or consignee where the GSTIN is correct; an error in the "
+        "PIN code where the address is otherwise correct; an error in the "
+        "address of the consignee where the locality and other details are "
+        "correct; an error in one or two digits of the document number; an "
+        "error in the 4- or 6-digit HSN where the first two digits are "
+        "correct; and an error in one or two digits or characters of the "
+        "vehicle number. Quote the paragraph itself, not this summary.",
         ["eway_bill"],
         kind=CIRCULAR, forum="CBIC",
         note="The Section 129 penalty since 01.01.2022 does not depend on "

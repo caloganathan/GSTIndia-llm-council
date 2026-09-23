@@ -276,7 +276,8 @@ class TestAppealLimitation:
 
 class TestTribunalLimitation:
     """Section 112: three months plus three, or the notified Tribunal date
-    (31.07.2026 for orders communicated before 01.04.2026) if later."""
+    (31.07.2026 for orders communicated before 01.05.2026, S.O. 3502(E)) if
+    later."""
 
     def test_an_order_after_the_cutoff_runs_three_months(self):
         result = calculators.appeal_limitation("2026-05-10", as_on="2026-06-01",
@@ -290,7 +291,21 @@ class TestTribunalLimitation:
                                                forum="112")
         assert result["ordinary_deadline"] == "2026-07-31"
         assert result["status"] == "in_time"
-        assert any("01.04.2026" in c for c in result["caveats"])
+        assert any("01.05.2026" in c for c in result["caveats"])
+
+    def test_an_april_2026_order_is_in_the_backlog_cohort(self):
+        """S.O. 3502(E) moved the cohort to orders before 01.05.2026. With the
+        old 01.04.2026 cut-off this order read condonable from 16.07.2026."""
+        result = calculators.appeal_limitation("2026-04-15", as_on="2026-07-20",
+                                               forum="112")
+        assert result["status"] == "in_time"
+        assert result["ordinary_deadline"] == "2026-07-31"
+        assert result["condonable_deadline"] == "2026-10-31"
+
+    def test_a_may_2026_order_runs_its_own_three_months(self):
+        result = calculators.appeal_limitation("2026-05-01", as_on="2026-06-01",
+                                               forum="112")
+        assert result["ordinary_deadline"] == "2026-08-01"
 
     def test_a_backlog_order_after_the_notified_date_is_flagged_arguable(self):
         result = calculators.appeal_limitation("2025-01-15", as_on="2026-09-23",
@@ -298,9 +313,9 @@ class TestTribunalLimitation:
         assert result["status"] == "condonable"
         assert any("not settled" in c for c in result["caveats"])
 
-    def test_an_order_late_in_march_keeps_its_own_three_months_if_later(self):
-        # 3 months from 31.03.2026 is 30.06.2026, earlier than 31.07.2026.
-        result = calculators.appeal_limitation("2026-03-31", as_on="2026-04-01",
+    def test_the_later_of_three_months_and_the_notified_date_governs(self):
+        # 3 months from 30.04.2026 is 30.07.2026, a day before 31.07.2026.
+        result = calculators.appeal_limitation("2026-04-30", as_on="2026-05-01",
                                                forum="112")
         assert result["ordinary_deadline"] == "2026-07-31"
 
@@ -637,3 +652,81 @@ class TestOrdersAndPresentation:
     def test_74_outside_the_amnesty_years_does_not_hold_out_128a(self):
         result = calculators.amnesty_128a("74", "FY 2021-22")
         assert not any("re-characterisation" in r for r in result["reasons"])
+
+
+class TestSecondReviewFindings:
+    """Defects found by an independent review of the first correction pass."""
+
+    def _matter(self, **intake):
+        base = {"section_invoked": "74", "tax_period": "FY 2021-22",
+                "defects": [{"index": 1, "amount_by_head":
+                             {"cgst": 50000.0, "sgst": 50000.0}}]}
+        base.update(intake)
+        return {"id": "m1", "intake": base}
+
+    def test_a_drc_01a_is_not_treated_as_the_show_cause_notice(self):
+        """Paying on a DRC-01A is the BEFORE-notice stage (15% under s.74(5)),
+        not the 25% within-30-days stage the table used to date from it."""
+        result = calculators.matter_computations(
+            self._matter(notice_type="DRC-01A", notice_date="2026-09-01"))
+        penalty = result["computations"]["penalty"]
+        assert penalty["concession_deadline"] is None
+        assert "BEFORE-NOTICE stage is still open" in penalty["caveats"][0]
+
+    def test_an_asmt_10_is_not_treated_as_the_show_cause_notice(self):
+        result = calculators.matter_computations(self._matter(
+            section_invoked="73", notice_type="ASMT-10",
+            notice_date="2026-09-01"))
+        assert result["computations"]["penalty"]["concession_deadline"] is None
+
+    def test_a_drc_01_is_the_show_cause_notice(self):
+        result = calculators.matter_computations(
+            self._matter(notice_type="DRC-01", notice_date="2026-09-01"))
+        assert result["computations"]["penalty"]["concession_deadline"] \
+            == "2026-10-01"
+
+    def test_an_explicit_scn_date_wins(self):
+        result = calculators.matter_computations(self._matter(
+            notice_type="DRC-01A", notice_date="2026-09-01",
+            scn_date="2026-09-10"))
+        assert result["computations"]["penalty"]["concession_deadline"] \
+            == "2026-10-10"
+
+    def test_a_section_73_demand_cannot_use_the_redetermination_route(self):
+        """The first proviso to s.128A(1) reaches only a s.74 notice
+        redetermined under s.73."""
+        result = calculators.amnesty_128a(
+            "73", "2019-20", True, as_on="2026-09-23",
+            redetermination_date="2026-06-15")
+        assert result["eligible"] is False
+        assert any("CLOSED" in r for r in result["reasons"])
+
+    def test_the_redetermination_route_cites_rule_164_7(self):
+        result = calculators.amnesty_128a(
+            "74", "FY 2019-20", True, as_on="2026-09-01",
+            redetermination_date="2026-06-15")
+        assert any("Rule 164(7)" in r and "communication" in r
+                   for r in result["reasons"])
+
+    def test_section_strings_with_prefixes_resolve(self):
+        for text in ("Section 73", "u/s 73", "Sec. 73(9)", "S. 73"):
+            assert calculators.penalty_options(text, 100000)["section"] == "73"
+        assert calculators.penalty_options("Section 74A", 100000)["scheme"] == "74A"
+        reasons = " ".join(calculators.amnesty_128a("Section 61", "2019-20")["reasons"])
+        assert "Section Section" not in reasons
+
+    def test_formatted_and_malformed_amounts_do_not_break_the_computation(self):
+        result = calculators.matter_computations({"intake": {
+            "section_invoked": "73", "tax_period": "FY 2021-22",
+            "defects": [None, {"amount_by_head": {"cgst": "1,23,456",
+                                                  "sgst": "Rs. 1,23,456"}},
+                        {"amount_by_head": "garbage"}]}})
+        assert result["tax_base"] == 246912.0
+        result = calculators.matter_computations({"intake": {
+            "section_invoked": "73", "amount_disputed": "1,23,456"}})
+        assert result["tax_base"] == 123456.0
+
+    def test_penalty_only_caveat_cites_the_delhi_high_court(self):
+        result = calculators.predeposit(200000, "107", penalty_only=True)
+        joined = " ".join(result["caveats"])
+        assert "Gaurav Jain" in joined and "SHOW CAUSE NOTICE" in joined

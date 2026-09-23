@@ -32,6 +32,7 @@ pays (`agreed_paid`, `partial`, `paid_under_protest`), because a figure quoted
 to the department is an admission.
 """
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -103,6 +104,19 @@ def _inr(value: float) -> str:
     text = indian_number(round(float(value), 2))
     whole, _, paise = text.partition(".")
     return f"{whole}.{(paise + '00')[:2]}"
+
+
+def _num(value: Any) -> Optional[float]:
+    """A number from a number or a formatted string ('1,23,456', 'Rs. 500')."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = re.sub(r"(?i)rs\.?|inr|₹|,|\s", "", str(value))
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _as_date(value: Any) -> Optional[date]:
@@ -355,6 +369,15 @@ PENALTY_MINIMUM_74A = 10000.0
 CONCESSION_DAYS = {"73": 30, "74": 30, "74A_non_fraud": 60, "74A_fraud": 60}
 
 
+_SECTION_PREFIX_RE = re.compile(
+    r"^\s*(?:u\s*/\s*s\.?|under\s+section|section|sec\.?|s\.)\s*", re.I)
+
+
+def _clean_section(section: Any) -> str:
+    """'Section 73', 'u/s 74', 'Sec. 74A(1)' → '73', '74', '74A(1)'."""
+    return _SECTION_PREFIX_RE.sub("", str(section or "")).strip()
+
+
 def _penalty_scheme(section: str, fraud: Optional[bool] = None) -> Optional[str]:
     """
     Which penalty table governs.
@@ -364,7 +387,7 @@ def _penalty_scheme(section: str, fraud: Optional[bool] = None) -> Optional[str]
     being issued now — through the Section 74 table: right rates on the fraud
     track by coincidence, wrong deadline by thirty days.
     """
-    section = str(section or "").strip().upper().replace(" ", "")
+    section = _clean_section(section).upper().replace(" ", "")
     if section.startswith("74A"):
         # The section carries both tracks. Absent an established finding of
         # fraud the non-fraud track is the correct default: the ingredients
@@ -400,7 +423,7 @@ def penalty_options(section: str, tax: float,
     is the date of communication of the order, and dates the post-order
     concession where one exists (s.74(11): 30 days; s.74A(9)(iii): 60 days).
     """
-    section = str(section or "").strip()
+    section = _clean_section(section)
     key = _penalty_scheme(section, fraud)
     if key is None:
         return {
@@ -606,12 +629,14 @@ def predeposit(disputed_tax: float, forum: str = "107",
             "caveats": [
                 "Before 01.10.2025 a penalty-only order other than one under "
                 "Section 129(3) needed no pre-deposit, and a Section 129(3) "
-                "order needed 25%. Where the show cause notice or order "
-                "predates 01.10.2025, at least one Tribunal bench "
-                "(Hyderabad) has held the new deposit does not apply; the "
-                "point is not settled — confirm "
-                "the current position before advising the deposit is "
-                "avoidable.",
+                "order needed 25%. Where the SHOW CAUSE NOTICE was issued "
+                "before 01.10.2025, the new deposit has been held "
+                "inapplicable even to an order passed after that date — "
+                "Gaurav Jain v. Joint Commissioner (Appeals-II), CGST Delhi "
+                "Zone (Delhi High Court, Division Bench, 31.07.2026), and "
+                "GSTAT Hyderabad to the same effect. Binding in Delhi, "
+                "persuasive elsewhere; check the SCN date before computing "
+                "a deposit that may not be owed.",
             ],
         }
 
@@ -732,17 +757,20 @@ APPEAL_WINDOW_MONTHS_107 = 3
 APPEAL_CONDONABLE_MONTHS_107 = 1
 
 # Section 112 (Appellate Tribunal): three months, plus three condonable
-# (s.112(6)). Section 112(1), as amended by the Finance Act 2023, runs the
-# three months from communication OR a date notified for the Tribunal,
-# whichever is later. The Tribunal was constituted in 2025 and the Government
-# notified 30.06.2026 as the last date for appeals against orders communicated
-# BEFORE 01.04.2026 (notification of 17.09.2025), then extended it to
-# 31.07.2026 (S.O. 3502(E), 30.06.2026). Orders communicated on or after
-# 01.04.2026 run the ordinary three months. These are notified dates, and a
-# further extension would change them — the caveat says so every time.
+# (s.112(6)). Section 112(1), as amended by the Finance (No. 2) Act 2024, runs
+# the three months from communication OR a date notified for the Tribunal,
+# whichever is later. The Tribunal became operational on 24.09.2025. S.O.
+# 4220(E) of 17.09.2025 notified 30.06.2026 as the last date for orders
+# communicated before 01.04.2026; S.O. 3502(E) of 30.06.2026 moved BOTH the
+# date (to 31.07.2026) and the cohort (to orders communicated before
+# 01.05.2026). Orders communicated on or after 01.05.2026 run the ordinary
+# three months. These are notified dates, and a further notification would
+# change them — the caveat says so every time. (The first cut of this table
+# kept the old 01.04.2026 cohort, which reported every April 2026 order as
+# out of time from mid-July.)
 APPEAL_WINDOW_MONTHS_112 = 3
 APPEAL_CONDONABLE_MONTHS_112 = 3
-GSTAT_BACKLOG_CUTOFF = date(2026, 4, 1)
+GSTAT_BACKLOG_CUTOFF = date(2026, 5, 1)
 GSTAT_BACKLOG_LAST_DATE = date(2026, 7, 31)
 
 
@@ -807,14 +835,14 @@ def appeal_limitation(order_date: Any, as_on: Any = None,
             "Section 112(1) — three months from communication of the order "
             "or the date notified for the Tribunal, whichever is later; "
             "Section 112(6) — three further months on sufficient cause. For "
-            "orders communicated before 01.04.2026 the notified last date is "
-            "31.07.2026 (30.06.2026 as extended by S.O. 3502(E) dated "
-            "30.06.2026). Computed in calendar months per section 3(35) of "
+            "orders communicated before 01.05.2026 the notified last date is "
+            "31.07.2026 (S.O. 3502(E) dated 30.06.2026, superseding the "
+            "30.06.2026 date for orders before 01.04.2026 in S.O. 4220(E)). Computed in calendar months per section 3(35) of "
             "the General Clauses Act, 1897."
         )
         if backlog:
             caveats.append(
-                "This order was communicated before 01.04.2026, so the "
+                "This order was communicated before 01.05.2026, so the "
                 "notified Tribunal date governs (31.07.2026 on the last "
                 "extension known to this module). Confirm no further "
                 "extension has been notified. Whether Section 112(6) "
@@ -889,10 +917,11 @@ AMNESTY_YEARS = ("2017-18", "2018-19", "2019-20")
 # notified under s.128A(1) for payment of the tax is 31.03.2025 (Notification
 # No. 21/2024-Central Tax, 08.10.2024), and Rule 164 allows the application in
 # SPL-01/SPL-02 within three months of it — 30.06.2025. The one route still
-# open is the proviso to s.128A(1): a s.74 notice whose order is redetermined
-# under s.73 on the direction of an appellate forum or court (s.75(2)), where
-# the tax is paid, and the application made, within six months of the
-# redetermination order. Earlier revisions reported the waiver as AVAILABLE on
+# open is the first proviso to s.128A(1), read with the proviso to Rule
+# 164(7): a s.74 notice whose order is redetermined under s.73 on the
+# direction of an appellate forum or court (s.75(2)), where the tax is paid,
+# and SPL-02 filed, within six months of COMMUNICATION of the redetermination
+# order. Earlier revisions reported the waiver as AVAILABLE on
 # any s.73 demand for the three years, fifteen months after the window shut.
 AMNESTY_PAYMENT_LAST_DATE = date(2025, 3, 31)
 AMNESTY_APPLICATION_LAST_DATE = date(2025, 6, 30)
@@ -909,13 +938,15 @@ def amnesty_128a(section: str, tax_period: str,
     Returns eligibility plus the reason, so an ineligible matter carries the
     explanation rather than a bare no — the client asks why, every time.
 
-    `redetermination_date` is the date of an order redetermining a s.74 demand
-    under s.73 in pursuance of an appellate direction (s.75(2)) — the only
-    case in which the waiver can still be claimed after 30.06.2025.
+    `redetermination_date` is the date of COMMUNICATION of an order
+    redetermining a s.74 demand under s.73 in pursuance of an appellate
+    direction (s.75(2)) — the only case in which the waiver can still be
+    claimed after 30.06.2025. It is ignored for any other section: a demand
+    that was never under s.74 cannot enter through the proviso.
     """
     today = _as_date(as_on) or date.today()
     redetermined = _as_date(redetermination_date)
-    section = str(section or "").strip()
+    section = _clean_section(section)
     period = _normalise_period(tax_period)
 
     reasons: List[str] = []
@@ -980,16 +1011,18 @@ def amnesty_128a(section: str, tax_period: str,
 
     window_open = True
     if eligible:
-        if redetermined is not None:
+        if redetermined is not None and section.upper().startswith("74") \
+                and not section.upper().startswith("74A"):
             window_close = _add_months(redetermined,
                                        AMNESTY_REDETERMINATION_MONTHS)
             window_open = today <= window_close
             reasons.append(
-                f"Redetermined under Section 73 by order dated "
+                f"Redetermined under Section 73 by order communicated on "
                 f"{redetermined.strftime('%d.%m.%Y')} on an appellate "
-                "direction (Section 75(2)): under the proviso to Section "
-                "128A(1) the tax must be paid, and the application made, "
-                f"within six months of that order — by "
+                "direction (Section 75(2)): under the first proviso to "
+                "Section 128A(1) read with the proviso to Rule 164(7), the "
+                "tax must be paid, and SPL-02 filed, within six months of "
+                f"communication of that order — by "
                 f"{window_close.strftime('%d.%m.%Y')}."
                 + ("" if window_open else " That period has expired.")
             )
@@ -1078,7 +1111,7 @@ def matter_computations(matter: Dict[str, Any]) -> Dict[str, Any]:
     was missing is not.
     """
     intake = matter.get("intake") or matter
-    section = str(intake.get("section_invoked") or "")
+    section = _clean_section(intake.get("section_invoked"))
     period = intake.get("tax_period")
     notice_date = intake.get("notice_date")
     limbs = intake.get("defects") or []
@@ -1086,27 +1119,53 @@ def matter_computations(matter: Dict[str, Any]) -> Dict[str, Any]:
     tax_total = 0.0
     head_totals: Dict[str, float] = {}
     for limb in limbs:
+        if not isinstance(limb, dict):
+            continue
         heads = limb.get("amount_by_head") or {}
-        for head, value in heads.items():
-            if isinstance(value, (int, float)) and value:
-                head_totals[head] = head_totals.get(head, 0.0) + float(value)
+        if not isinstance(heads, dict):
+            continue
+        for head, raw in heads.items():
+            value = _num(raw)
+            if value:
+                key = str(head).strip().lower()
+                head_totals[key] = head_totals.get(key, 0.0) + value
                 tax_total += value
     if not tax_total:
-        tax_total = float(intake.get("amount_disputed") or 0)
+        tax_total = _num(intake.get("amount_disputed")) or 0.0
         head_totals = {"unallocated": tax_total} if tax_total else {}
 
-    # An order on file means the appeal clock is running, and that is the most
-    # time-critical number in the matter. A DRC-07 IS the order: its date is
-    # not a show cause notice date, and counting the s.73(8) window from it
-    # printed a concession deadline that never existed.
-    is_order = str(intake.get("notice_type") or "").upper().startswith("DRC-07")
+    # Which date is the SHOW CAUSE NOTICE? Only a DRC-01 is one. A DRC-07 is
+    # the order — counting the s.73(8) window from it printed a concession
+    # deadline that never existed. A DRC-01A, ASMT-10, ADT-02 or any other
+    # intimation precedes the SCN, so the cheapest stage — before the notice —
+    # is still open, and dating the 30-day window from the intimation told
+    # the partner the dearer stage was running. An explicit `scn_date` always
+    # wins.
+    form = str(intake.get("notice_type") or "").upper().replace(" ", "")
+    is_order = form.startswith("DRC-07")
+    is_scn = form in ("", "DRC-01")
     order_date = intake.get("order_date") or (notice_date if is_order else None)
-    scn_date = intake.get("scn_date") if is_order else notice_date
+    scn_date = intake.get("scn_date") or (notice_date if is_scn else None)
+
+    penalty = penalty_options(section, tax_total, scn_date,
+                              fraud=intake.get("fraud_established"),
+                              order_date=order_date)
+    if penalty.get("computed") and not is_order and not is_scn \
+            and not intake.get("scn_date"):
+        penalty["caveats"].insert(0,
+            f"The document on file ({form}) is not a show cause notice, so no "
+            "SCN has issued and the BEFORE-NOTICE stage is still open — nil "
+            "penalty under Sections 73(5) and 74A(8)(i), 15% under Sections "
+            "74(5) and 74A(9)(i). It is the cheapest stage; advise on it "
+            "before the SCN issues.")
+    if penalty.get("computed") and order_date:
+        penalty["caveats"].append(
+            "Post-order concessions run from COMMUNICATION of the order. The "
+            "date used is the order's own date unless a later date of "
+            "communication has been recorded as order_date.")
 
     computations: Dict[str, Any] = {
-        "penalty": penalty_options(section, tax_total, scn_date,
-                                   fraud=intake.get("fraud_established"),
-                                   order_date=order_date),
+        "penalty": penalty,
         "amnesty_128a": amnesty_128a(
             section, period, intake.get("tax_paid"),
             redetermination_date=intake.get("redetermination_date")),

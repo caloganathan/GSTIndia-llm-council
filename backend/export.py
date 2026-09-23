@@ -597,7 +597,9 @@ def _forum_line(intake: Dict[str, Any]) -> List[str]:
 
 
 CENTRAL_OFFICE_RE = re.compile(
-    r"\bCGST\b|central\s+(?:goods|tax|gst|excise)|\bDGGI\b", re.I)
+    r"\bCGST\b|central\s+(?:goods|tax|gst|excise)|\bDGGI\b|"
+    r"directorate\s+general\s+of\s+(?:gst|goods\s+and\s+services\s+tax)"
+    r"\s+intelligence", re.I)
 
 
 def _notice_line(intake: Dict[str, Any], pack) -> str:
@@ -1160,9 +1162,15 @@ def _computations_section(doc: Document, matter: Dict[str, Any]):
 
     try:
         computed = calculators.matter_computations(matter)
-    except Exception:
+    except Exception as exc:
         # A working note is worth having without this section; it is not worth
-        # losing the whole document to an arithmetic edge case.
+        # losing the whole document to an arithmetic edge case. But the
+        # section must not VANISH: a reviewer who sees no computations cannot
+        # tell "nothing to compute" from "the computation broke".
+        _heading(doc, "9.  Statutory Computations", 1)
+        _para(doc, "The statutory computations could not be produced for this "
+                   f"matter ({type(exc).__name__}). Compute interest, penalty "
+                   "and pre-deposit manually before advising.", bold=True)
         return
 
     blocks = computed.get("computations") or {}
