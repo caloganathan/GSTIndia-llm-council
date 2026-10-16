@@ -87,8 +87,8 @@ ask for anything.
 
 This is here because a missed reply date is the most expensive ordinary
 mistake in GST practice. The window closes, an ex-parte order follows under
-s.73(9) for the full amount proposed, and what was a reply becomes an appeal
-with a 10% pre-deposit and a limitation clock of its own.
+s.73(9), s.74(9) or s.74A for the full amount proposed, and what was a reply
+becomes an appeal with a 10% pre-deposit and a limitation clock of its own.
 
 ### Scanned notices
 
@@ -248,12 +248,18 @@ be checked line by line by whoever signs it.
 Two of these are worth calling out because they are routinely conceded in
 practice for want of a computation:
 
-- **s.50(3) at 24% applies only to credit wrongly availed AND utilised.**
-  Availed but not utilised puts the matter outside s.50(3) altogether. That is
-  a ground of defence, not merely a lower rate, and the output says so.
-- **The s.73 and s.74 concession windows are date-driven**, and the dates are
-  not in the notice — they are computed from it. Under s.73, tax and interest
-  paid within 30 days of the SCN attracts **no penalty at all**.
+- **s.50(3) applies only to credit wrongly availed AND utilised, and its rate
+  is 18%, not 24%.** The 24% in the section is a ceiling; the notified rate was
+  cut to 18% retrospectively from 1 July 2017 by s.116 of, and the Sixth
+  Schedule to, the Finance Act 2022. Interest runs from the date of
+  utilisation (Rule 88B). Availed but not utilised puts the matter outside
+  s.50(3) altogether and the working computes nil. That is a ground of
+  defence, and the output says so.
+- **The s.73, s.74 and s.74A concession windows are date-driven**, and the
+  dates are not in the notice — they are computed from it. Under s.73, tax and
+  interest paid within 30 days of the SCN attracts **no penalty at all**
+  (sixty days under s.74A) — except on self-assessed tax left unpaid more than
+  thirty days past its due date (s.73(11), s.74A(11)).
 
 These reach the internal file note. They reach the filing document only where
 the posture is one that pays, because a penalty computation put in front of the

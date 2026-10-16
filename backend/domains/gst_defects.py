@@ -264,7 +264,10 @@ DEFECT_TYPES = [
         "Difference in turnover across returns and statements",
         _p(r"difference\s+in\s+turnover", r"turnover\s+(?:variance|difference|"
            r"mismatch)", r"reconcil\w+\s+the\s+turnover"),
-        statute="Section 61 read with Rule 99; Sections 35(5)/44",
+        # s.35(5) (the CA-certified audit) was omitted by the Finance Act
+        # 2021 w.e.f. 01.08.2021; GSTR-9C is self-certified under s.44 from
+        # FY 2020-21. Citing 35(5) for a current year cites a dead provision.
+        statute="Section 61 read with Rule 99; Section 44 read with Rule 80(3)",
         sections=["44", "61"],
         default_posture=EXPLAINED,
         evidence_required=[
@@ -388,8 +391,11 @@ DEFECT_TYPES = [
         default_posture=CONTESTED,
         evidence_required=[
             "The GSTR-3B in which the credit was availed, with its filing date.",
-            "Whether the year falls within FY 2017-18 to 2020-21, in which case "
-            "Section 16(5) relief applies directly.",
+            "Whether the year falls within FY 2017-18 to 2020-21 AND the credit "
+            "was availed in a return filed up to 30.11.2021 — the two "
+            "conditions for Section 16(5) relief. Where an order had already "
+            "issued, whether a rectification application was made under "
+            "Notification No. 22/2024-Central Tax (that window has closed).",
             "Where registration was cancelled and restored: the cancellation "
             "and revocation orders, for Section 16(6).",
             "On a reverse-charge limb: the date of the SELF-INVOICE under "
@@ -546,7 +552,10 @@ DEFECT_TYPES = [
         # read "not accompanied by the invoice-wise details".
         _p(r"\be[\s-]?invoic", r"rule\s*48\s*\(\s*[45]\s*\)", r"\birn\b",
            r"invoice\s+registration\s+portal"),
-        statute="Rule 48(4) and 48(5) read with Section 125",
+        # An invoice without an IRN is not a valid invoice (Rule 48(5)), and
+        # departments now invoke s.122(1)(i) as well as s.125 — and the
+        # consequential denial of the recipient's credit.
+        statute="Rule 48(4) and 48(5) read with Sections 122 and 125",
         sections=["2(6)", "122", "125", "126"],
         rules=["48(4)", "48(5)"],
         default_posture=CONTESTED,
@@ -565,6 +574,11 @@ DEFECT_TYPES = [
             "auto-populated without error.",
             "Where any invoice within the mandate genuinely lacks an IRN: the "
             "count, the value, and whether tax on it was otherwise discharged.",
+            "Where aggregate turnover is Rs. 100 crore or more (from "
+            "01.11.2023) or Rs. 10 crore or more (from 01.04.2025): proof that "
+            "each invoice was reported to the IRP within 30 days of its date. "
+            "The IRP rejects a late report, so an invoice reported late has no "
+            "IRN at all.",
         ],
         authority_tags=["penalty_general", "minor_breach"],
         drafting_note="Two limbs, and both must be proved: the mandate began on "

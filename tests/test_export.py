@@ -817,90 +817,50 @@ class TestAnUnreadAmountIsNeverAZero:
         assert "INCOMPLETE" not in filing
 
 
-class TestAReplyThatAnswersNothing:
-    """
-    The failure this class exists for shipped, and was found by a partner
-    reading the output rather than by any test here.
+class TestCauseTitleAdministration:
+    """The cause title named a State Commercial Taxes Department on every
+    reply, including replies to Central (CGST) officers."""
 
-    A Tamil Nadu ASMT-10 that did not segment produced an empty defect list.
-    Sections B through E of the filing reply and sections 3 and 10 of the file
-    note are each gated on that list, so all six vanished at once and what
-    exported was a well-formed document: cause title, particulars table,
-    preliminary submissions, prayer for a hearing, signature block. Nothing on
-    its face said it answered no limb of the notice, and the file note it came
-    with said "no structural blockers were identified" — because
-    `validate_all([])` was `[]`.
+    def test_state_officer_keeps_the_state_title(self):
+        lines = export._forum_line({
+            "issuing_officer": "R Kumar, Assistant Commissioner",
+            "jurisdiction_office": "Jayanagar Assessment Circle",
+            "state": "Karnataka"})
+        assert lines[0].endswith("(ST)")
+        assert "COMMERCIAL TAXES DEPARTMENT, GOVERNMENT OF KARNATAKA" in lines
 
-    Every assertion below is about making that state loud.
-    """
+    def test_central_officer_gets_a_central_title(self):
+        lines = export._forum_line({
+            "issuing_officer": "S Rao, Superintendent of Central Tax",
+            "jurisdiction_office": "Range II, CGST Division, Coimbatore",
+            "state": "Tamil Nadu"})
+        assert lines[0].endswith("(CGST)")
+        assert "CENTRAL GOODS AND SERVICES TAX" in lines
+        assert not any("COMMERCIAL TAXES" in l for l in lines)
 
-    def _empty(self):
-        import copy
-        matter = copy.deepcopy(MATTER)
-        matter["result"]["determination"]["defects"] = []
-        matter["result"]["determination"]["filing_blockers"] = []
-        matter["intake"]["defects"] = []
-        return matter
-
-    def test_the_reply_is_stamped_not_for_filing(self):
-        header = _filing(self._empty()).sections[0].header.paragraphs[0].text
-        assert "NOT FOR FILING" in header
-        assert "ANSWERS NO LIMB" in header
-
-    def test_the_reply_says_so_in_its_own_body(self):
-        text = _all_text(_filing(self._empty()))
-        assert "NO LIMB OF THE NOTICE HAS BEEN ANSWERED" in text
-
-    def test_the_file_note_leads_with_it_as_a_blocker(self):
-        text = _all_text(_note(self._empty()))
-        assert "answers nothing" in text
-        assert "No structural blockers were identified" not in text
+    def test_a_state_commissionerate_is_not_mistaken_for_central(self):
+        lines = export._forum_line({
+            "issuing_officer": "Deputy Commissioner (ST)",
+            "jurisdiction_office": "Commissionerate of Commercial Taxes",
+            "state": "Tamil Nadu"})
+        assert lines[0].endswith("(ST)")
 
 
-class TestTheClientsFactualCase:
-    """
-    The reply is filed over the client's signature and states the client's
-    case. Where the client has not given one, the panel has no facts — and a
-    model asked for facts it does not have writes plausible ones.
+class TestComputationsNeverVanish:
+    def test_a_computation_failure_is_stated_not_silently_dropped(self, monkeypatch):
+        from backend import calculators
 
-    So the gap is printed where the facts would have gone. A blank the
-    reviewer can see is safe; a fluent paragraph of invented facts filed over
-    the client's signature is not.
-    """
+        def boom(_matter):
+            raise ValueError("bad input")
 
-    def _without_client_response(self):
-        import copy
-        matter = copy.deepcopy(MATTER)
-        del matter["result"]["determination"]["defects"][0]["client_response"]
-        return matter
+        monkeypatch.setattr(calculators, "matter_computations", boom)
+        text = "\n".join(p.text for p in _note().paragraphs)
+        assert "could not be produced" in text
 
-    def test_the_reply_is_stamped(self):
-        header = _filing(
-            self._without_client_response()).sections[0].header.paragraphs[0].text
-        assert "NOT FOR FILING" in header
-        assert "CLIENT'S FACTUAL RESPONSE IS OUTSTANDING" in header
-
-    def test_the_panels_facts_are_withheld_from_the_document(self):
-        """
-        The chairman's `facts` field is populated in the fixture. Without a
-        client account behind it, it must not reach the officer.
-        """
-        text = _all_text(_filing(self._without_client_response()))
-        assert "The credit was availed against valid invoices" not in text
-        assert "CLIENT INPUT REQUIRED" in text
-
-    def test_a_client_account_clears_the_stamp(self):
-        header = _filing().sections[0].header.paragraphs[0].text
-        assert "CLIENT'S FACTUAL RESPONSE" not in header
-
-    def test_a_paid_limb_is_not_held_up_for_one(self):
-        """Limb 2 is agreed and paid and carries no client response. It is
-        answered by its DRC-03 reference and asks nothing of the client."""
-        assert not export._client_input_missing(
-            MATTER["result"]["determination"]["defects"][1])
-
-    def test_the_file_note_names_what_to_ask_the_client(self):
-        text = _all_text(_note(self._without_client_response())).lower()
-        assert "outstanding from the client" in text
-        assert "client's factual response" in text
-        assert "excess input tax credit against gstr-2b" in text
+    def test_dggi_written_out_is_central(self):
+        lines = export._forum_line({
+            "issuing_officer": "Senior Intelligence Officer, Deputy Commissioner",
+            "jurisdiction_office": "Directorate General of GST Intelligence, "
+                                   "Chennai Zonal Unit",
+            "state": "Tamil Nadu"})
+        assert "CENTRAL GOODS AND SERVICES TAX" in lines

@@ -6,8 +6,8 @@ Because the subtraction is not the point; the surfacing is. The single largest
 source of avoidable loss in small-practice GST work is not bad drafting — it is
 a notice nobody saw in time. The portal issues it, the email goes to an address
 nobody watches, the reply window closes, and an ex-parte order follows under
-s.73(9) for the full amount proposed. What was a reply becomes an appeal, with
-a 10% pre-deposit and a limitation clock of its own.
+s.73(9), s.74(9) or s.74A for the full amount proposed. What was a reply
+becomes an appeal, with a 10% pre-deposit and a limitation clock of its own.
 
 The product already captured `due_date` and printed it on two documents.
 Printing a date on a document that is read once is not a control. A control is
