@@ -226,6 +226,20 @@ def new_defect(
         "authorities": list(fields.get("authorities") or []),
         "strength": fields.get("strength", ""),
 
+        # What the CLIENT says happened on this limb, in the client's own
+        # account, and what the client says it holds to prove it.
+        #
+        # This is the one input no model can supply and no notice contains.
+        # Without it the panel is asked for "the factual answer to this limb"
+        # with no facts, and a model asked for facts it does not have will
+        # write plausible ones. `client_response` is therefore the boundary
+        # between a reply that states the Noticee's case and a reply that
+        # invents it — see `client_input_required` below, which is what the
+        # limb carries instead of prose when this is empty.
+        "client_response": fields.get("client_response", ""),
+        "client_documents_held": list(fields.get("client_documents_held") or []),
+        "client_input_required": list(fields.get("client_input_required") or []),
+
         # Evidence. The gap between what the officer will demand and what the
         # client actually holds is the single most valuable thing this product
         # produces — it is what decides matters that are otherwise won.
@@ -244,8 +258,54 @@ def new_defect(
         # Provenance: did a human confirm this, or is it still a proposal?
         "source": fields.get("source", "notice"),
         "confirmed": bool(fields.get("confirmed", False)),
+
+        # This limb was not segmented off a heading — it stands for the whole
+        # notice because nothing defect-shaped was found in it. It must be
+        # decomposed by hand before the reply is filed.
+        "needs_decomposition": bool(fields.get("needs_decomposition", False)),
     }
     return defect
+
+
+# ---------------------------------------------------------------------------
+# The notice that does not segment
+# ---------------------------------------------------------------------------
+
+RESIDUARY_HEADING = "Discrepancy as set out in the notice"
+
+
+def residuary_defect(text: str, **fields: Any) -> Dict[str, Any]:
+    """
+    One limb standing for a notice that would otherwise produce none.
+
+    `segment()` returns [] when it finds nothing defect-shaped, and its
+    docstring has always said the caller must read that as "this notice needs
+    manual decomposition" rather than "this notice has no defects". No caller
+    did. The consequence was silent and total: every defect-wise section of
+    BOTH documents is gated on the defect list, so a notice that did not
+    segment exported a reply carrying a cause title, two paragraphs of
+    boilerplate and a prayer for a hearing — with a file note that reported
+    "no structural blockers were identified", because `validate_all([])` is
+    `[]`.
+
+    A single-issue notice is also perfectly ordinary: a scrutiny intimation
+    that alleges one head-wise ITC difference has no parameter-wise list to
+    find. So the answer is not to fail the run but to carry the notice as one
+    undecided limb that the reviewer either answers as it stands or splits by
+    hand — and to say so, loudly, in the file note and on the face of the
+    reply.
+    """
+    return new_defect(
+        index=fields.pop("index", 1),
+        heading=fields.pop("heading", RESIDUARY_HEADING),
+        defect_type=fields.pop("defect_type", "other"),
+        notice_extract=text,
+        department_contention=_first_sentences(text),
+        posture=UNDECIDED,
+        source="residuary",
+        needs_decomposition=True,
+        **fields,
+    )
 
 
 def defect_total(defect: Dict[str, Any]) -> float:
@@ -348,10 +408,54 @@ def validate(defect: Dict[str, Any]) -> List[str]:
             + "; ".join(str(g) for g in defect["evidence_gap"])
         )
 
+    if defect.get("needs_decomposition"):
+        problems.append(
+            f"{heading}: this limb was NOT segmented off a heading in the "
+            "notice — nothing defect-shaped was found, so it stands for the "
+            "whole notice. Read the notice against it and either confirm it "
+            "answers the single discrepancy raised, or split it into the "
+            "limbs the department will dispose of one at a time."
+        )
+
+    # A limb discharged by payment is answered by its DRC-03 reference and
+    # states no factual case, so it asks nothing of the client. Every other
+    # posture pleads facts, and the facts are the client's.
+    if (posture not in (AGREED_PAID, PAID_UNDER_PROTEST)
+            and not (defect.get("client_response") or "").strip()):
+        problems.append(
+            f"{heading}: the client has not given its account of this limb. "
+            "The reply cannot state the Noticee's factual case until it does, "
+            "and nothing in the notice or in the panel's reasoning can supply "
+            "it. Obtain the client's explanation and re-run."
+        )
+
+    if defect.get("duplicate_of"):
+        problems.append(
+            f"{heading}: the panel returned substantively the same answer for "
+            f"this limb as for limb {defect['duplicate_of']}. The copied text "
+            "has been withheld from the reply. Settle this limb on its own "
+            "facts before filing."
+        )
+
     return problems
 
 
 def validate_all(defects: List[Dict[str, Any]]) -> List[str]:
+    """
+    Every problem across every limb — plus the one problem a per-limb check
+    cannot see, which is that there are no limbs.
+
+    An empty list used to validate clean. That is the most dangerous possible
+    answer: it is returned precisely when segmentation found nothing, which is
+    when the reply is emptiest and the reviewer most needs to be told.
+    """
+    if not defects:
+        return [
+            "No defect was identified in this notice, so the reply answers "
+            "nothing. Either the notice did not segment — decompose it by "
+            "hand and enter the limbs — or the extraction failed entirely. "
+            "This reply must not be filed in its present form."
+        ]
     problems: List[str] = []
     for defect in defects:
         problems.extend(validate(defect))

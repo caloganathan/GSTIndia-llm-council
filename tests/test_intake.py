@@ -509,3 +509,49 @@ class TestPrefixedEntityNames:
         assert intake.find_entity_name(
             "the limited relief sought in the petition"
         ) is None
+
+
+class TestANoticeThatDoesNotSegment:
+    """
+    A single-issue notice is ordinary, and it must still produce a limb.
+
+    This is the F care Plus failure: a Tamil Nadu ASMT-10 whose annexure is a
+    head-wise summary with no parameter-wise list. Nothing in it matched a
+    catalogue heading, `extract_defects` returned [], and because every
+    defect-wise section of both exported documents is gated on that list, the
+    filing reply came out as a cause title, two paragraphs of boilerplate and
+    a prayer for a hearing — with a file note reporting no blockers.
+    """
+
+    NOTICE = (
+        "FORM GST ASMT-10\nGSTIN : 33AAGFF2375M1Z9\n"
+        "Notice for intimating discrepancies in the return under section 61.\n"
+        "On scrutiny of the returns furnished for the year, the input tax "
+        "credit availed in GSTR-3B is found to exceed that appearing in the "
+        "auto-populated statement by Rs. 1,23,716.68 under integrated tax. "
+        "You are requested to explain the difference.\n"
+    )
+
+    def test_a_limb_is_produced(self):
+        found = intake.extract_defects(self.NOTICE, gst)
+        assert len(found) == 1
+
+    def test_the_limb_is_marked_for_manual_decomposition(self):
+        limb = intake.extract_defects(self.NOTICE, gst)[0]
+        assert limb["needs_decomposition"] is True
+        assert limb["source"] == "residuary"
+        assert limb["posture"] == "undecided"
+
+    def test_the_notice_text_survives_onto_the_limb(self):
+        limb = intake.extract_defects(self.NOTICE, gst)[0]
+        assert "1,23,716.68" in limb["notice_extract"]
+
+    def test_a_notice_that_does_segment_is_untouched(self):
+        """The residuary limb is a floor, not a replacement."""
+        segmenting = (
+            "• Excess claim of ITC availed w.r.t GSTR-2B:\nbody one\n"
+            "• GSTR-1 late fee:\nbody two\n"
+        )
+        found = intake.extract_defects(segmenting, gst)
+        assert len(found) == 2
+        assert not any(d["needs_decomposition"] for d in found)

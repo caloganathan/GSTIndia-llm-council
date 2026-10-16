@@ -113,6 +113,10 @@ export const POSTURES = [
 // documents or a payment, and spending a panel on them buys nothing.
 export const ARGUED_POSTURES = new Set(['contested', 'partial', 'undecided']);
 
+// Postures discharged by a payment. The DRC-03 reference is the answer to the
+// limb, so no factual case is stated on it and none is asked of the client.
+export const PAID_POSTURES = new Set(['agreed_paid', 'paid_under_protest']);
+
 export const TAX_HEADS = ['igst', 'cgst', 'sgst', 'cess', 'unallocated'];
 
 export function postureLabel(key) {

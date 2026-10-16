@@ -30,7 +30,7 @@ category, and why `evidence_gap_catch` is the number to watch in the evals.
 
 ### Architecture
 
-- **`defects.py`** — the defect record, the five postures, triage and validation. Postures are not a severity scale; they are the five different things a reply can say about a limb, each producing different drafting. `explained` / `contested` / `agreed_paid` / `paid_under_protest` / `partial`, with `undecided` as the honest default. Only `contested`, `partial` and `undecided` convene counsel.
+- **`defects.py`** — the defect record, the five postures, triage and validation. Also `residuary_defect()`, for the notice that does not segment, and `client_response`, the one input no notice and no model can supply — see the two sections on both below. Postures are not a severity scale; they are the five different things a reply can say about a limb, each producing different drafting. `explained` / `contested` / `agreed_paid` / `paid_under_protest` / `partial`, with `undecided` as the honest default. Only `contested`, `partial` and `undecided` convene counsel.
 - **`notice_tables.py`** — reads head-wise figures off the department's annexure using the checksum the table carries for free: four component amounts that sum to their own printed total. A run that fails its own arithmetic is discarded. **Returns None rather than a guess** — a blank the reviewer can see is safe, a wrong figure they cannot see is not.
 - **`domains/gst_defects.py`** — the defect catalogue: heading patterns, provisions engaged, default posture, the evidence list, and the questions an officer puts on that limb at the hearing. **The evidence lists are the product.** Each entry names the artefact an officer asks for before dropping that limb. On the patterns, see "Catalogue patterns are load-bearing" below.
 - **`ocr.py`** — optional local OCR for scanned notices, behind `available()`. Cloud OCR is refused on principle: a page image cannot be anonymised before upload, so it would break the draft tier's guarantee. Provenance travels with the text — an OCR-read field carries an `-ocr` source and is shown in the must-confirm state.
@@ -45,7 +45,7 @@ category, and why `evidence_gap_catch` is the number to watch in the evals.
 - **`sanitizer.py`** — draft-tier anonymisation. `IDENTIFIER_RULES` order matters: GSTIN before PAN, or the embedded PAN leaks as a fragment. `audit_leaks()` runs as a pre-flight assertion and the panel ABORTS if anything survives.
 - **`users.py` / `auth.py`** — partner/manager/staff with PBKDF2 + session tokens. Legacy `APP_ACCESS_TOKEN` still works and maps to partner. `redact_for_role` strips `analyses`/`cross_exams` for staff.
 - **`export.py`** — **two documents, never one.** See below.
-- **`reconciliation.py`** — 2A/2B vs 3B workbook ingestion. Parses xlsx/csv, detects columns by alias, classifies each row into a `RECONCILIATION_BUCKETS` entry, aggregates by bucket.
+- **`reconciliation.py`** — 2A/2B vs 3B workbook ingestion. Parses xlsx/csv/docx/pdf, detects columns by alias, classifies each row into a `RECONCILIATION_BUCKETS` entry, aggregates by bucket.
 
 ### export.py produces TWO documents and they must never merge
 
@@ -92,6 +92,22 @@ The rule that replaced it, enforced in `export.py`:
 `_is_filable()` gates this. If verification did not run at all the index is
 empty and nothing is filable — the correct failure direction.
 
+### Reconciliations arrive in whatever the client's accountant had to hand
+
+xlsx and csv only meant re-keying thousands of rows before the panel could see
+any figures — which meant, in practice, that it did not see them. `.docx` is
+read for its tables (real structure, so exact; the WIDEST table is taken and
+the rest reported, because a Word export usually carries a summary beside the
+detail and stacking the two double-counts every bucket). `.pdf` is split on
+runs of two or more spaces and then **checks its own work** — the rows must
+agree on a column count, and one that cannot produce a consistent grid raises
+and names the formats that will work.
+
+A scanned reconciliation is refused outright. OCR is offered for notices
+because a misread word in a notice is visible to the reviewer reading it; a
+misread digit in row 4,000 of a reconciliation is not, and a bucket total
+computed from a misaligned grid arrives looking exactly like a correct one.
+
 ### The reconciliation rows never reach a model
 A real 2A/3B reconciliation is thousands of invoice lines — roughly 500k tokens, and third-party supplier data the client has no business disclosing. Bucketing is deterministic arithmetic, so it happens in Python. Only `reconciliation_brief()` (a ~200–700 token aggregate: bucket, count, amount, share, legal position) is put in front of the panel. Do not "improve" this by passing rows to a model. `tests/test_reconciliation.py::TestBriefing` asserts both halves: no invoice-level data travels, and briefing size is independent of row count.
 
@@ -126,6 +142,98 @@ send real identifiers on a re-run of work the user chose to anonymise.
 New file in `domains/` with the same interface (including `DEFECT_TYPES` and
 the authorities helpers), registered in `domains/__init__.py`. No change to
 `panel.py`, `roles.py`, `verification.py`, `export.py` or the UI.
+
+### A notice that does not segment still has to produce a limb
+
+`segment()` returns `[]` when it finds nothing defect-shaped, and its docstring
+has always said the caller must read that as *"this notice needs manual
+decomposition"* rather than *"this notice has no defects"*. No caller did.
+
+The consequence was total and silent, because **every defect-wise section of
+both documents is gated on the defect list**. A Tamil Nadu ASMT-10 whose
+annexure was a head-wise summary with no parameter-wise list produced a filing
+reply consisting of a cause title, a particulars table, two paragraphs of
+boilerplate and a prayer for a hearing — sections B, C, D and E simply absent —
+over a file note missing its Defect Register and its hearing brief, which
+reported **"No structural blockers were identified"**, because
+`validate_all([])` was `[]`.
+
+Nothing on the face of either document said so. It read as a short reply, not
+as a reply to nothing.
+
+Three rules now hold that shut, and all three matter because a single-issue
+notice is perfectly ordinary and must not fail the run:
+
+1. `intake.extract_defects` falls back to `defects.residuary_defect()` — ONE
+   undecided limb carrying the operative region, `needs_decomposition=True`.
+   The reviewer confirms it answers the single discrepancy, or splits it.
+2. `validate_all([])` returns a blocker rather than `[]`. An empty list is the
+   most dangerous possible clean bill of health: it is returned precisely when
+   the reply is emptiest.
+3. `build_filing_reply` stamps `NO_DEFECTS_STAMP` on every page and prints
+   "NO LIMB OF THE NOTICE HAS BEEN ANSWERED" where section C would be.
+
+### The client's factual response is an input, not an output
+
+`facts` is the Noticee's account of what it did, filed over the Noticee's own
+signature. Nothing in the notice contains it and no model can derive it — and
+a model asked for facts it has not been given writes plausible ones.
+
+For a long time there was no field for it anywhere in the codebase. The
+chairman prompt asked for "the factual answer to this limb" and the panel
+answered from the department's allegation.
+
+`defects.client_response` (with `client_documents_held`) is now a first-class
+per-defect input, collected in the defect review UI, rendered to counsel and
+the chairman as **"THE CLIENT SAYS"**, and scrubbed on the draft tier like
+every other free text — it is the most identifying prose in the matter,
+because it names the trade name and the suppliers in the ordinary course of
+explaining what happened.
+
+Where it is absent the chairman is told, in terms, to leave `facts` empty and
+fill `client_input_required` instead. `export._client_input_missing` then
+prints the gap where the facts would have gone and stamps the page. A limb
+that is `agreed_paid` or `paid_under_protest` is exempt — its DRC-03 reference
+is the answer to it and it states no factual case. Keep
+`_client_input_missing` and the `clientInputMissing` badge in `DefectList.jsx`
+in step.
+
+### A limb answered with its neighbour's answer
+
+A model working through eight limbs in one response drifts into answering the
+later ones by restating the earlier ones. It reads fluently and it is wrong in
+the most expensive way available: limb N is answered on limb N-1's facts, so
+the officer is told the wrong thing about a discrepancy that was never
+addressed, and confirms it.
+
+`panel._strip_copied_limbs` **removes** the copied prose rather than
+annotating it, and records `duplicate_of`. A reviewer scanning a forty-page
+reply will not notice that two paragraphs match; they will notice a limb with
+its factual position missing and a blocker naming it. The failure has to be
+louder than the text it replaces.
+
+Only exact matches on normalised prose over 120 characters count. Two limbs of
+the same defect type legitimately share phrasing, and a false positive costs a
+limb exactly as a false negative does.
+
+### The chairman gets a second attempt
+
+The chairman is the only stage whose failure empties the entire deliverable —
+the counsel analyses survive it, but every defect-wise section of both
+documents is built from its JSON.
+
+Its commonest failure does not look like a failure. A nine-limb determination
+is a long JSON object, and a model that runs out of room mid-object returns a
+perfectly good answer with the closing braces missing. That arrived
+indistinguishable from a model that could not do the job, and both went
+straight to `_fallback_determination`.
+
+`query_model` now returns `finish_reason`. On `length`, the chairman is retried
+at double the ceiling; on any other parse failure it is asked once more for the
+object alone. Only then does it degrade — and the degraded message names
+`MAX_TOKENS_CHAIRMAN`, so the operator knows which knob to turn. Unanswered
+limbs are now a filing blocker as well as a risk flag: risk flags are read as
+things to weigh, and this is a thing to fix.
 
 ### Catalogue patterns are load-bearing, and they fail in both directions
 

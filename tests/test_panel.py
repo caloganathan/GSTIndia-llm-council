@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend import panel, roles, users
+from backend import defects, panel, roles, users
 from backend.domains import get_pack, gst
 
 
@@ -497,3 +497,167 @@ class TestFiledTextBlockers:
 
         blockers = summary["data"]["determination"]["filing_blockers"]
         assert any("Bogus Traders" in b for b in blockers)
+
+
+class TestALimbAnsweredWithItsNeighboursAnswer:
+    """
+    A model working through eight limbs in one response drifts into answering
+    the later ones by restating the earlier ones. It reads fluently and it is
+    wrong in the most expensive way available: limb N is answered on limb
+    N-1's facts, so the officer is told the wrong thing about a discrepancy
+    that was never addressed, and confirms it.
+
+    The copied text is removed rather than annotated, because a reviewer
+    scanning a long reply will not notice that two paragraphs match — but will
+    notice a limb whose factual position is missing and a blocker naming it.
+    """
+
+    PARAGRAPH = (
+        "It is respectfully submitted that the input tax credit in question "
+        "was availed against valid tax invoices received from registered "
+        "suppliers, in respect of which the consideration together with the "
+        "tax thereon stands paid, and the conditions in Section 16(2) of the "
+        "Central Goods and Services Tax Act, 2017 accordingly stand satisfied "
+        "in full."
+    )
+
+    def _merged(self):
+        return panel.merge_determination(
+            [defects.new_defect(1, "Excess ITC against GSTR-2B"),
+             defects.new_defect(2, "Ineligible ITC under section 17(5)")],
+            {"defects": [
+                {"index": 1, "posture": "contested", "facts": self.PARAGRAPH},
+                {"index": 2, "posture": "contested", "facts": self.PARAGRAPH},
+            ]},
+        )
+
+    def test_the_copied_answer_is_withheld(self):
+        merged = self._merged()
+        assert merged[0]["facts"] == self.PARAGRAPH
+        assert merged[1]["facts"] == ""
+
+    def test_the_limb_records_what_it_was_copied_from(self):
+        assert self._merged()[1]["duplicate_of"] == 1
+
+    def test_it_blocks_filing(self):
+        problems = defects.validate(self._merged()[1])
+        assert any("substantively the same answer" in p for p in problems)
+
+    def test_two_limbs_may_share_a_short_phrase(self):
+        """
+        Two limbs legitimately share "DROP the demand" or a one-line position.
+        A copy worth catching is a paragraph, and a false positive costs a
+        limb exactly as a false negative does.
+        """
+        merged = panel.merge_determination(
+            [defects.new_defect(1, "One"), defects.new_defect(2, "Two")],
+            {"defects": [
+                {"index": 1, "posture": "contested",
+                 "our_position": "The demand is not sustainable."},
+                {"index": 2, "posture": "contested",
+                 "our_position": "The demand is not sustainable."},
+            ]},
+        )
+        assert merged[1]["our_position"] == "The demand is not sustainable."
+        assert not merged[1].get("duplicate_of")
+
+    def test_distinct_answers_are_left_alone(self):
+        merged = panel.merge_determination(
+            [defects.new_defect(1, "One"), defects.new_defect(2, "Two")],
+            {"defects": [
+                {"index": 1, "posture": "contested", "facts": self.PARAGRAPH},
+                {"index": 2, "posture": "contested",
+                 "facts": self.PARAGRAPH.replace("Section 16(2)", "Section 17(5)")},
+            ]},
+        )
+        assert merged[1]["facts"]
+        assert not merged[1].get("duplicate_of")
+
+
+@pytest.mark.asyncio
+class TestTheChairmanIsGivenASecondAttempt:
+    """
+    The chairman is the only stage whose failure empties the whole
+    deliverable. The counsel analyses survive it, but every defect-wise
+    section of both exported documents is built from this JSON.
+
+    Its commonest failure does not look like a failure: a nine-limb
+    determination is a long JSON object, and a model that runs out of room
+    mid-object returns a perfectly good answer with the closing braces
+    missing. That arrived indistinguishable from a model that could not do the
+    job at all, and both went straight to the degraded fallback.
+    """
+
+    GOOD = ('{"recommended_position": "Contest the demand.", '
+            '"confidence": "defensible", "defects": []}')
+
+    async def _run(self, monkeypatch, responses):
+        from backend import config
+        monkeypatch.setattr(config, "PANEL_WEB_GROUNDING", False)
+        calls = []
+
+        async def fake_query(model, messages, **kwargs):
+            # Only the chairman's prompt carries this instruction.
+            if "YOU DECIDE EVERY DEFECT SEPARATELY" not in messages[0]["content"]:
+                return {"ok": True, "content": "counsel opinion", "model": model,
+                        "usage": None}
+            calls.append(kwargs.get("max_tokens"))
+            return responses[min(len(calls) - 1, len(responses) - 1)]
+
+        async def fake_verify(determination, pack, verifier, **kwargs):
+            return {"checked": True, "authorities": [], "summary": {}}, []
+
+        monkeypatch.setattr(panel, "query_model", fake_query)
+        monkeypatch.setattr(panel, "verify_authorities", fake_verify)
+
+        summary = None
+        async for event in panel.run_panel_stream(
+                {"issues": "ITC mismatch", "facts": "None.",
+                 "notice_type": "ASMT-10"}, tier_name="pro"):
+            if event["type"] == "summary":
+                summary = event
+        return summary["data"]["determination"], calls
+
+    async def test_truncated_output_is_retried_with_headroom(self, monkeypatch):
+        determination, calls = await self._run(monkeypatch, [
+            {"ok": True, "content": '{"recommended_position": "Contest the dem',
+             "finish_reason": "length", "model": "m", "usage": None},
+            {"ok": True, "content": self.GOOD, "finish_reason": "stop",
+             "model": "m", "usage": None},
+        ])
+        assert len(calls) == 2
+        assert calls[1] == calls[0] * 2
+        assert not determination.get("_degraded")
+        assert determination["recommended_position"] == "Contest the demand."
+
+    async def test_prose_is_retried_for_the_object_alone(self, monkeypatch):
+        determination, calls = await self._run(monkeypatch, [
+            {"ok": True, "content": "Here is my determination, in short: ...",
+             "finish_reason": "stop", "model": "m", "usage": None},
+            {"ok": True, "content": self.GOOD, "finish_reason": "stop",
+             "model": "m", "usage": None},
+        ])
+        assert len(calls) == 2
+        # Not a truncation, so the ceiling is unchanged — the problem was the
+        # shape of the answer, not the room to give it.
+        assert calls[1] == calls[0]
+        assert not determination.get("_degraded")
+
+    async def test_two_failures_still_degrade_honestly(self, monkeypatch):
+        determination, calls = await self._run(monkeypatch, [
+            {"ok": True, "content": "no json here", "finish_reason": "stop",
+             "model": "m", "usage": None},
+        ])
+        assert len(calls) == 2
+        assert determination["_degraded"] is True
+        assert any("must not be filed" in flag
+                   for flag in determination["risk_flags"])
+
+    async def test_a_truncation_that_survives_the_retry_names_the_ceiling(
+            self, monkeypatch):
+        """The operator needs to know which knob to turn."""
+        determination, _ = await self._run(monkeypatch, [
+            {"ok": True, "content": '{"recommended_position": "Contest the dem',
+             "finish_reason": "length", "model": "m", "usage": None},
+        ])
+        assert "MAX_TOKENS_CHAIRMAN" in determination["recommended_position"]

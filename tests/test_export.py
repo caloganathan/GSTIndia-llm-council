@@ -65,6 +65,11 @@ MATTER = {
                     "amount_by_head": {"cgst": 2060000.0, "sgst": 2060000.0},
                     "department_contention": "Excess credit of Rs. 41,20,000.",
                     "our_position": "The conditions in Section 16(2) stand satisfied.",
+                    "client_response":
+                        "The credit relates to 41 supplier invoices for "
+                        "FY 2019-20 that were received, paid and recorded. "
+                        "The suppliers filed their GSTR-1 late, so the "
+                        "invoices reached 2B in the following month.",
                     "facts": "1.  The credit was availed against valid invoices.",
                     "legal_framework": [
                         {"provision": "Section 16(2), CGST Act, 2017",

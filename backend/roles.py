@@ -347,6 +347,37 @@ def format_defects(matter: Dict[str, Any], pack) -> str:
         contention = (defect.get("department_contention") or "").strip()
         if contention:
             out.append(f"    Department says: {contention[:600]}")
+
+        # The client's own account, which is the only source of fact in the
+        # whole prompt. Everything else here is the department's allegation or
+        # the catalogue's expectation of it. Where it is absent, counsel are
+        # told so in terms, because a model asked for facts it has not been
+        # given will supply plausible ones — and they are filed over the
+        # client's signature.
+        response = (defect.get("client_response") or "").strip()
+        if response:
+            out.append(f"    THE CLIENT SAYS: {response[:2000]}")
+            if defect.get("client_documents_held"):
+                out.append("    The client says it holds: "
+                           + ", ".join(defect["client_documents_held"][:12]))
+        else:
+            out.append(
+                "    THE CLIENT HAS NOT YET RESPONDED ON THIS LIMB. You have "
+                "no facts for it. Do NOT invent, assume or reconstruct what "
+                "the client did — argue the law and the department's own "
+                "arithmetic only, and list in `client_input_required` the "
+                "precise questions the client must answer before this limb "
+                "can be pleaded."
+            )
+
+        if defect.get("needs_decomposition"):
+            out.append(
+                "    NOTE: this limb was not segmented off a heading — nothing "
+                "defect-shaped was found in the notice, so it stands for the "
+                "notice as a whole. If the notice in fact raises more than one "
+                "discrepancy, say so and set out the limbs you would split it "
+                "into."
+            )
         if defect.get("evidence_required"):
             out.append("    Evidence this limb is normally disposed of on:")
             for item in defect["evidence_required"]:
@@ -534,6 +565,24 @@ For each, choose a posture and commit to it:
 Where a defect's amount was not read from the notice, say so in
 `amount_note` and do NOT invent a figure.
 
+THE FACTS ARE THE CLIENT'S, NOT YOURS
+
+`facts` is the Noticee's account of what it did, filed over the Noticee's own
+signature. Write it ONLY from what the limb records under "THE CLIENT SAYS".
+
+Where a limb is marked "THE CLIENT HAS NOT YET RESPONDED", you have no facts
+for it. Leave `facts` EMPTY — do not reconstruct it from the department's
+allegation, from the reconciliation, from what a taxpayer in this position
+would usually say, or from what would make the best reply. Instead fill
+`client_input_required` with the specific questions the engagement team must
+put to the client before the limb can be pleaded, and confine `submission` to
+the law and to the department's own arithmetic.
+
+A fluent paragraph of invented facts signed by the client is the single worst
+thing this panel can produce. An empty `facts` field with three sharp
+questions beside it is the correct answer, and the export is built to carry
+it.
+
 DRAFTING REGISTER
 
 Your `submission` for each defect and your `preliminary_submissions` go out
@@ -581,7 +630,8 @@ commentary before or after, no markdown fence. Use exactly this shape:
       "strength": "strong" | "defensible" | "weak",
       "department_contention": "what the department alleges on this limb, in one or two sentences, with its figure",
       "our_position": "one sentence for the 'Disputes at a Glance' table — the answer, stated as a conclusion",
-      "facts": "the factual answer to this limb, numbered where it has parts. This is filed text: formal register, third person, quantified.",
+      "facts": "the Noticee's factual answer to this limb, drawn ONLY from what the client said, numbered where it has parts. This is filed text: formal register, third person, quantified. EMPTY where the client has not responded.",
+      "client_input_required": ["the precise questions the engagement team must put to the client before this limb can be pleaded. Empty if the client has answered it fully."],
       "legal_framework": [
         {{"provision": "Section / Rule / Circular / Notification, with its number and date", "relevance": "what it establishes for THIS limb"}}
       ],
