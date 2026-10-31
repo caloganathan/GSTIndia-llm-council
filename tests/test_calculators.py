@@ -730,3 +730,19 @@ class TestSecondReviewFindings:
         result = calculators.predeposit(200000, "107", penalty_only=True)
         joined = " ".join(result["caveats"])
         assert "Gaurav Jain" in joined and "SHOW CAUSE NOTICE" in joined
+
+
+class TestTaxBaseExcludesNonTaxLimbs:
+    def test_late_fee_and_interest_limbs_stay_out_of_the_base(self):
+        from backend import calculators
+        out = calculators.matter_computations({"intake": {
+            "section_invoked": "73", "notice_type": "DRC-01",
+            "notice_date": "2025-01-10",
+            "defects": [
+                {"type": "itc_mismatch", "amount_by_head": {"igst": 100000.0}},
+                {"type": "late_fee", "amount_by_head": {"cgst": 5000.0, "sgst": 5000.0}},
+                {"type": "interest_delayed_payment", "amount_by_head": {"igst": 7000.0}},
+            ]}})
+        assert out["tax_base"] == 100000.0
+        assert out["excluded_from_tax_base"]["late_fee"] == 10000.0
+        assert out["excluded_from_tax_base"]["interest_delayed_payment"] == 7000.0

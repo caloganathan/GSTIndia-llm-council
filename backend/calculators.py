@@ -1100,6 +1100,11 @@ def _normalise_period(value: Any) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
+NON_TAX_LIMB_TYPES = frozenset({
+    "late_fee", "interest_delayed_payment", "penalty_general", "eway_bill",
+})
+
+
 def matter_computations(matter: Dict[str, Any]) -> Dict[str, Any]:
     """
     Every computation this matter supports, with everything it does not.
@@ -1118,8 +1123,17 @@ def matter_computations(matter: Dict[str, Any]) -> Dict[str, Any]:
 
     tax_total = 0.0
     head_totals: Dict[str, float] = {}
+    excluded: Dict[str, float] = {}
     for limb in limbs:
         if not isinstance(limb, dict):
+            continue
+        # Penalty (s.73(9), s.74(9), s.74A(5)) and pre-deposit (s.107(6)(b))
+        # are percentages of TAX. Late fee (s.47), interest (s.50) and
+        # penalty-only limbs are not tax and must stay out of the base.
+        if str(limb.get("type") or "") in NON_TAX_LIMB_TYPES:
+            for raw in (limb.get("amount_by_head") or {}).values() \
+                    if isinstance(limb.get("amount_by_head"), dict) else []:
+                excluded[limb["type"]] = excluded.get(limb["type"], 0.0) + (_num(raw) or 0.0)
             continue
         heads = limb.get("amount_by_head") or {}
         if not isinstance(heads, dict):
@@ -1177,6 +1191,7 @@ def matter_computations(matter: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "tax_base": round(tax_total, 2),
+        "excluded_from_tax_base": {k: round(v, 2) for k, v in excluded.items() if v},
         "section": section,
         "computations": computations,
         "note": (

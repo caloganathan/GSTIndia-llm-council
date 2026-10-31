@@ -31,6 +31,7 @@ read from it carries an `-ocr` source, and the review UI puts those fields in
 the same must-confirm state as an unread amount.
 """
 
+import asyncio
 import io
 import os
 import re
@@ -38,6 +39,20 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import config, defects, notice_tables, ocr, sanitizer
 from .openrouter import query_model
+
+# One OCR job at a time: two concurrent scans would double peak memory on a
+# small instance. Reading runs off the event loop so other users are not frozen.
+OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", "1"))
+_read_gate = None
+
+
+async def _extract_off_loop(filename, content):
+    global _read_gate
+    if _read_gate is None:
+        _read_gate = asyncio.Semaphore(max(1, OCR_CONCURRENCY))
+    async with _read_gate:
+        return await asyncio.to_thread(extract_document, filename, content)
+
 
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 SUPPORTED = (".pdf", ".docx", ".txt")
@@ -1097,7 +1112,7 @@ async def read_notice_set(
     any_scanned = False
 
     for filename, content in documents:
-        document = extract_document(filename, content)
+        document = await _extract_off_loop(filename, content)
         text = document["text"]
         warnings.extend(f"{filename}: {w}" for w in document["warnings"])
         combined.append(text)

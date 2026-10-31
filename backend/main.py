@@ -174,10 +174,21 @@ async def readyz():
         "api_key_configured": bool(config.OPENROUTER_API_KEY),
         "state_writable": STATE_WRITABLE.get("ok"),
         "frontend_bundled": FRONTEND_DIST.is_dir(),
+        "user_store_readable": _user_store_ok(),
     }
-    ready = bool(checks["api_key_configured"]) and checks["state_writable"] is not False
+    ready = (bool(checks["api_key_configured"])
+             and checks["state_writable"] is not False
+             and checks["user_store_readable"])
     return {"status": "ready" if ready else "degraded", "checks": checks,
             "version": config.VERSION}
+
+
+def _user_store_ok() -> bool:
+    try:
+        users.user_count()
+        return True
+    except Exception:
+        return False
 
 
 @router.get("/features")
@@ -223,7 +234,8 @@ async def login(request: LoginRequest, http_request: Request):
     """
     client = http_request.client.host if http_request.client else ""
     try:
-        session = users.authenticate(request.email, request.password, client)
+        session = await asyncio.to_thread(
+            users.authenticate, request.email, request.password, client)
     except users.LockedOut as locked:
         raise HTTPException(
             status_code=429,

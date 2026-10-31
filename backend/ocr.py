@@ -121,23 +121,32 @@ def _get_engine():
     return _engine
 
 
-def _render_pages(content: bytes, dpi: int, max_pages: int) -> List[Any]:
-    """Rasterise a PDF into numpy arrays, one per page."""
+def _iter_pages(content: bytes, dpi: int, max_pages: int):
+    """
+    Rasterise a PDF lazily, yielding one numpy array per page.
+
+    A 300 DPI A4 page is ~26 MB as RGB; holding forty of them at once needs
+    over 1 GB and kills a 512 MB instance. Yielding one at a time keeps the
+    peak at a single page plus the engine.
+    """
     import numpy as np
     import pypdfium2 as pdfium
 
     document = pdfium.PdfDocument(io.BytesIO(content))
     try:
-        count = min(len(document), max_pages)
-        pages = []
-        for index in range(count):
+        for index in range(min(len(document), max_pages)):
             page = document[index]
             # pdfium's scale is relative to 72 DPI.
             bitmap = page.render(scale=dpi / 72)
-            pages.append(np.asarray(bitmap.to_pil().convert("RGB")))
-        return pages
+            yield np.asarray(bitmap.to_pil().convert("RGB"))
+            del bitmap, page
     finally:
         document.close()
+
+
+def _render_pages(content: bytes, dpi: int, max_pages: int) -> List[Any]:
+    """Eager variant, kept for callers and tests that want every page."""
+    return list(_iter_pages(content, dpi, max_pages))
 
 
 def _lines_from_result(result: Any) -> List[Dict[str, Any]]:
@@ -224,11 +233,12 @@ def ocr_pdf(content: bytes, dpi: int = None, max_pages: int = None) -> Dict[str,
     max_pages = max_pages or OCR_MAX_PAGES
 
     engine = _get_engine()
-    pages = _render_pages(content, dpi, max_pages)
 
+    pages_read = 0
     page_texts: List[str] = []
     all_lines: List[Dict[str, Any]] = []
-    for page in pages:
+    for page in _iter_pages(content, dpi, max_pages):
+        pages_read += 1
         try:
             result, _ = engine(page)
         except Exception:
@@ -246,7 +256,7 @@ def ocr_pdf(content: bytes, dpi: int = None, max_pages: int = None) -> Dict[str,
 
     return {
         "text": text,
-        "pages_read": len(pages),
+        "pages_read": pages_read,
         "lines": len(all_lines),
         "mean_confidence": (round(sum(confidences) / len(confidences), 3)
                             if confidences else None),
@@ -260,7 +270,7 @@ def ocr_pdf(content: bytes, dpi: int = None, max_pages: int = None) -> Dict[str,
         ],
         "doubtful_count": len(doubtful),
         "dpi": dpi,
-        "truncated": len(pages) >= max_pages,
+        "truncated": pages_read >= max_pages,
     }
 
 
