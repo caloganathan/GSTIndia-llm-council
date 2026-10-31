@@ -106,6 +106,20 @@ def _write_atomic(path: str, payload: Dict[str, Any]):
         raise
 
 
+class UserStoreError(RuntimeError):
+    """The persisted user store exists but cannot be read."""
+
+
+# A per-client counter is a throttle, not an identity control: behind a shared
+# proxy many people can share one address. It trips at a multiple of the
+# per-email budget so one mistyped password never locks a firm out.
+CLIENT_LOCK_FACTOR = int(os.getenv("LOGIN_CLIENT_FACTOR", "6"))
+
+
+def _threshold(key: str) -> int:
+    return LOGIN_MAX_ATTEMPTS * (CLIENT_LOCK_FACTOR if key.startswith("client:") else 1)
+
+
 def _load() -> Dict[str, Any]:
     path = _store_path()
     if not os.path.exists(path):
@@ -118,8 +132,10 @@ def _load() -> Dict[str, Any]:
         data.setdefault("login_attempts", {})
         return data
     except (json.JSONDecodeError, OSError) as e:
-        print(f"users.json unreadable ({e}); starting from empty store")
-        return {"users": [], "sessions": {}, "login_attempts": {}}
+        # Fail CLOSED. An unreadable store used to read as "no users", and with
+        # no shared token that switched authentication off for everyone.
+        print(f"users.json unreadable ({e}); refusing to treat it as empty")
+        raise UserStoreError(f"user store unreadable: {e}")
 
 
 def _save(data: Dict[str, Any]):
@@ -315,7 +331,7 @@ def _lockout_remaining(data: Dict[str, Any], keys: List[str]) -> int:
     remaining = 0
     for key in keys:
         record = attempts.get(key) or {}
-        if record.get("count", 0) < LOGIN_MAX_ATTEMPTS:
+        if record.get("count", 0) < _threshold(key):
             continue
         locked_until = record.get("locked_until")
         if not locked_until:
@@ -346,7 +362,7 @@ def _record_failure(data: Dict[str, Any], keys: List[str]):
                 record["locked_until"] = None
         record["count"] = record.get("count", 0) + 1
         record["last_failure"] = now.isoformat()
-        if record["count"] >= LOGIN_MAX_ATTEMPTS:
+        if record["count"] >= _threshold(key):
             record["locked_until"] = (
                 now + timedelta(seconds=LOGIN_LOCKOUT_SECONDS)).isoformat()
 

@@ -52,7 +52,8 @@ def _auth_disabled() -> bool:
     try:
         return users.user_count() == 0
     except Exception:
-        return True
+        # Unreadable store: fail closed, never open.
+        return False
 
 
 def resolve_user(authorization: str = "") -> Optional[Dict[str, Any]]:

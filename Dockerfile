@@ -41,10 +41,11 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 ENV DATA_DIR=/app/data/conversations \
     STATE_DIR=/app/data \
     PYTHONUNBUFFERED=1 \
+    OMP_NUM_THREADS=1 \
     PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8001
 
 # Bind to $PORT when the platform injects one, else 8001. Exec form via sh so
 # the variable is expanded at run time rather than baked in at build time.
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8001}"]
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8001} --proxy-headers --forwarded-allow-ips='*'"]

@@ -219,3 +219,21 @@ class TestInternalComputationsAreGated:
         headers = self._login(client, "manager")
         assert client.get("/api/matters/m1/computations",
                           headers=headers).status_code == 200
+
+
+class TestFailClosed:
+    def test_unreadable_store_does_not_disable_auth(self, monkeypatch, tmp_path):
+        from backend import auth, config, users
+        monkeypatch.setattr(config, "APP_ACCESS_TOKEN", "")
+        (tmp_path / "users.json").write_text("{not json")
+        monkeypatch.setattr(users, "_store_path", lambda: str(tmp_path / "users.json"))
+        assert auth._auth_disabled() is False
+
+    def test_one_client_failure_does_not_lock_the_address(self, monkeypatch, tmp_path):
+        from backend import users
+        monkeypatch.setattr(users, "_store_path", lambda: str(tmp_path / "users.json"))
+        users.create_user("a@firm.in", "correct-horse-1", "partner") if hasattr(users, "create_user") else None
+        for _ in range(users.LOGIN_MAX_ATTEMPTS):
+            users.authenticate("ghost@firm.in", "x", "10.0.0.1")
+        # a different email from the same address is still allowed to try
+        users.authenticate("other@firm.in", "x", "10.0.0.1")
